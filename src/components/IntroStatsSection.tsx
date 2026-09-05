@@ -1,38 +1,49 @@
 import React from 'react';
 import { FestivalStats } from '../types';
+import { INITIAL_STATS } from '../data/initialData';
 import { Layers, Activity, Users, School, Globe2, ShieldCheck, Sparkles } from 'lucide-react';
 
 interface IntroStatsSectionProps {
-  stats: FestivalStats;
-  onOpenAdmin: () => void;
+  stats?: FestivalStats;
+  onOpenAdmin?: () => void;
+  onOpenRegister?: () => void;
 }
 
-export const IntroStatsSection: React.FC<IntroStatsSectionProps> = ({ stats, onOpenAdmin }) => {
+export const IntroStatsSection: React.FC<IntroStatsSectionProps> = ({ 
+  stats = INITIAL_STATS, 
+  onOpenAdmin,
+  onOpenRegister 
+}) => {
+  const safeStats: FestivalStats = {
+    ...INITIAL_STATS,
+    ...(stats || {}),
+  };
+
   const statItems = [
     {
       label: 'KLASTER PROGRAM',
-      value: `${stats.klasterProgram}+`,
+      value: `${safeStats.klasterProgram}+`,
       desc: 'Lintas Generasi dari PAUD hingga Muslimat NU',
       icon: Layers,
       color: '#00D9F5',
     },
     {
       label: 'KEGIATAN',
-      value: `${stats.totalKegiatan}+`,
+      value: `${safeStats.totalKegiatan}+`,
       desc: 'Lomba, Kajian, Apel Akbar, Bazar & Sholawat',
       icon: Activity,
       color: '#008F72',
     },
     {
       label: 'PESERTA',
-      value: `${stats.totalPeserta.toLocaleString()}+`,
+      value: `${(safeStats.totalPeserta || 1000).toLocaleString()}+`,
       desc: 'Santri, Pelajar, Kader Muda & Jam\'iyyah',
       icon: Users,
       color: '#D9B45B',
     },
     {
       label: 'LEMBAGA',
-      value: `${stats.totalLembaga}+`,
+      value: `${safeStats.totalLembaga}+`,
       desc: 'Pesantren, Madrasah, Sekolah & Ranting NU',
       icon: School,
       color: '#F2C96D',
@@ -121,7 +132,7 @@ export const IntroStatsSection: React.FC<IntroStatsSectionProps> = ({ stats, onO
               </h3>
             </div>
             <button
-              onClick={onOpenAdmin}
+              onClick={() => onOpenAdmin?.()}
               className="self-start md:self-auto text-xs text-[#F2C96D] hover:text-white flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:border-[#D9B45B]/40 transition-all"
               title="Perbarui angka statistik di Panel Admin"
             >

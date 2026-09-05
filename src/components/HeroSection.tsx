@@ -16,15 +16,26 @@ import { HeroParticlesCanvas } from './HeroParticlesCanvas';
 import heroArtworkImg from '../assets/images/hero_hsn_artwork_1788617565328.jpg';
 
 interface HeroSectionProps {
-  onOpenRegister: () => void;
-  onOpenDownload: () => void;
-  onScrollToProgram: () => void;
+  onOpenRegister?: () => void;
+  onOpenDownload?: () => void;
+  onScrollToProgram?: () => void;
+  onOpenExplore?: () => void;
 }
 
 export const HeroSection: React.FC<HeroSectionProps> = ({
-  onOpenRegister,
-  onOpenDownload,
-  onScrollToProgram,
+  onOpenRegister = () => {},
+  onOpenDownload = () => {
+    const el = document.getElementById('unduhan');
+    if (el) el.scrollIntoView({ behavior: 'smooth' });
+  },
+  onScrollToProgram = () => {
+    const el = document.getElementById('lomba');
+    if (el) el.scrollIntoView({ behavior: 'smooth' });
+  },
+  onOpenExplore = () => {
+    const el = document.getElementById('tentang');
+    if (el) el.scrollIntoView({ behavior: 'smooth' });
+  },
 }) => {
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [isDesktop, setIsDesktop] = useState(true);

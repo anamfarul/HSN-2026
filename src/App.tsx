@@ -22,7 +22,7 @@ import { Footer } from './components/Footer';
 import { RegistrationModal } from './components/RegistrationModal';
 import { AdminDashboardModal } from './components/AdminDashboardModal';
 
-import { COMPETITIONS, SAMPLE_PARTICIPANTS, DOWNLOAD_DOCUMENTS } from './data/initialData';
+import { COMPETITIONS, SAMPLE_PARTICIPANTS, DOWNLOAD_DOCUMENTS, INITIAL_STATS } from './data/initialData';
 import { Competition, CategoryGeneration, ParticipantRegistration } from './types';
 import { Sparkles, MessageCircle, Shield } from 'lucide-react';
 
@@ -91,6 +91,14 @@ export default function App() {
         {/* 1. Hero Section */}
         <HeroSection
           onOpenRegister={handleOpenRegister}
+          onOpenDownload={() => {
+            const el = document.getElementById('unduhan');
+            if (el) el.scrollIntoView({ behavior: 'smooth' });
+          }}
+          onScrollToProgram={() => {
+            const el = document.getElementById('lomba');
+            if (el) el.scrollIntoView({ behavior: 'smooth' });
+          }}
           onOpenExplore={() => {
             const el = document.getElementById('tentang');
             if (el) el.scrollIntoView({ behavior: 'smooth' });
@@ -101,7 +109,11 @@ export default function App() {
         <CountdownSection onOpenRegister={handleOpenRegister} />
 
         {/* 3. Intro & Real Stats Section */}
-        <IntroStatsSection onOpenRegister={handleOpenRegister} />
+        <IntroStatsSection
+          stats={INITIAL_STATS}
+          onOpenAdmin={() => setIsAdminModalOpen(true)}
+          onOpenRegister={handleOpenRegister}
+        />
 
         {/* 4. Five Pillars of Santri Future */}
         <FivePillarsSection />
