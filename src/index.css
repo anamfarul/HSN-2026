@@ -1,0 +1,120 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --color-navy: #031525;
+    --color-nu-green: #006B4F;
+    --color-emerald: #008F72;
+    --color-cyan: #00D9F5;
+    --color-gold: #D9B45B;
+    --color-warm-gold: #F2C96D;
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+  }
+
+  h1, h2, h3, .font-heading {
+    font-family: 'Cinzel', 'Plus Jakarta Sans', serif;
+  }
+
+  .font-arabic {
+    font-family: 'Amiri', serif;
+  }
+}
+
+/* Glassmorphism */
+.glass-panel {
+  background: rgba(3, 21, 37, 0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(0, 217, 245, 0.15);
+}
+
+.glass-panel-gold {
+  background: rgba(3, 21, 37, 0.8);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(217, 180, 91, 0.25);
+}
+
+.glass-card {
+  background: linear-gradient(135deg, rgba(0, 107, 79, 0.15) 0%, rgba(3, 21, 37, 0.6) 100%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+  border-color: rgba(0, 217, 245, 0.35);
+  box-shadow: 0 12px 30px -10px rgba(0, 217, 245, 0.2);
+  transform: translateY(-4px);
+}
+
+/* Islamic Geometric Pattern Background */
+.bg-islamic-pattern {
+  background-image: radial-gradient(rgba(0, 217, 245, 0.08) 1px, transparent 1px),
+    radial-gradient(rgba(217, 180, 91, 0.06) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: 0 0, 16px 16px;
+}
+
+.bg-batik-grid {
+  background-image: 
+    linear-gradient(rgba(0, 107, 79, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 107, 79, 0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #031525;
+}
+::-webkit-scrollbar-thumb {
+  background: #006B4F;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #00D9F5;
+}
+
+/* Glow Effects */
+.glow-cyan {
+  box-shadow: 0 0 25px rgba(0, 217, 245, 0.35);
+}
+
+.glow-gold {
+  box-shadow: 0 0 25px rgba(242, 201, 109, 0.35);
+}
+
+.glow-text-cyan {
+  text-shadow: 0 0 16px rgba(0, 217, 245, 0.6);
+}
+
+.glow-text-gold {
+  text-shadow: 0 0 16px rgba(242, 201, 109, 0.6);
+}
+
+/* Shimmer animation */
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.05); }
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 4s ease-in-out infinite;
+}
+
+@keyframes floatSlow {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-10px) rotate(2deg); }
+}
+
+.animate-float {
+  animation: floatSlow 6s ease-in-out infinite;
+}

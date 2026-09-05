@@ -1,0 +1,6 @@
+{
+  "name": "Festival Hari Santri Nasional 2026 - MWC NU Poncokusumo",
+  "description": "Website resmi Festival Hari Santri Nasional 2026 MWC NU Kecamatan Poncokusumo, Kabupaten Malang. Mengawal Indonesia Merdeka Menuju Peradaban Dunia.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
