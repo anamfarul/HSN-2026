@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ParticipantRegistration, Competition, DownloadDoc } from '../types';
+import { AdminLoginView } from './AdminLoginView';
 import { 
   X, 
   ShieldCheck, 
@@ -18,7 +19,8 @@ import {
   Lock,
   LogOut,
   Sparkles,
-  ArrowUpDown
+  ArrowUpDown,
+  UserCheck
 } from 'lucide-react';
 
 interface AdminDashboardModalProps {
@@ -42,8 +44,30 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   onDeleteCompetition,
   documents,
 }) => {
-  // Simple authentication state
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true); // default demo authenticated
+  // Authentication state - check stored session
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return (
+      localStorage.getItem('hsn2026_admin_auth') === 'true' ||
+      sessionStorage.getItem('hsn2026_admin_auth') === 'true'
+    );
+  });
+
+  const [adminUser, setAdminUser] = useState<string>(() => {
+    return (
+      localStorage.getItem('hsn2026_admin_user') ||
+      sessionStorage.getItem('hsn2026_admin_user') ||
+      'admin'
+    );
+  });
+
+  const [adminRole, setAdminRole] = useState<string>(() => {
+    return (
+      localStorage.getItem('hsn2026_admin_role') ||
+      sessionStorage.getItem('hsn2026_admin_role') ||
+      'Sekretariat Utama HSN 2026'
+    );
+  });
+
   const [activeTab, setActiveTab] = useState<'participants' | 'competitions' | 'documents' | 'stats'>('participants');
   
   // Filters for participants
@@ -59,6 +83,22 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [newCompDeadline, setNewCompDeadline] = useState('10 Oktober 2026');
 
   if (!isOpen) return null;
+
+  // If not authenticated, display the dedicated Admin Login Screen first!
+  if (!isAuthenticated) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-lg animate-fade-in overflow-y-auto">
+        <AdminLoginView
+          onLoginSuccess={({ username, role }) => {
+            setAdminUser(username);
+            setAdminRole(role);
+            setIsAuthenticated(true);
+          }}
+          onClose={onClose}
+        />
+      </div>
+    );
+  }
 
   // Filter participants
   const filteredParticipants = participants.filter((p) => {
@@ -144,7 +184,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   CMS PANITIA HSN 2026
                 </h2>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  DEMO AKTIF
+                  SESI AKTIF
                 </span>
               </div>
               <span className="text-[11px] text-[#DDE7E8]/70">
@@ -153,13 +193,39 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-2 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
-            aria-label="Tutup CMS Admin"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2.5">
+            {/* Active Admin Profile Chip */}
+            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-white font-semibold capitalize">{adminUser}</span>
+              <span className="text-[#F2C96D] text-[11px]">({adminRole})</span>
+            </div>
+
+            {/* Logout Button */}
+            <button
+              onClick={() => {
+                if (window.confirm('Apakah Anda yakin ingin keluar dari Portal Admin?')) {
+                  localStorage.removeItem('hsn2026_admin_auth');
+                  sessionStorage.removeItem('hsn2026_admin_auth');
+                  setIsAuthenticated(false);
+                }
+              }}
+              className="px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-1.5 transition-all"
+              title="Keluar dari Portal Admin"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Keluar</span>
+            </button>
+
+            {/* Close Modal Button */}
+            <button
+              onClick={onClose}
+              className="p-2 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+              aria-label="Tutup CMS Admin"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Admin Nav Tabs */}
