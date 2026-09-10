@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { ParticipantRegistration, Competition, DownloadDoc } from '../types';
 import { AdminLoginView } from './AdminLoginView';
+import { AdminUsersTab } from './AdminUsersTab';
+import { AdminDeploymentTab } from './AdminDeploymentTab';
 import { 
   X, 
   ShieldCheck, 
@@ -20,7 +22,9 @@ import {
   LogOut,
   Sparkles,
   ArrowUpDown,
-  UserCheck
+  UserCheck,
+  UserPlus,
+  Globe
 } from 'lucide-react';
 
 interface AdminDashboardModalProps {
@@ -68,7 +72,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     );
   });
 
-  const [activeTab, setActiveTab] = useState<'participants' | 'competitions' | 'documents' | 'stats'>('participants');
+  const [activeTab, setActiveTab] = useState<'participants' | 'competitions' | 'documents' | 'stats' | 'users' | 'deployment'>('participants');
   
   // Filters for participants
   const [searchQuery, setSearchQuery] = useState('');
@@ -81,6 +85,20 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [newCompCategory, setNewCompCategory] = useState('SMP/MTs');
   const [newCompTarget, setNewCompTarget] = useState('');
   const [newCompDeadline, setNewCompDeadline] = useState('10 Oktober 2026');
+
+  // Logout Confirmation State
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+  const handleLogout = () => {
+    localStorage.removeItem('hsn2026_admin_auth');
+    sessionStorage.removeItem('hsn2026_admin_auth');
+    localStorage.removeItem('hsn2026_admin_user');
+    sessionStorage.removeItem('hsn2026_admin_user');
+    localStorage.removeItem('hsn2026_admin_role');
+    sessionStorage.removeItem('hsn2026_admin_role');
+    setIsAuthenticated(false);
+    setShowLogoutConfirm(false);
+  };
 
   if (!isOpen) return null;
 
@@ -203,18 +221,13 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
             {/* Logout Button */}
             <button
-              onClick={() => {
-                if (window.confirm('Apakah Anda yakin ingin keluar dari Portal Admin?')) {
-                  localStorage.removeItem('hsn2026_admin_auth');
-                  sessionStorage.removeItem('hsn2026_admin_auth');
-                  setIsAuthenticated(false);
-                }
-              }}
-              className="px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-1.5 transition-all"
+              onClick={() => setShowLogoutConfirm(true)}
+              className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-200 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
               title="Keluar dari Portal Admin"
+              aria-label="Keluar dari Portal Admin"
             >
               <LogOut className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Keluar</span>
+              <span className="inline">Keluar</span>
             </button>
 
             {/* Close Modal Button */}
@@ -276,6 +289,30 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
           >
             <FileText className="w-3.5 h-3.5" />
             <span>Berkas Arsip ({documents.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
+              activeTab === 'users'
+                ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-[#F2C96D] border border-[#D9B45B]/50 shadow'
+                : 'text-[#DDE7E8] hover:bg-white/5'
+            }`}
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+            <span>Kelola Panitia (Users)</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('deployment')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
+              activeTab === 'deployment'
+                ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-[#00D9F5] border border-[#00D9F5]/60 shadow'
+                : 'text-[#00D9F5]/80 hover:bg-white/5'
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5 text-[#00D9F5]" />
+            <span>Deploy ke Vercel</span>
           </button>
         </div>
 
@@ -562,6 +599,12 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
               </div>
             </div>
           )}
+
+          {/* TAB 5: KELOLA PANITIA / USERS */}
+          {activeTab === 'users' && <AdminUsersTab />}
+
+          {/* TAB 6: DEPLOYMENT KE VERCEL & SUPABASE */}
+          {activeTab === 'deployment' && <AdminDeploymentTab />}
         </div>
       </div>
 
@@ -645,6 +688,44 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* SUB-MODAL: Konfirmasi Keluar (Logout) Sesi */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-sm rounded-2xl bg-[#031525] border border-rose-500/50 p-6 shadow-2xl text-center space-y-4">
+            <div className="w-14 h-14 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-400 mx-auto flex items-center justify-center shadow-lg shadow-rose-500/20">
+              <LogOut className="w-7 h-7" />
+            </div>
+
+            <div>
+              <h4 className="font-heading font-bold text-white text-base">
+                Konfirmasi Keluar Sesi
+              </h4>
+              <p className="text-xs text-[#DDE7E8]/80 mt-1.5 leading-relaxed">
+                Apakah Anda yakin ingin mengakhiri sesi aktif <strong className="text-white capitalize">{adminUser}</strong>? Anda perlu login kembali untuk mengakses portal CMS.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowLogoutConfirm(false)}
+                className="w-1/2 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-all"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="w-1/2 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white text-xs font-bold shadow-lg shadow-rose-500/30 transition-all flex items-center justify-center gap-1.5 active:scale-95"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Ya, Keluar</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

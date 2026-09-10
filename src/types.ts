@@ -144,3 +144,15 @@ export interface FestivalStats {
   totalLembaga: number;
   totalPengunjung: number;
 }
+
+export interface AdminUser {
+  id: string;
+  fullName: string;
+  username: string;
+  password?: string;
+  role: string;
+  email: string;
+  phone: string;
+  createdAt: string;
+  isActive: boolean;
+}

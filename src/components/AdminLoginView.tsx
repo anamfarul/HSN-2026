@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { INITIAL_ADMIN_USERS } from '../data/initialUsers';
+import { AdminUser } from '../types';
 import { 
   ShieldCheck, 
   Lock, 
@@ -51,16 +53,38 @@ export const AdminLoginView: React.FC<AdminLoginViewProps> = ({
       const cleanUser = username.trim().toLowerCase();
       const cleanPass = password.trim();
 
-      // Accepted credentials:
-      // admin / santri2026
-      // panitia / poncokusumo2026
-      // sekretariat / hsn2026
-      const isValid = 
+      // Load custom registered users if any
+      let allUsers: AdminUser[] = [...INITIAL_ADMIN_USERS];
+      try {
+        const stored = localStorage.getItem('hsn2026_registered_users');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            allUsers = [...parsed, ...allUsers];
+          }
+        }
+      } catch (err) {
+        console.error('Failed to parse registered users', err);
+      }
+
+      // Check against user database
+      const matchedUser = allUsers.find(
+        (u) => 
+          (u.username.toLowerCase() === cleanUser || u.email.toLowerCase() === cleanUser) &&
+          (u.password === cleanPass || (!u.password && cleanPass === 'santri2026'))
+      );
+
+      // Fallback accepted demo credentials
+      const isDemoMatch = 
         (cleanUser === 'admin' && cleanPass === 'santri2026') ||
         (cleanUser === 'panitia' && cleanPass === 'poncokusumo2026') ||
         (cleanUser === 'sekretariat' && cleanPass === 'hsn2026') ||
         (cleanUser === 'admin@hsnponcokusumo.id' && cleanPass === 'santri2026') ||
         (cleanUser === 'admin' && cleanPass === 'admin123');
+
+      const isValid = !!matchedUser || isDemoMatch;
+      const activeRole = matchedUser ? matchedUser.role : role;
+      const activeDisplayName = matchedUser ? matchedUser.fullName : cleanUser;
 
       if (isValid) {
         setIsLoading(false);
@@ -68,20 +92,20 @@ export const AdminLoginView: React.FC<AdminLoginViewProps> = ({
 
         if (rememberMe) {
           localStorage.setItem('hsn2026_admin_auth', 'true');
-          localStorage.setItem('hsn2026_admin_user', cleanUser);
-          localStorage.setItem('hsn2026_admin_role', role);
+          localStorage.setItem('hsn2026_admin_user', activeDisplayName);
+          localStorage.setItem('hsn2026_admin_role', activeRole);
         } else {
           sessionStorage.setItem('hsn2026_admin_auth', 'true');
-          sessionStorage.setItem('hsn2026_admin_user', cleanUser);
-          sessionStorage.setItem('hsn2026_admin_role', role);
+          sessionStorage.setItem('hsn2026_admin_user', activeDisplayName);
+          sessionStorage.setItem('hsn2026_admin_role', activeRole);
         }
 
         setTimeout(() => {
-          onLoginSuccess({ username: cleanUser, role });
+          onLoginSuccess({ username: activeDisplayName, role: activeRole });
         }, 500);
       } else {
         setIsLoading(false);
-        setErrorMessage('Username atau kata sandi panitia tidak cocok. Silakan gunakan kredensial demo.');
+        setErrorMessage('Username atau kata sandi panitia tidak cocok. Silakan periksa kembali atau gunakan kredensial demo.');
       }
     }, 600);
   };
