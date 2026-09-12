@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { ParticipantRegistration, Competition, DownloadDoc, CategoryGeneration } from '../types';
 import { AdminLoginView } from './AdminLoginView';
 import { AdminUsersTab } from './AdminUsersTab';
@@ -12,6 +14,7 @@ import {
   FileText, 
   Search, 
   Download, 
+  FileDown,
   Printer,
   CheckCircle2, 
   Clock, 
@@ -32,7 +35,8 @@ import {
   ArrowUpDown,
   UserCheck,
   UserPlus,
-  Globe
+  Globe,
+  Receipt
 } from 'lucide-react';
 
 interface AdminDashboardModalProps {
@@ -322,6 +326,223 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     setTimeout(() => setFeedbackToast(''), 4000);
   };
 
+  // Generate & Download Authentic PDF File (100% Reliable in all browsers & iframes)
+  const handleDownloadPDF = () => {
+    try {
+      const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4',
+      });
+
+      // Kop Surat Resmi
+      doc.setFont('times', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(20, 20, 20);
+      doc.text('PANITIA FESTIVAL HARI SANTRI NASIONAL (HSN) 2026', 148.5, 13, { align: 'center' });
+
+      doc.setFontSize(10.5);
+      doc.setTextColor(0, 107, 79);
+      doc.text('MAJELIS WAKIL CABANG NAHDLATUL ULAMA (MWC NU) KECAMATAN PONCOKUSUMO', 148.5, 18.5, { align: 'center' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(70, 70, 70);
+      doc.text('Sekretariat: Kompleks Kantor MWC NU Poncokusumo, Kab. Malang, Jawa Timur 65157 • Narahubung Panitia: 0812-XXXX-XXXX', 148.5, 23, { align: 'center' });
+
+      // Garis Ganda Kop Surat
+      doc.setDrawColor(20, 20, 20);
+      doc.setLineWidth(0.7);
+      doc.line(14, 25.5, 283, 25.5);
+      doc.setLineWidth(0.2);
+      doc.line(14, 26.5, 283, 26.5);
+
+      // Judul Dokumen
+      doc.setFont('times', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor(10, 10, 10);
+      doc.text('DAFTAR REKAPITULASI PESERTA TERDAFTAR', 148.5, 32.5, { align: 'center' });
+
+      // Info Filter & Waktu Cetak
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(60, 60, 60);
+      const catText = categoryFilter === 'ALL' ? 'Semua Kategori' : categoryFilter;
+      const statText = statusFilter === 'ALL' ? 'Semua Status' : statusFilter;
+      const dateStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+      doc.text(`Kategori: ${catText}   •   Status: ${statText}   •   Total: ${filteredParticipants.length} Peserta   •   Tanggal Cetak: ${dateStr}`, 148.5, 37, { align: 'center' });
+
+      // Tabel 8 Kolom
+      const tableHeaders = [
+        ['NO.', 'NO. REG', 'NAMA PESERTA', 'KATEGORI', 'CABANG LOMBA', 'LEMBAGA', 'KONTAK WA', 'STATUS']
+      ];
+
+      const tableRows = filteredParticipants.map((p, idx) => [
+        (idx + 1).toString(),
+        p.registrationNumber || '-',
+        p.fullName || '-',
+        p.category || '-',
+        p.competitionTitle || '-',
+        p.institution || '-',
+        p.whatsapp || '-',
+        p.status || '-'
+      ]);
+
+      autoTable(doc, {
+        head: tableHeaders,
+        body: tableRows,
+        startY: 40,
+        theme: 'grid',
+        styles: {
+          fontSize: 7.5,
+          cellPadding: 2,
+          textColor: [30, 30, 30],
+          lineColor: [160, 160, 160],
+          lineWidth: 0.1,
+          valign: 'middle',
+        },
+        headStyles: {
+          fillColor: [3, 21, 37],
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          halign: 'center',
+          fontSize: 8,
+        },
+        columnStyles: {
+          0: { halign: 'center', cellWidth: 10 },
+          1: { halign: 'center', fontStyle: 'bold', cellWidth: 30 },
+          2: { fontStyle: 'bold', cellWidth: 42 },
+          3: { halign: 'center', cellWidth: 24 },
+          4: { cellWidth: 46 },
+          5: { cellWidth: 50 },
+          6: { halign: 'center', cellWidth: 32 },
+          7: { halign: 'center', fontStyle: 'bold', cellWidth: 25 },
+        },
+        didParseCell: (data) => {
+          if (data.section === 'body' && data.column.index === 7) {
+            const val = String(data.cell.raw);
+            if (val === 'Terverifikasi') {
+              data.cell.styles.textColor = [0, 128, 80];
+            } else if (val === 'Menunggu' || val === 'Menunggu Verifikasi') {
+              data.cell.styles.textColor = [190, 110, 0];
+            } else {
+              data.cell.styles.textColor = [190, 20, 20];
+            }
+          }
+        },
+        margin: { left: 14, right: 14, bottom: 32 },
+      });
+
+      // Tanda Tangan Pengesahan di halaman akhir
+      const finalY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY : 120;
+      const pageHeight = doc.internal.pageSize.getHeight();
+      let signY = finalY + 8;
+      if (signY + 26 > pageHeight) {
+        doc.addPage();
+        signY = 22;
+      }
+
+      doc.setFontSize(8);
+      doc.setTextColor(30, 30, 30);
+
+      // Kiri: Ketua Panitia
+      doc.text('Mengetahui,', 40, signY);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Ketua Panitia HSN 2026', 40, signY + 4);
+      doc.text('Ust. H. Ahmad Mustofa, S.Pd.I', 40, signY + 16);
+      doc.setFont('helvetica', 'normal');
+      doc.text('MWC NU Poncokusumo', 40, signY + 20);
+
+      // Kanan: Sekretariat Pelaksana
+      doc.text(`Poncokusumo, ${dateStr}`, 240, signY, { align: 'right' });
+      doc.setFont('helvetica', 'bold');
+      doc.text('Sekretariat Pelaksana', 240, signY + 4, { align: 'right' });
+      doc.text('M. Wildan Maulana, S.Kom', 240, signY + 16, { align: 'right' });
+      doc.setFont('helvetica', 'normal');
+      doc.text('Koordinator Administrasi & Peserta', 240, signY + 20, { align: 'right' });
+
+      // Trigger download berkas PDF
+      const sanitizedCat = categoryFilter.replace(/[^a-zA-Z0-9]/g, '_');
+      const filename = `Rekap_Peserta_HSN2026_${categoryFilter === 'ALL' ? 'Semua' : sanitizedCat}.pdf`;
+      doc.save(filename);
+
+      setFeedbackToast(`Dokumen PDF "${filename}" berhasil diunduh!`);
+      setTimeout(() => setFeedbackToast(''), 4000);
+      return true;
+    } catch (err) {
+      console.error('Error generating PDF:', err);
+      setFeedbackToast('Gagal memproses dokumen PDF. Silakan coba lagi.');
+      setTimeout(() => setFeedbackToast(''), 4000);
+      return false;
+    }
+  };
+
+  // Handle Browser Print Direct
+  const handlePrintDocument = () => {
+    // Jalankan download PDF terlebih dahulu agar user selalu menerima berkas
+    handleDownloadPDF();
+
+    // Coba trigger window.print() atau iframe printing
+    try {
+      const printTarget = document.getElementById('printable-participant-report');
+      if (!printTarget) {
+        window.print();
+        return;
+      }
+
+      let printFrame = document.getElementById('hsn-print-frame') as HTMLIFrameElement | null;
+      if (!printFrame) {
+        printFrame = document.createElement('iframe');
+        printFrame.id = 'hsn-print-frame';
+        printFrame.style.position = 'fixed';
+        printFrame.style.right = '0';
+        printFrame.style.bottom = '0';
+        printFrame.style.width = '0';
+        printFrame.style.height = '0';
+        printFrame.style.border = '0';
+        document.body.appendChild(printFrame);
+      }
+
+      const frameDoc = printFrame.contentWindow?.document || printFrame.contentDocument;
+      if (frameDoc) {
+        frameDoc.open();
+        frameDoc.write(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Rekapitulasi Peserta Terdaftar HSN 2026</title>
+            <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 20px; color: #111; }
+              table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px; }
+              th, td { border: 1px solid #333; padding: 6px 8px; }
+              th { background-color: #f2f2f2; text-align: left; }
+              .text-center { text-align: center; }
+              @page { size: A4 landscape; margin: 10mm; }
+            </style>
+          </head>
+          <body>
+            ${printTarget.innerHTML}
+          </body>
+          </html>
+        `);
+        frameDoc.close();
+
+        setTimeout(() => {
+          try {
+            printFrame?.contentWindow?.focus();
+            printFrame?.contentWindow?.print();
+          } catch (e) {
+            window.print();
+          }
+        }, 300);
+      } else {
+        window.print();
+      }
+    } catch (e) {
+      window.print();
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/90 backdrop-blur-lg animate-fade-in overflow-y-auto">
       <div className="relative w-full max-w-6xl rounded-3xl bg-[#031525] border border-[#00D9F5]/40 shadow-2xl overflow-hidden my-auto max-h-[94vh] flex flex-col">
@@ -548,6 +769,18 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                         <td className="p-3">
                           <div className="font-bold text-white">{p.fullName}</div>
                           <div className="text-[11px] text-white/60">{p.institution}</div>
+                          {p.paymentProofName ? (
+                            <div className="mt-1 inline-flex items-center gap-1 text-[10px] text-emerald-300 bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                              <Receipt className="w-3 h-3 text-emerald-400 shrink-0" />
+                              <span className="truncate max-w-[130px]" title={p.paymentProofName}>
+                                Bukti: {p.paymentProofName}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="mt-1 inline-flex items-center gap-1 text-[10px] text-white/40 bg-white/5 px-1.5 py-0.5 rounded border border-white/10">
+                              <span>Tanpa Bukti Bayar</span>
+                            </div>
+                          )}
                         </td>
                         <td className="p-3 whitespace-nowrap">
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#00D9F5]/10 text-[#00D9F5] border border-[#00D9F5]/30">
@@ -1492,16 +1725,30 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Tombol Utama: Cetak / Simpan PDF (Unduh PDF + Trigger Print) */}
               <button
                 type="button"
-                onClick={() => window.print()}
+                onClick={handlePrintDocument}
                 className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#D9B45B] via-[#F2C96D] to-[#00D9F5] hover:brightness-110 text-[#031525] text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-[#00D9F5]/20 active:scale-95 transition-all cursor-pointer"
-                title="Cetak Halaman atau Simpan sebagai PDF"
+                title="Cetak Halaman atau Simpan sebagai PDF Resmi"
               >
-                <Printer className="w-4 h-4" />
+                <Printer className="w-4 h-4 text-[#031525]" />
                 <span>Cetak / Simpan PDF</span>
               </button>
+
+              {/* Tombol Khusus Unduh PDF */}
+              <button
+                type="button"
+                onClick={handleDownloadPDF}
+                className="px-3.5 py-2 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/45 border border-emerald-500/40 text-emerald-300 hover:text-white text-xs font-bold flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                title="Unduh Langsung Berkas Rekapitulasi PDF A4"
+              >
+                <FileDown className="w-4 h-4 text-emerald-400" />
+                <span className="hidden sm:inline">Unduh</span><span>.PDF</span>
+              </button>
+
+              {/* Tombol Tutup Modal */}
               <button
                 type="button"
                 onClick={() => setShowPrintModal(false)}
@@ -1702,6 +1949,14 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Floating Feedback Toast Notification */}
+      {feedbackToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-90 px-4 py-2.5 rounded-xl bg-emerald-950/95 text-emerald-200 border border-emerald-500/50 shadow-2xl flex items-center gap-2 text-xs font-semibold backdrop-blur-md animate-fade-in pointer-events-none">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{feedbackToast}</span>
         </div>
       )}
     </div>

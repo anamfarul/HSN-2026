@@ -15,7 +15,10 @@ import {
   Phone,
   Mail,
   MapPin,
-  Calendar
+  Calendar,
+  Receipt,
+  Trash2,
+  Image as ImageIcon
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -45,11 +48,36 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
   const [address, setAddress] = useState('');
   const [selectedCompId, setSelectedCompId] = useState<string>('');
   const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
+  const [paymentProofPreview, setPaymentProofPreview] = useState<string | null>(null);
   const [agreed, setAgreed] = useState(false);
 
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createdTicket, setCreatedTicket] = useState<ParticipantRegistration | null>(null);
+
+  const handlePaymentProofChange = (file: File | null) => {
+    if (!file) {
+      setPaymentProofFile(null);
+      setPaymentProofPreview(null);
+      return;
+    }
+    setPaymentProofFile(file);
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setPaymentProofPreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setPaymentProofPreview(null);
+    }
+  };
+
+  const handleRemovePaymentProof = () => {
+    setPaymentProofFile(null);
+    setPaymentProofPreview(null);
+  };
 
   useEffect(() => {
     if (initialCategory) {
@@ -127,6 +155,8 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
         competitionId: selectedCompId,
         competitionTitle: matchedComp ? matchedComp.title : 'Perlombaan HSN 2026',
         documentName: documentFile ? documentFile.name : 'surat_keterangan_mandat.pdf',
+        paymentProofName: paymentProofFile ? paymentProofFile.name : undefined,
+        paymentProofUrl: paymentProofPreview || undefined,
         registeredAt: dateStr,
         status: 'Terverifikasi',
       };
@@ -176,7 +206,8 @@ Alamat           : ${createdTicket.address}
 
 CABANG PERLOMBAAN:
 Lomba Terpilih   : ${createdTicket.competitionTitle}
-Dokumen Unggahan : ${createdTicket.documentName}
+Dokumen Unggahan : ${createdTicket.documentName || '-'}
+Bukti Pembayaran : ${createdTicket.paymentProofName || 'Tidak dilampirkan (Bisa diserahkan saat TM / Lomba Gratis)'}
 
 KETENTUAN PENTING:
 1. Harap simpan bukti pendaftaran ini (cetak atau digital).
@@ -279,6 +310,32 @@ MWC NU Kecamatan Poncokusumo, Kabupaten Malang, Jawa Timur.
                   <div>
                     <span className="text-white/60 block text-[10px] uppercase font-bold">Status Berkas</span>
                     <span className="text-emerald-400 font-bold">{createdTicket.status}</span>
+                  </div>
+                  <div className="sm:col-span-2 pt-1 border-t border-white/10 flex items-center justify-between gap-3">
+                    <div>
+                      <span className="text-white/60 block text-[10px] uppercase font-bold">Bukti Pembayaran / Infaq</span>
+                      {createdTicket.paymentProofName ? (
+                        <div className="flex items-center gap-1.5 text-emerald-400 font-semibold text-xs mt-0.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate max-w-[200px]" title={createdTicket.paymentProofName}>
+                            Terlampir: {createdTicket.paymentProofName}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-white/50 text-xs italic">
+                          Belum dilampirkan (Dapat diserahkan saat TM / Lomba Gratis)
+                        </span>
+                      )}
+                    </div>
+                    {createdTicket.paymentProofUrl && (
+                      <div className="flex items-center gap-2">
+                        <img 
+                          src={createdTicket.paymentProofUrl} 
+                          alt="Thumbnail Bukti" 
+                          className="w-10 h-10 object-cover rounded-lg border border-emerald-500/40"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -491,40 +548,135 @@ MWC NU Kecamatan Poncokusumo, Kabupaten Malang, Jawa Timur.
                 </div>
               </div>
 
-              {/* Document Upload Simulation */}
-              <div>
-                <label className="block text-xs font-medium text-[#DDE7E8] mb-1">
-                  Upload Dokumen Pendukung (Surat Mandat / Kartu Santri / Akta / PDF)
-                </label>
-                <div className="relative border-2 border-dashed border-white/20 hover:border-[#00D9F5]/60 rounded-2xl p-4 text-center cursor-pointer transition-colors bg-white/5">
-                  <input
-                    type="file"
-                    accept=".pdf,.png,.jpg,.jpeg"
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files[0]) {
-                        setDocumentFile(e.target.files[0]);
-                      }
-                    }}
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                  />
-                  <div className="flex flex-col items-center justify-center gap-1.5">
-                    {documentFile ? (
-                      <>
-                        <FileCheck className="w-6 h-6 text-emerald-400" />
-                        <span className="text-xs font-bold text-white">{documentFile.name}</span>
-                        <span className="text-[10px] text-emerald-400">Berkas terpilih (Klik untuk mengganti)</span>
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="w-6 h-6 text-[#00D9F5]" />
-                        <span className="text-xs font-semibold text-white">
-                          Pilih berkas dokumen atau seret ke sini
-                        </span>
-                        <span className="text-[10px] text-white/50">Maksimal 10MB (PDF, JPG, PNG)</span>
-                      </>
-                    )}
+              {/* Upload Section: Dokumen Pendukung & Bukti Pembayaran */}
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  {/* Dokumen Pendukung */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-medium text-[#DDE7E8]">
+                        Dokumen Pendukung
+                      </label>
+                      <span className="text-[10px] text-white/50 bg-white/5 px-1.5 py-0.5 rounded">
+                        Opsional
+                      </span>
+                    </div>
+                    <div className="relative border-2 border-dashed border-white/20 hover:border-[#00D9F5]/60 rounded-2xl p-3.5 text-center cursor-pointer transition-colors bg-white/5 min-h-[110px] flex items-center justify-center">
+                      <input
+                        type="file"
+                        accept=".pdf,.png,.jpg,.jpeg"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files[0]) {
+                            setDocumentFile(e.target.files[0]);
+                          }
+                        }}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                        title="Upload Dokumen Pendukung"
+                      />
+                      <div className="flex flex-col items-center justify-center gap-1">
+                        {documentFile ? (
+                          <>
+                            <FileCheck className="w-6 h-6 text-emerald-400" />
+                            <span className="text-xs font-bold text-white line-clamp-1 max-w-[180px]" title={documentFile.name}>
+                              {documentFile.name}
+                            </span>
+                            <span className="text-[10px] text-emerald-400">Berkas terpilih • Klik ganti</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-5 h-5 text-[#00D9F5]" />
+                            <span className="text-xs font-semibold text-white">
+                              Upload Surat Mandat / Santri
+                            </span>
+                            <span className="text-[10px] text-white/50">PDF, JPG, PNG (Maks. 10MB)</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bukti Pembayaran (Opsional) */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-medium text-[#DDE7E8] flex items-center gap-1">
+                        <Receipt className="w-3.5 h-3.5 text-[#F2C96D]" />
+                        <span>Bukti Pembayaran</span>
+                      </label>
+                      <span className="text-[10px] text-[#F2C96D] bg-[#D9B45B]/15 px-1.5 py-0.5 rounded font-bold border border-[#D9B45B]/30">
+                        Opsional
+                      </span>
+                    </div>
+
+                    <div className={`relative border-2 border-dashed ${
+                      paymentProofFile 
+                        ? 'border-emerald-500/60 bg-emerald-950/20' 
+                        : 'border-white/20 hover:border-[#F2C96D]/60 bg-white/5'
+                    } rounded-2xl p-3.5 text-center transition-all min-h-[110px] flex items-center justify-center overflow-hidden`}>
+                      {!paymentProofFile && (
+                        <input
+                          type="file"
+                          accept=".jpg,.jpeg,.png,.pdf"
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files[0]) {
+                              handlePaymentProofChange(e.target.files[0]);
+                            }
+                          }}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                          title="Upload Bukti Pembayaran (Opsional)"
+                        />
+                      )}
+
+                      {paymentProofFile ? (
+                        <div className="flex items-center gap-2.5 w-full text-left">
+                          {paymentProofPreview ? (
+                            <img
+                              src={paymentProofPreview}
+                              alt="Bukti Transfer"
+                              className="w-12 h-12 rounded-lg object-cover border border-emerald-500/40 shrink-0"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                              <Receipt className="w-6 h-6 text-emerald-400" />
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <span className="text-[10px] uppercase font-bold text-emerald-400 block">Bukti Terunggah</span>
+                            <p className="text-xs font-semibold text-white truncate" title={paymentProofFile.name}>
+                              {paymentProofFile.name}
+                            </p>
+                            <span className="text-[10px] text-white/50">
+                              {(paymentProofFile.size / 1024).toFixed(0)} KB
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleRemovePaymentProof}
+                            className="p-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 transition-colors shrink-0 z-20"
+                            title="Hapus berkas bukti pembayaran"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center gap-1">
+                          <Receipt className="w-5 h-5 text-[#F2C96D]" />
+                          <span className="text-xs font-semibold text-white">
+                            Upload Bukti Transfer / Infaq
+                          </span>
+                          <span className="text-[10px] text-white/50">JPG, PNG, PDF (Boleh Dikosongkan)</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
+
+                {/* Helpful note for participants */}
+                <p className="text-[11px] text-[#DDE7E8]/70 flex items-start sm:items-center gap-1.5 bg-white/5 p-2 rounded-xl border border-white/10">
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#00D9F5] shrink-0 mt-0.5 sm:mt-0" />
+                  <span>
+                    <strong>Catatan:</strong> Pengunggahan bukti pembayaran bersifat <em>opsional</em>. Untuk cabang lomba gratis atau jika pembayaran infaq dilakukan tunai saat Technical Meeting (TM), kolom ini dapat dikosongkan.
+                  </span>
+                </p>
               </div>
 
               {/* Consent Agreement */}

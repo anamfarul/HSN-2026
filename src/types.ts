@@ -126,6 +126,8 @@ export interface ParticipantRegistration {
   competitionId: string;
   competitionTitle: string;
   documentName?: string;
+  paymentProofName?: string;
+  paymentProofUrl?: string;
   registeredAt: string;
   status: 'Menunggu Verifikasi' | 'Terverifikasi' | 'Finalis';
 }
