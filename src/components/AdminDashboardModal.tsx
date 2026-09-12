@@ -12,6 +12,7 @@ import {
   FileText, 
   Search, 
   Download, 
+  Printer,
   CheckCircle2, 
   Clock, 
   XCircle, 
@@ -101,6 +102,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [showPrintModal, setShowPrintModal] = useState(false);
 
   // Filters for competition participant stats
   const [statsCompSearch, setStatsCompSearch] = useState('');
@@ -503,13 +505,24 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   </select>
                 </div>
 
-                <button
-                  onClick={handleExportCSV}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-[#031525] bg-[#F2C96D] hover:bg-[#D9B45B] transition-all flex items-center gap-1.5 shadow"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Export CSV</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowPrintModal(true)}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:brightness-110 border border-emerald-500/40 transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+                    title="Cetak Tabel Rekapitulasi Peserta Terdaftar"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-[#F2C96D]" />
+                    <span>Cetak</span>
+                  </button>
+
+                  <button
+                    onClick={handleExportCSV}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-[#031525] bg-[#F2C96D] hover:bg-[#D9B45B] transition-all flex items-center gap-1.5 shadow active:scale-95"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Export CSV</span>
+                  </button>
+                </div>
               </div>
 
               {/* Table of Participants */}
@@ -1452,6 +1465,241 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 <LogOut className="w-3.5 h-3.5" />
                 <span>Ya, Keluar</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUB-MODAL: Cetak Rekapitulasi Peserta Terdaftar */}
+      {showPrintModal && (
+        <div className="fixed inset-0 z-80 flex flex-col items-center justify-start p-2 sm:p-4 bg-black/90 backdrop-blur-md animate-fade-in overflow-y-auto">
+          {/* Top Control Bar (Non-Printable) */}
+          <div className="no-print w-full max-w-5xl mb-3 flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#031525] border border-[#00D9F5]/40 shadow-2xl shrink-0">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-[#006B4F] flex items-center justify-center text-[#F2C96D] shadow-md">
+                <Printer className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-heading font-bold text-sm text-white flex items-center gap-2">
+                  <span>Pratinjau Cetak Rekapitulasi Peserta</span>
+                  <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-[#00D9F5]/20 text-[#00D9F5] border border-[#00D9F5]/30">
+                    {filteredParticipants.length} Peserta
+                  </span>
+                </h4>
+                <p className="text-[11px] text-[#DDE7E8]/70">
+                  Tabel 8 kolom resmi sesuai filter: {categoryFilter === 'ALL' ? 'Semua Kategori' : categoryFilter} • {statusFilter === 'ALL' ? 'Semua Status' : statusFilter}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#D9B45B] via-[#F2C96D] to-[#00D9F5] hover:brightness-110 text-[#031525] text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-[#00D9F5]/20 active:scale-95 transition-all cursor-pointer"
+                title="Cetak Halaman atau Simpan sebagai PDF"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Cetak / Simpan PDF</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPrintModal(false)}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-all cursor-pointer"
+                title="Tutup Pratinjau Cetak"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Printable Document Paper */}
+          <div className="w-full max-w-5xl overflow-x-auto pb-8">
+            <div
+              id="printable-participant-report"
+              className="bg-white text-gray-900 p-6 sm:p-10 font-sans min-w-[800px] text-xs shadow-2xl rounded-2xl border border-gray-300"
+            >
+              {/* KOP SURAT RESMI */}
+              <div className="text-center border-b-4 border-double border-gray-950 pb-3 mb-4">
+                <div className="flex items-center justify-center gap-3.5 mb-1.5">
+                  <div className="w-12 h-12 rounded-full bg-emerald-900 text-[#F2C96D] font-serif font-black text-xl flex items-center justify-center border-2 border-emerald-950 shadow-sm shrink-0">
+                    NU
+                  </div>
+                  <div>
+                    <h2 className="text-base sm:text-lg font-black tracking-wide text-gray-950 uppercase font-serif">
+                      PANITIA FESTIVAL HARI SANTRI NASIONAL (HSN) 2026
+                    </h2>
+                    <h3 className="text-xs sm:text-sm font-bold text-emerald-900 uppercase tracking-normal">
+                      MAJELIS WAKIL CABANG NAHDLATUL ULAMA (MWC NU) KECAMATAN PONCOKUSUMO
+                    </h3>
+                  </div>
+                </div>
+                <p className="text-[10.5px] text-gray-700 mt-1 font-medium">
+                  Sekretariat: Kompleks Kantor MWC NU Poncokusumo, Kabupaten Malang, Jawa Timur 65157 • Narahubung Panitia: 0812-XXXX-XXXX
+                </p>
+              </div>
+
+              {/* JUDUL DOKUMEN & INFO REKAP */}
+              <div className="text-center mb-4">
+                <h3 className="text-sm sm:text-base font-black uppercase tracking-wider text-gray-950 underline decoration-2 underline-offset-4">
+                  DAFTAR REKAPITULASI PESERTA TERDAFTAR
+                </h3>
+                <div className="flex flex-wrap items-center justify-center gap-3 text-[11px] text-gray-700 mt-2 font-medium">
+                  <span>
+                    <strong>Kategori:</strong> {categoryFilter === 'ALL' ? 'Semua Kategori' : categoryFilter}
+                  </span>
+                  <span>•</span>
+                  <span>
+                    <strong>Status:</strong> {statusFilter === 'ALL' ? 'Semua Status' : statusFilter}
+                  </span>
+                  <span>•</span>
+                  <span>
+                    <strong>Total:</strong> {filteredParticipants.length} Peserta
+                  </span>
+                  <span>•</span>
+                  <span>
+                    <strong>Tanggal Cetak:</strong>{' '}
+                    {new Date().toLocaleDateString('id-ID', {
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric',
+                    })}
+                  </span>
+                </div>
+              </div>
+
+              {/* TABEL 8 KOLOM SESUAI PERMINTAAN USER */}
+              <table className="w-full text-left border-collapse border border-gray-950 text-[11px]">
+                <thead>
+                  <tr className="bg-gray-200 text-gray-950 uppercase font-bold border-b-2 border-gray-950">
+                    <th className="border border-gray-950 p-2 text-center w-10">No.</th>
+                    <th className="border border-gray-950 p-2 text-center whitespace-nowrap">No. REG</th>
+                    <th className="border border-gray-950 p-2">Nama Peserta</th>
+                    <th className="border border-gray-950 p-2 text-center whitespace-nowrap">Kategori</th>
+                    <th className="border border-gray-950 p-2">Cabang Lomba</th>
+                    <th className="border border-gray-950 p-2">Lembaga</th>
+                    <th className="border border-gray-950 p-2 text-center whitespace-nowrap">Kontak WA</th>
+                    <th className="border border-gray-950 p-2 text-center whitespace-nowrap">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredParticipants.map((p, index) => (
+                    <tr
+                      key={p.id}
+                      className={`border-b border-gray-400 ${index % 2 === 1 ? 'bg-gray-50' : 'bg-white'}`}
+                    >
+                      {/* 1. No Urut */}
+                      <td className="border border-gray-950 p-2 text-center font-medium">
+                        {index + 1}
+                      </td>
+                      {/* 2. No. REG */}
+                      <td className="border border-gray-950 p-2 text-center font-mono font-bold whitespace-nowrap text-emerald-950">
+                        {p.registrationNumber}
+                      </td>
+                      {/* 3. Nama Peserta */}
+                      <td className="border border-gray-950 p-2 font-bold text-gray-950">
+                        {p.fullName}
+                      </td>
+                      {/* 4. Kategori */}
+                      <td className="border border-gray-950 p-2 text-center font-semibold text-gray-800 whitespace-nowrap">
+                        {p.category}
+                      </td>
+                      {/* 5. Cabang Lomba */}
+                      <td className="border border-gray-950 p-2 text-gray-900">
+                        {p.competitionTitle}
+                      </td>
+                      {/* 6. Lembaga */}
+                      <td className="border border-gray-950 p-2 text-gray-800">
+                        {p.institution}
+                      </td>
+                      {/* 7. Kontak WA */}
+                      <td className="border border-gray-950 p-2 text-center font-mono text-gray-900 whitespace-nowrap">
+                        {p.whatsapp}
+                      </td>
+                      {/* 8. Status */}
+                      <td className="border border-gray-950 p-2 text-center whitespace-nowrap font-bold">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded text-[10px] ${
+                            p.status === 'Terverifikasi'
+                              ? 'bg-emerald-100 text-emerald-900 border border-emerald-400'
+                              : p.status === 'Menunggu'
+                              ? 'bg-amber-100 text-amber-900 border border-amber-400'
+                              : 'bg-rose-100 text-rose-900 border border-rose-400'
+                          }`}
+                        >
+                          {p.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredParticipants.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="border border-gray-950 p-6 text-center text-gray-500 italic">
+                        Tidak ada data peserta terdaftar yang sesuai dengan filter pencarian.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+
+              {/* REKAPITULASI TOTAL BAWAH */}
+              <div className="mt-3 flex items-center justify-between text-[11px] text-gray-700 bg-gray-50 p-2 rounded border border-gray-300">
+                <span>
+                  <strong>Total Rekap:</strong> {filteredParticipants.length} Peserta
+                </span>
+                <div className="flex items-center gap-3">
+                  <span>
+                    Terverifikasi:{' '}
+                    <strong>
+                      {filteredParticipants.filter((p) => p.status === 'Terverifikasi').length}
+                    </strong>
+                  </span>
+                  <span>•</span>
+                  <span>
+                    Menunggu:{' '}
+                    <strong>
+                      {filteredParticipants.filter((p) => p.status === 'Menunggu' || p.status === 'Menunggu Verifikasi').length}
+                    </strong>
+                  </span>
+                  <span>•</span>
+                  <span>
+                    Ditolak:{' '}
+                    <strong>
+                      {filteredParticipants.filter((p) => p.status === 'Ditolak').length}
+                    </strong>
+                  </span>
+                </div>
+              </div>
+
+              {/* FOOTER PENGESAHAN / TANDA TANGAN */}
+              <div className="mt-8 pt-4 flex items-start justify-between text-[11px] text-gray-950">
+                <div className="w-56 text-center">
+                  <p>Mengetahui,</p>
+                  <p className="font-bold uppercase text-emerald-950">Ketua Panitia HSN 2026</p>
+                  <div className="h-16 flex items-end justify-center">
+                    <span className="text-[10px] text-gray-400 italic">(Tanda Tangan & Stempel)</span>
+                  </div>
+                  <p className="font-bold underline mt-1 text-gray-950">Ust. H. Ahmad Mustofa, S.Pd.I</p>
+                  <p className="text-[10.5px] text-gray-600">MWC NU Poncokusumo</p>
+                </div>
+
+                <div className="w-56 text-center">
+                  <p>
+                    Poncokusumo,{' '}
+                    {new Date().toLocaleDateString('id-ID', {
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric',
+                    })}
+                  </p>
+                  <p className="font-bold uppercase text-emerald-950">Sekretariat Pelaksana</p>
+                  <div className="h-16 flex items-end justify-center">
+                    <span className="text-[10px] text-gray-400 italic">(Tanda Tangan & Stempel)</span>
+                  </div>
+                  <p className="font-bold underline mt-1 text-gray-950">M. Wildan Maulana, S.Kom</p>
+                  <p className="text-[10.5px] text-gray-600">Koordinator Administrasi & Peserta</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
