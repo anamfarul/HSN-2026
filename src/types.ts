@@ -65,6 +65,8 @@ export interface Competition {
   location: string;
   contactPerson: string;
   iconName: string;
+  juknisUrl?: string;
+  juknisFileName?: string;
 }
 
 export interface TimelineItem {

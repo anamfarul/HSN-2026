@@ -78,6 +78,12 @@ export default function App() {
     setCompetitions((prev) => prev.filter((c) => c.id !== id));
   };
 
+  const handleUpdateCompetition = (updatedComp: Competition) => {
+    setCompetitions((prev) =>
+      prev.map((c) => (c.id === updatedComp.id ? updatedComp : c))
+    );
+  };
+
   return (
     <div className="min-h-screen bg-[#031525] text-[#DDE7E8] selection:bg-[#00D9F5]/30 selection:text-white font-sans relative">
       {/* Navigation Header */}
@@ -205,6 +211,7 @@ export default function App() {
         onUpdateParticipantStatus={handleUpdateParticipantStatus}
         competitions={competitions}
         onAddCompetition={handleAddCompetition}
+        onUpdateCompetition={handleUpdateCompetition}
         onDeleteCompetition={handleDeleteCompetition}
         documents={DOWNLOAD_DOCUMENTS}
       />

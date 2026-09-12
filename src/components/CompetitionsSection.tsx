@@ -288,24 +288,39 @@ export const CompetitionsSection: React.FC<CompetitionsSectionProps> = ({
             </div>
 
             {/* Modal Actions */}
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
-              <button
-                onClick={() => setActiveDetailModal(null)}
-                className="px-5 py-2 rounded-xl text-xs font-semibold text-[#DDE7E8] bg-white/10 hover:bg-white/20 transition-colors"
-              >
-                Tutup
-              </button>
-              <button
-                onClick={() => {
-                  const comp = activeDetailModal;
-                  setActiveDetailModal(null);
-                  onRegisterCompetition(comp);
-                }}
-                className="px-6 py-2 rounded-xl text-xs font-bold uppercase tracking-wider text-[#031525] bg-gradient-to-r from-[#D9B45B] via-[#F2C96D] to-[#00D9F5] hover:brightness-110 shadow-lg shadow-[#00D9F5]/30 transition-all flex items-center gap-2"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Daftar Lomba Ini</span>
-              </button>
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-white/10">
+              {activeDetailModal.juknisUrl ? (
+                <a
+                  href={activeDetailModal.juknisUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-[#F2C96D] bg-[#D9B45B]/20 hover:bg-[#D9B45B]/30 border border-[#D9B45B]/40 transition-all flex items-center gap-1.5"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Unduh Juknis ({activeDetailModal.juknisFileName || 'PDF'})</span>
+                </a>
+              ) : (
+                <div />
+              )}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setActiveDetailModal(null)}
+                  className="px-5 py-2 rounded-xl text-xs font-semibold text-[#DDE7E8] bg-white/10 hover:bg-white/20 transition-colors"
+                >
+                  Tutup
+                </button>
+                <button
+                  onClick={() => {
+                    const comp = activeDetailModal;
+                    setActiveDetailModal(null);
+                    onRegisterCompetition(comp);
+                  }}
+                  className="px-6 py-2 rounded-xl text-xs font-bold uppercase tracking-wider text-[#031525] bg-gradient-to-r from-[#D9B45B] via-[#F2C96D] to-[#00D9F5] hover:brightness-110 shadow-lg shadow-[#00D9F5]/30 transition-all flex items-center gap-2"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Daftar Lomba Ini</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
