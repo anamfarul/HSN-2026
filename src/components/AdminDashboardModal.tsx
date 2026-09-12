@@ -3,6 +3,7 @@ import { ParticipantRegistration, Competition, DownloadDoc } from '../types';
 import { AdminLoginView } from './AdminLoginView';
 import { AdminUsersTab } from './AdminUsersTab';
 import { AdminDeploymentTab } from './AdminDeploymentTab';
+import { ROLE_DEFINITIONS } from '../data/rolesPermissions';
 import { 
   X, 
   ShieldCheck, 
@@ -216,7 +217,9 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-white font-semibold capitalize">{adminUser}</span>
-              <span className="text-[#F2C96D] text-[11px]">({adminRole})</span>
+              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${ROLE_DEFINITIONS[adminRole]?.badgeColor || 'text-[#F2C96D]'}`}>
+                {ROLE_DEFINITIONS[adminRole]?.shortTitle || adminRole}
+              </span>
             </div>
 
             {/* Logout Button */}
