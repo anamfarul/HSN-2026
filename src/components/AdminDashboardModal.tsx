@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ParticipantRegistration, Competition, DownloadDoc } from '../types';
+import { ParticipantRegistration, Competition, DownloadDoc, CategoryGeneration } from '../types';
 import { AdminLoginView } from './AdminLoginView';
 import { AdminUsersTab } from './AdminUsersTab';
 import { AdminDeploymentTab } from './AdminDeploymentTab';
@@ -190,9 +190,26 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   // New Competition Form State
   const [showAddCompModal, setShowAddCompModal] = useState(false);
   const [newCompTitle, setNewCompTitle] = useState('');
-  const [newCompCategory, setNewCompCategory] = useState('SMP/MTs');
-  const [newCompTarget, setNewCompTarget] = useState('');
+  const [newCompCategory, setNewCompCategory] = useState<CategoryGeneration>('SMP/MTs');
   const [newCompDeadline, setNewCompDeadline] = useState('10 Oktober 2026');
+  const [newCompDescription, setNewCompDescription] = useState('');
+
+  // Helper untuk generate kode lomba otomatis sesuai kategori dan nomor urut
+  const getNextCompCode = (category: string) => {
+    const prefixMap: Record<string, string> = {
+      'PAUD/TK': 'LMB-PAUD',
+      'SD/MI': 'LMB-SD',
+      'SMP/MTs': 'LMB-SMP',
+      'SMA/MA/SMK': 'LMB-SMA',
+      'IPNU/IPPNU': 'LMB-IPNU',
+      'FATAYAT': 'LMB-FTY',
+      'MUSLIMAT': 'LMB-MSL',
+    };
+    const prefix = prefixMap[category] || 'LMB';
+    const matching = competitions.filter((c) => c.code.startsWith(prefix));
+    const nextNum = matching.length + 1;
+    return `${prefix}-${nextNum < 10 ? '0' : ''}${nextNum}`;
+  };
 
   // Logout Confirmation State
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -263,20 +280,22 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     if (!newCompTitle.trim()) return;
 
     const randomId = `comp-${Date.now()}`;
-    const code = `LMB-${competitions.length + 1}`;
+    const code = getNextCompCode(newCompCategory);
     const created: Competition = {
       id: randomId,
       code,
       title: newCompTitle.trim(),
       category: newCompCategory as any,
-      targetAudience: newCompTarget || `Delegasi santri ${newCompCategory}`,
-      deadline: newCompDeadline,
+      targetAudience: `Peserta kategori ${newCompCategory}`,
+      deadline: newCompDeadline.trim() || '10 Oktober 2026',
       technicalMeeting: '12 Oktober 2026',
       location: 'Kompleks Pesantren Poncokusumo',
       contactPerson: '0812-XXXX-XXXX (Panitia)',
       registrationFee: 'Gratis',
       iconName: 'Trophy',
-      description: `Perlombaan ${newCompTitle} yang diselenggarakan secara sportif dan kompetitif bagi generasi santri.`,
+      description:
+        newCompDescription.trim() ||
+        `Perlombaan ${newCompTitle.trim()} yang diselenggarakan secara sportif dan kompetitif bagi generasi santri.`,
       rules: [
         'Peserta merupakan utusan sah dari lembaga terkait.',
         'Wajib melampirkan surat mandat resmi.',
@@ -292,7 +311,9 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     onAddCompetition(created);
     setShowAddCompModal(false);
     setNewCompTitle('');
-    setNewCompTarget('');
+    setNewCompDescription('');
+    setFeedbackToast(`Cabang lomba [${code}] "${created.title}" berhasil ditambahkan!`);
+    setTimeout(() => setFeedbackToast(''), 4000);
   };
 
   return (
@@ -918,81 +939,132 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
       {/* SUB-MODAL: Tambah Lomba */}
       {showAddCompModal && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="relative w-full max-w-md rounded-2xl bg-[#031525] border border-[#00D9F5]/40 p-6 shadow-2xl">
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-lg rounded-3xl bg-[#031525] border border-[#00D9F5]/40 p-6 sm:p-7 shadow-2xl space-y-4">
             <button
               onClick={() => setShowAddCompModal(false)}
-              className="absolute top-4 right-4 text-white/60 hover:text-white"
+              className="absolute top-5 right-5 text-white/60 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-all"
             >
               <X className="w-5 h-5" />
             </button>
-            <h3 className="font-heading text-lg font-bold text-white mb-4">
-              Tambah Cabang Lomba Baru
-            </h3>
-            <form onSubmit={handleCreateNewComp} className="space-y-3 text-xs">
+
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#00D9F5]/20 border border-[#00D9F5]/40 flex items-center justify-center text-[#00D9F5] shrink-0">
+                <Plus className="w-5 h-5" />
+              </div>
               <div>
-                <label className="block text-[#DDE7E8] font-medium mb-1">Nama Lomba</label>
+                <h3 className="font-heading text-lg font-bold text-white">
+                  Tambah Cabang Lomba Baru
+                </h3>
+                <p className="text-xs text-[#DDE7E8]/70">
+                  Formulir cabang lomba terintegrasi dengan kartu informasi lomba
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleCreateNewComp} className="space-y-3.5 text-xs">
+              {/* 1. KODE LOMBA (Terisi Otomatis) */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[#DDE7E8] font-bold">
+                    Kode Lomba
+                  </label>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" />
+                    Terisi Secara Otomatis
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  readOnly
+                  value={getNextCompCode(newCompCategory)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-[#F2C96D]/40 text-sm font-mono font-black text-[#F2C96D] cursor-not-allowed select-none shadow-inner"
+                />
+                <p className="text-[10px] text-white/50 mt-1">
+                  *Kode lomba diperbarui otomatis menyesuaikan kategori lomba yang Anda pilih.
+                </p>
+              </div>
+
+              {/* 2. NAMA CABANG LOMBA */}
+              <div>
+                <label className="block text-[#DDE7E8] font-bold mb-1">
+                  Nama Cabang Lomba <span className="text-rose-400">*</span>
+                </label>
                 <input
                   type="text"
                   required
-                  placeholder="Contoh: Musabaqah Hifdzil Qur'an"
+                  placeholder="Contoh: Musabaqah Hifdzil Qur'an (MHQ)"
                   value={newCompTitle}
                   onChange={(e) => setNewCompTitle(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[#020e19] border border-white/20 text-white focus:outline-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-semibold text-white focus:outline-none focus:border-[#00D9F5] transition-all"
                 />
               </div>
 
-              <div>
-                <label className="block text-[#DDE7E8] font-medium mb-1">Kategori</label>
-                <select
-                  value={newCompCategory}
-                  onChange={(e) => setNewCompCategory(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[#020e19] border border-white/20 text-white focus:outline-none"
-                >
-                  <option value="PAUD/TK">PAUD/TK</option>
-                  <option value="SD/MI">SD/MI</option>
-                  <option value="SMP/MTs">SMP/MTs</option>
-                  <option value="SMA/MA/SMK">SMA/MA/SMK</option>
-                  <option value="IPNU/IPPNU">IPNU/IPPNU</option>
-                  <option value="FATAYAT">FATAYAT</option>
-                  <option value="MUSLIMAT">MUSLIMAT</option>
-                </select>
+              {/* 3. KATEGORI & 4. BATAS PENDAFTARAN */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[#DDE7E8] font-bold mb-1">
+                    Kategori <span className="text-rose-400">*</span>
+                  </label>
+                  <select
+                    value={newCompCategory}
+                    onChange={(e) => setNewCompCategory(e.target.value as any)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-bold text-[#00D9F5] focus:outline-none focus:border-[#00D9F5] transition-all cursor-pointer"
+                  >
+                    <option value="PAUD/TK">PAUD/TK</option>
+                    <option value="SD/MI">SD/MI</option>
+                    <option value="SMP/MTs">SMP/MTs</option>
+                    <option value="SMA/MA/SMK">SMA/MA/SMK</option>
+                    <option value="IPNU/IPPNU">IPNU/IPPNU</option>
+                    <option value="FATAYAT">FATAYAT</option>
+                    <option value="MUSLIMAT">MUSLIMAT</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[#DDE7E8] font-bold mb-1">
+                    Batas Pendaftaran <span className="text-rose-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Contoh: 10 Oktober 2026"
+                    value={newCompDeadline}
+                    onChange={(e) => setNewCompDeadline(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-medium text-white focus:outline-none focus:border-[#00D9F5] transition-all"
+                  />
+                </div>
               </div>
 
+              {/* 5. DESKRIPSI PERLOMBAAN */}
               <div>
-                <label className="block text-[#DDE7E8] font-medium mb-1">Target Peserta</label>
-                <input
-                  type="text"
-                  placeholder="Contoh: Siswa jenjang SMP / MTs sederajat"
-                  value={newCompTarget}
-                  onChange={(e) => setNewCompTarget(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[#020e19] border border-white/20 text-white focus:outline-none"
+                <label className="block text-[#DDE7E8] font-bold mb-1">
+                  Deskripsi Perlombaan <span className="text-rose-400">*</span>
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  placeholder="Tuliskan gambaran ringkas dan ketentuan umum perlombaan yang akan tampil di kartu..."
+                  value={newCompDescription}
+                  onChange={(e) => setNewCompDescription(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs text-[#DDE7E8] focus:outline-none focus:border-[#00D9F5] transition-all leading-relaxed"
                 />
               </div>
 
-              <div>
-                <label className="block text-[#DDE7E8] font-medium mb-1">Batas Pendaftaran</label>
-                <input
-                  type="text"
-                  value={newCompDeadline}
-                  onChange={(e) => setNewCompDeadline(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[#020e19] border border-white/20 text-white focus:outline-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-white/10">
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-white/10">
                 <button
                   type="button"
                   onClick={() => setShowAddCompModal(false)}
-                  className="px-4 py-2 rounded-xl bg-white/10 text-white"
+                  className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs text-white font-semibold transition-all"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#D9B45B] to-[#00D9F5] text-[#031525] font-bold"
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#D9B45B] to-[#00D9F5] text-[#031525] text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-[#00D9F5]/20 hover:brightness-110 active:scale-95 transition-all"
                 >
-                  Simpan Lomba
+                  <Plus className="w-4 h-4" />
+                  <span>Simpan Cabang Lomba</span>
                 </button>
               </div>
             </form>
