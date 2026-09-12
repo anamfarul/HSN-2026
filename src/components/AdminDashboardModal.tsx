@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ParticipantRegistration, Competition, DownloadDoc } from '../types';
 import { AdminLoginView } from './AdminLoginView';
 import { AdminUsersTab } from './AdminUsersTab';
@@ -73,8 +73,22 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     );
   });
 
+  // Cek apakah akun yang sedang login adalah Super Admin (Sekretariat Utama)
+  const isSuperAdmin = 
+    adminRole === 'Sekretariat Utama HSN 2026' ||
+    adminRole.toLowerCase().includes('sekretariat utama') ||
+    adminRole.toLowerCase().includes('super admin') ||
+    adminUser.toLowerCase() === 'admin';
+
   const [activeTab, setActiveTab] = useState<'participants' | 'competitions' | 'documents' | 'stats' | 'users' | 'deployment'>('participants');
   
+  // Jika login selain super admin, pastikan tidak dapat mengakses tab users atau deployment
+  useEffect(() => {
+    if (!isSuperAdmin && (activeTab === 'users' || activeTab === 'deployment')) {
+      setActiveTab('participants');
+    }
+  }, [isSuperAdmin, activeTab]);
+
   // Filters for participants
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
@@ -294,29 +308,35 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             <span>Berkas Arsip ({documents.length})</span>
           </button>
 
-          <button
-            onClick={() => setActiveTab('users')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
-              activeTab === 'users'
-                ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-[#F2C96D] border border-[#D9B45B]/50 shadow'
-                : 'text-[#DDE7E8] hover:bg-white/5'
-            }`}
-          >
-            <UserPlus className="w-3.5 h-3.5" />
-            <span>Kelola Panitia (Users)</span>
-          </button>
+          {/* Tab Khusus Super Admin: Kelola Panitia */}
+          {isSuperAdmin && (
+            <button
+              onClick={() => setActiveTab('users')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
+                activeTab === 'users'
+                  ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-[#F2C96D] border border-[#D9B45B]/50 shadow'
+                  : 'text-[#DDE7E8] hover:bg-white/5'
+              }`}
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>Kelola Panitia (Users)</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setActiveTab('deployment')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
-              activeTab === 'deployment'
-                ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-[#00D9F5] border border-[#00D9F5]/60 shadow'
-                : 'text-[#00D9F5]/80 hover:bg-white/5'
-            }`}
-          >
-            <Globe className="w-3.5 h-3.5 text-[#00D9F5]" />
-            <span>Deploy ke Vercel</span>
-          </button>
+          {/* Tab Khusus Super Admin: Deploy ke Vercel */}
+          {isSuperAdmin && (
+            <button
+              onClick={() => setActiveTab('deployment')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
+                activeTab === 'deployment'
+                  ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-[#00D9F5] border border-[#00D9F5]/60 shadow'
+                  : 'text-[#00D9F5]/80 hover:bg-white/5'
+              }`}
+            >
+              <Globe className="w-3.5 h-3.5 text-[#00D9F5]" />
+              <span>Deploy ke Vercel</span>
+            </button>
+          )}
         </div>
 
         {/* Content Area */}
@@ -603,11 +623,11 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             </div>
           )}
 
-          {/* TAB 5: KELOLA PANITIA / USERS */}
-          {activeTab === 'users' && <AdminUsersTab />}
+          {/* TAB 5: KELOLA PANITIA / USERS (KHUSUS SUPER ADMIN) */}
+          {activeTab === 'users' && isSuperAdmin && <AdminUsersTab />}
 
-          {/* TAB 6: DEPLOYMENT KE VERCEL & SUPABASE */}
-          {activeTab === 'deployment' && <AdminDeploymentTab />}
+          {/* TAB 6: DEPLOYMENT KE VERCEL & SUPABASE (KHUSUS SUPER ADMIN) */}
+          {activeTab === 'deployment' && isSuperAdmin && <AdminDeploymentTab />}
         </div>
       </div>
 
