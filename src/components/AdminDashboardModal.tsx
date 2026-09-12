@@ -584,19 +584,6 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {canManageCompetitions && (
-                    <button
-                      onClick={() => {
-                        if (competitions.length > 0) {
-                          setUploadJuknisComp(competitions[0]);
-                        }
-                      }}
-                      className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#F2C96D] bg-[#D9B45B]/20 hover:bg-[#D9B45B]/30 border border-[#D9B45B]/40 transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
-                    >
-                      <FileUp className="w-4 h-4" />
-                      <span>Upload Juknis Lomba</span>
-                    </button>
-                  )}
                   <button
                     onClick={() => setShowAddCompModal(true)}
                     className="px-4 py-2 rounded-xl text-xs font-bold text-[#031525] bg-gradient-to-r from-[#D9B45B] to-[#00D9F5] hover:brightness-110 transition-all flex items-center gap-1.5 shadow active:scale-95"
