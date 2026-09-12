@@ -102,6 +102,10 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
 
+  // Filters for competition participant stats
+  const [statsCompSearch, setStatsCompSearch] = useState('');
+  const [statsCategoryFilter, setStatsCategoryFilter] = useState('ALL');
+
   // Wewenang Kelola Lomba: Koordinator Teknis Lomba & Super Admin
   const canManageCompetitions =
     isSuperAdmin ||
@@ -839,42 +843,214 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
           {/* TAB 3: STATS */}
           {activeTab === 'stats' && (
             <div className="space-y-6">
+              {/* Summary Cards: 100% Focused on Participants (Removed Cabang Perlombaan & Dokumen Resmi) */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="p-6 rounded-2xl bg-gradient-to-br from-[#006B4F]/30 to-[#031525] border border-white/10">
-                  <div className="text-xs text-[#DDE7E8]/70 font-semibold uppercase">Total Pendaftar</div>
-                  <div className="font-mono text-3xl font-black text-white mt-1">
+                <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-br from-[#006B4F]/35 to-[#031525] border border-emerald-500/20 shadow-lg">
+                  <div className="text-xs text-[#DDE7E8]/70 font-semibold uppercase tracking-wider">
+                    Total Seluruh Pendaftar
+                  </div>
+                  <div className="font-mono text-3xl sm:text-4xl font-black text-white mt-1.5">
                     {participants.length}
                   </div>
-                  <div className="text-xs text-emerald-400 mt-2">
-                    {participants.filter((p) => p.status === 'Terverifikasi').length} Terverifikasi
+                  <div className="text-xs text-[#00D9F5] mt-2 flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Total pendaftar yang masuk ke sistem</span>
                   </div>
                 </div>
 
-                <div className="p-6 rounded-2xl bg-gradient-to-br from-[#D9B45B]/20 to-[#031525] border border-white/10">
-                  <div className="text-xs text-[#DDE7E8]/70 font-semibold uppercase">Cabang Perlombaan</div>
-                  <div className="font-mono text-3xl font-black text-[#F2C96D] mt-1">
-                    {competitions.length}
+                <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-br from-emerald-950/40 to-[#031525] border border-emerald-500/30 shadow-lg">
+                  <div className="text-xs text-[#DDE7E8]/70 font-semibold uppercase tracking-wider">
+                    Pendaftar Terverifikasi
                   </div>
-                  <div className="text-xs text-[#DDE7E8]/60 mt-2">
-                    7 Klaster Generasi Santri
+                  <div className="font-mono text-3xl sm:text-4xl font-black text-emerald-400 mt-1.5">
+                    {participants.filter((p) => p.status === 'Terverifikasi').length}
+                  </div>
+                  <div className="text-xs text-emerald-300 mt-2 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Berkas & syarat telah tervalidasi</span>
                   </div>
                 </div>
 
-                <div className="p-6 rounded-2xl bg-gradient-to-br from-[#00D9F5]/20 to-[#031525] border border-white/10">
-                  <div className="text-xs text-[#DDE7E8]/70 font-semibold uppercase">Dokumen Resmi</div>
-                  <div className="font-mono text-3xl font-black text-[#00D9F5] mt-1">
-                    {documents.length}
+                <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-br from-[#D9B45B]/20 to-[#031525] border border-[#D9B45B]/30 shadow-lg">
+                  <div className="text-xs text-[#DDE7E8]/70 font-semibold uppercase tracking-wider">
+                    Menunggu Verifikasi
                   </div>
-                  <div className="text-xs text-[#DDE7E8]/60 mt-2">
-                    Proposal, Juknis & Rundown
+                  <div className="font-mono text-3xl sm:text-4xl font-black text-[#F2C96D] mt-1.5">
+                    {participants.filter((p) => p.status === 'Menunggu Verifikasi' || p.status === 'Menunggu').length}
+                  </div>
+                  <div className="text-xs text-[#F2C96D]/80 mt-2 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-[#F2C96D]" />
+                    <span>Dalam antrean verifikasi panitia</span>
                   </div>
                 </div>
               </div>
 
+              {/* REKAP JUMLAH PESERTA MASING-MASING CABANG PERLOMBAAN */}
+              <div className="p-6 rounded-3xl bg-white/5 border border-white/10 space-y-4 shadow-xl">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
+                  <div>
+                    <h3 className="font-heading text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                      <Trophy className="w-5 h-5 text-[#F2C96D]" />
+                      <span>Rekap Jumlah Peserta per Cabang Perlombaan</span>
+                    </h3>
+                    <p className="text-xs text-[#DDE7E8]/70 mt-0.5">
+                      Rincian kuantitas peserta pendaftar dan status verifikasi di setiap cabang lomba
+                    </p>
+                  </div>
+
+                  {/* Filter & Cari Lomba */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-white/50" />
+                      <input
+                        type="text"
+                        placeholder="Cari cabang lomba..."
+                        value={statsCompSearch}
+                        onChange={(e) => setStatsCompSearch(e.target.value)}
+                        className="pl-8 pr-3 py-1.5 rounded-xl bg-[#020e19] border border-white/20 text-xs text-white placeholder:text-white/40 focus:outline-none focus:border-[#00D9F5]"
+                      />
+                    </div>
+                    <select
+                      value={statsCategoryFilter}
+                      onChange={(e) => setStatsCategoryFilter(e.target.value)}
+                      className="px-3 py-1.5 rounded-xl bg-[#020e19] border border-white/20 text-xs text-[#00D9F5] font-semibold focus:outline-none focus:border-[#00D9F5]"
+                    >
+                      <option value="ALL">Semua Kategori</option>
+                      <option value="PAUD/TK">PAUD/TK</option>
+                      <option value="SD/MI">SD/MI</option>
+                      <option value="SMP/MTs">SMP/MTs</option>
+                      <option value="SMA/MA/SMK">SMA/MA/SMK</option>
+                      <option value="IPNU/IPPNU">IPNU/IPPNU</option>
+                      <option value="FATAYAT">FATAYAT</option>
+                      <option value="MUSLIMAT">MUSLIMAT</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Grid Kartu Rekap Lomba */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  {competitions
+                    .filter((comp) => {
+                      const matchesSearch =
+                        comp.title.toLowerCase().includes(statsCompSearch.toLowerCase()) ||
+                        comp.code.toLowerCase().includes(statsCompSearch.toLowerCase());
+                      const matchesCategory =
+                        statsCategoryFilter === 'ALL' || comp.category === statsCategoryFilter;
+                      return matchesSearch && matchesCategory;
+                    })
+                    .map((comp) => {
+                      const compParticipants = participants.filter(
+                        (p) =>
+                          p.competitionId === comp.id ||
+                          p.competitionId === comp.code ||
+                          p.competitionTitle?.toLowerCase().trim() === comp.title?.toLowerCase().trim()
+                      );
+                      const totalComp = compParticipants.length;
+                      const verifiedComp = compParticipants.filter((p) => p.status === 'Terverifikasi').length;
+                      const pendingComp = compParticipants.filter(
+                        (p) => p.status === 'Menunggu Verifikasi' || p.status === 'Menunggu'
+                      ).length;
+                      const percent =
+                        participants.length > 0 ? Math.round((totalComp / participants.length) * 100) : 0;
+
+                      return (
+                        <div
+                          key={comp.id}
+                          className="p-4 rounded-2xl bg-[#020e19]/90 border border-white/10 hover:border-[#00D9F5]/40 transition-all flex flex-col justify-between group shadow-sm hover:shadow-md"
+                        >
+                          <div>
+                            {/* Badges */}
+                            <div className="flex items-center justify-between gap-2 mb-2">
+                              <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-[#D9B45B]/20 text-[#F2C96D] border border-[#D9B45B]/30">
+                                {comp.code}
+                              </span>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#00D9F5]/20 text-[#00D9F5]">
+                                {comp.category}
+                              </span>
+                            </div>
+
+                            {/* Nama Lomba */}
+                            <h4 className="font-heading text-sm font-bold text-white group-hover:text-[#00D9F5] transition-colors line-clamp-2 mb-2">
+                              {comp.title}
+                            </h4>
+
+                            {/* Total Jumlah Peserta */}
+                            <div className="flex items-baseline justify-between mt-2 pt-2 border-t border-white/10">
+                              <span className="text-xs text-[#DDE7E8]/70">Jumlah Peserta:</span>
+                              <div className="text-right">
+                                <span className="font-mono text-2xl font-black text-[#F2C96D]">
+                                  {totalComp}
+                                </span>
+                                <span className="text-xs text-[#DDE7E8]/80 ml-1 font-semibold">
+                                  Peserta
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Rincian Status Peserta */}
+                            <div className="grid grid-cols-2 gap-2 mt-2 text-[11px]">
+                              <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-center">
+                                <span className="block text-[10px] text-emerald-400 font-medium">Terverifikasi</span>
+                                <span className="font-mono font-bold text-emerald-300">{verifiedComp}</span>
+                              </div>
+                              <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-center">
+                                <span className="block text-[10px] text-amber-400 font-medium">Menunggu</span>
+                                <span className="font-mono font-bold text-amber-300">{pendingComp}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Progress bar porsi lomba */}
+                          <div className="mt-3 pt-2.5 border-t border-white/5">
+                            <div className="flex justify-between text-[10px] text-[#DDE7E8]/60 mb-1">
+                              <span>Porsi pendaftar festival:</span>
+                              <span className="font-mono font-bold text-[#00D9F5]">{percent}%</span>
+                            </div>
+                            <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-[#D9B45B] to-[#00D9F5] rounded-full transition-all duration-500"
+                                style={{ width: `${percent}%` }}
+                              />
+                            </div>
+
+                            {/* Tombol Lihat Peserta Cabang Ini */}
+                            <button
+                              onClick={() => {
+                                setCategoryFilter(comp.category);
+                                setSearchQuery(comp.title);
+                                setActiveTab('participants');
+                              }}
+                              className="mt-3 w-full py-1.5 rounded-xl bg-white/5 hover:bg-[#00D9F5]/20 border border-white/10 hover:border-[#00D9F5]/40 text-[11px] font-semibold text-white/80 hover:text-[#00D9F5] transition-all flex items-center justify-center gap-1.5"
+                            >
+                              <Users className="w-3 h-3" />
+                              <span>Lihat Daftar Peserta Lomba Ini</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+
+                {/* Info jika pencarian kosong */}
+                {competitions.filter((comp) => {
+                  const matchesSearch =
+                    comp.title.toLowerCase().includes(statsCompSearch.toLowerCase()) ||
+                    comp.code.toLowerCase().includes(statsCompSearch.toLowerCase());
+                  const matchesCategory =
+                    statsCategoryFilter === 'ALL' || comp.category === statsCategoryFilter;
+                  return matchesSearch && matchesCategory;
+                }).length === 0 && (
+                  <div className="py-8 text-center text-xs text-white/60 bg-[#020e19] rounded-2xl border border-white/10">
+                    Tidak ditemukan cabang lomba dengan kata kunci "{statsCompSearch}".
+                  </div>
+                )}
+              </div>
+
               {/* Category Breakdown list */}
-              <div className="p-6 rounded-2xl bg-white/5 border border-white/10">
-                <h4 className="text-sm font-bold text-white mb-4">
-                  Distribusi Peserta Berdasarkan Kategori Generasi:
+              <div className="p-6 rounded-3xl bg-white/5 border border-white/10 shadow-xl">
+                <h4 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4 text-[#00D9F5]" />
+                  <span>Distribusi Peserta Berdasarkan Kategori Generasi:</span>
                 </h4>
                 <div className="space-y-3 text-xs">
                   {['PAUD/TK', 'SD/MI', 'SMP/MTs', 'SMA/MA/SMK', 'IPNU/IPPNU', 'FATAYAT', 'MUSLIMAT'].map((c) => {
