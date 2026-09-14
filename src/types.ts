@@ -126,6 +126,7 @@ export interface ParticipantRegistration {
   competitionId: string;
   competitionTitle: string;
   documentName?: string;
+  documentUrl?: string;
   paymentProofName?: string;
   paymentProofUrl?: string;
   registeredAt: string;

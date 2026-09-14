@@ -5,6 +5,8 @@ import { ParticipantRegistration, Competition, DownloadDoc, CategoryGeneration }
 import { AdminLoginView } from './AdminLoginView';
 import { AdminUsersTab } from './AdminUsersTab';
 import { AdminDeploymentTab } from './AdminDeploymentTab';
+import { AdminSupabaseTab } from './AdminSupabaseTab';
+import { generateParticipantReportPDF, printElementSafely } from '../lib/pdfGenerator';
 import { ROLE_DEFINITIONS } from '../data/rolesPermissions';
 import { 
   X, 
@@ -26,7 +28,7 @@ import {
   Check,
   FileUp,
   UploadCloud,
-  ExternalLink,
+  ExternalLink, 
   Trash2, 
   BarChart3,
   Lock,
@@ -36,7 +38,8 @@ import {
   UserCheck,
   UserPlus,
   Globe,
-  Receipt
+  Receipt,
+  Database
 } from 'lucide-react';
 
 interface AdminDashboardModalProps {
@@ -48,6 +51,8 @@ interface AdminDashboardModalProps {
   onAddCompetition: (comp: Competition) => void;
   onUpdateCompetition?: (comp: Competition) => void;
   onDeleteCompetition: (id: string) => void;
+  onRefreshCompetitions?: (comps: Competition[]) => void;
+  onRefreshParticipants?: (parts: ParticipantRegistration[]) => void;
   documents: DownloadDoc[];
 }
 
@@ -60,6 +65,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   onAddCompetition,
   onUpdateCompetition,
   onDeleteCompetition,
+  onRefreshCompetitions,
+  onRefreshParticipants,
   documents,
 }) => {
   // Authentication state - check stored session
@@ -93,7 +100,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     adminRole.toLowerCase().includes('super admin') ||
     adminUser.toLowerCase() === 'admin';
 
-  const [activeTab, setActiveTab] = useState<'participants' | 'competitions' | 'documents' | 'stats' | 'users' | 'deployment'>('participants');
+  const [activeTab, setActiveTab] = useState<'participants' | 'competitions' | 'documents' | 'stats' | 'users' | 'deployment' | 'supabase'>('participants');
+  const [pdfReportBlobUrl, setPdfReportBlobUrl] = useState<string | null>(null);
   
   // Jika login selain super admin, pastikan tidak dapat mengakses tab users atau deployment
   useEffect(() => {
@@ -326,149 +334,24 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     setTimeout(() => setFeedbackToast(''), 4000);
   };
 
-  // Generate & Download Authentic PDF File (100% Reliable in all browsers & iframes)
+  // Generate & Download Authentic PDF File using pdfGenerator.ts (100% Reliable in all browsers & iframes)
   const handleDownloadPDF = () => {
     try {
-      const doc = new jsPDF({
-        orientation: 'landscape',
-        unit: 'mm',
-        format: 'a4',
-      });
-
-      // Kop Surat Resmi
-      doc.setFont('times', 'bold');
-      doc.setFontSize(13);
-      doc.setTextColor(20, 20, 20);
-      doc.text('PANITIA FESTIVAL HARI SANTRI NASIONAL (HSN) 2026', 148.5, 13, { align: 'center' });
-
-      doc.setFontSize(10.5);
-      doc.setTextColor(0, 107, 79);
-      doc.text('MAJELIS WAKIL CABANG NAHDLATUL ULAMA (MWC NU) KECAMATAN PONCOKUSUMO', 148.5, 18.5, { align: 'center' });
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(70, 70, 70);
-      doc.text('Sekretariat: Kompleks Kantor MWC NU Poncokusumo, Kab. Malang, Jawa Timur 65157 • Narahubung Panitia: 0812-XXXX-XXXX', 148.5, 23, { align: 'center' });
-
-      // Garis Ganda Kop Surat
-      doc.setDrawColor(20, 20, 20);
-      doc.setLineWidth(0.7);
-      doc.line(14, 25.5, 283, 25.5);
-      doc.setLineWidth(0.2);
-      doc.line(14, 26.5, 283, 26.5);
-
-      // Judul Dokumen
-      doc.setFont('times', 'bold');
-      doc.setFontSize(12);
-      doc.setTextColor(10, 10, 10);
-      doc.text('DAFTAR REKAPITULASI PESERTA TERDAFTAR', 148.5, 32.5, { align: 'center' });
-
-      // Info Filter & Waktu Cetak
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(60, 60, 60);
-      const catText = categoryFilter === 'ALL' ? 'Semua Kategori' : categoryFilter;
-      const statText = statusFilter === 'ALL' ? 'Semua Status' : statusFilter;
-      const dateStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-      doc.text(`Kategori: ${catText}   •   Status: ${statText}   •   Total: ${filteredParticipants.length} Peserta   •   Tanggal Cetak: ${dateStr}`, 148.5, 37, { align: 'center' });
-
-      // Tabel 8 Kolom
-      const tableHeaders = [
-        ['NO.', 'NO. REG', 'NAMA PESERTA', 'KATEGORI', 'CABANG LOMBA', 'LEMBAGA', 'KONTAK WA', 'STATUS']
-      ];
-
-      const tableRows = filteredParticipants.map((p, idx) => [
-        (idx + 1).toString(),
-        p.registrationNumber || '-',
-        p.fullName || '-',
-        p.category || '-',
-        p.competitionTitle || '-',
-        p.institution || '-',
-        p.whatsapp || '-',
-        p.status || '-'
-      ]);
-
-      autoTable(doc, {
-        head: tableHeaders,
-        body: tableRows,
-        startY: 40,
-        theme: 'grid',
-        styles: {
-          fontSize: 7.5,
-          cellPadding: 2,
-          textColor: [30, 30, 30],
-          lineColor: [160, 160, 160],
-          lineWidth: 0.1,
-          valign: 'middle',
-        },
-        headStyles: {
-          fillColor: [3, 21, 37],
-          textColor: [255, 255, 255],
-          fontStyle: 'bold',
-          halign: 'center',
-          fontSize: 8,
-        },
-        columnStyles: {
-          0: { halign: 'center', cellWidth: 10 },
-          1: { halign: 'center', fontStyle: 'bold', cellWidth: 30 },
-          2: { fontStyle: 'bold', cellWidth: 42 },
-          3: { halign: 'center', cellWidth: 24 },
-          4: { cellWidth: 46 },
-          5: { cellWidth: 50 },
-          6: { halign: 'center', cellWidth: 32 },
-          7: { halign: 'center', fontStyle: 'bold', cellWidth: 25 },
-        },
-        didParseCell: (data) => {
-          if (data.section === 'body' && data.column.index === 7) {
-            const val = String(data.cell.raw);
-            if (val === 'Terverifikasi') {
-              data.cell.styles.textColor = [0, 128, 80];
-            } else if (val === 'Menunggu' || val === 'Menunggu Verifikasi') {
-              data.cell.styles.textColor = [190, 110, 0];
-            } else {
-              data.cell.styles.textColor = [190, 20, 20];
-            }
-          }
-        },
-        margin: { left: 14, right: 14, bottom: 32 },
-      });
-
-      // Tanda Tangan Pengesahan di halaman akhir
-      const finalY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY : 120;
-      const pageHeight = doc.internal.pageSize.getHeight();
-      let signY = finalY + 8;
-      if (signY + 26 > pageHeight) {
-        doc.addPage();
-        signY = 22;
+      const result = generateParticipantReportPDF(
+        filteredParticipants,
+        categoryFilter,
+        statusFilter
+      );
+      if (result.success) {
+        if (result.url) setPdfReportBlobUrl(result.url);
+        setFeedbackToast(`Dokumen PDF "${result.filename}" berhasil dibuat & diunduh!`);
+        setTimeout(() => setFeedbackToast(''), 4000);
+        return true;
+      } else {
+        setFeedbackToast('Gagal memproses dokumen PDF. Silakan coba lagi.');
+        setTimeout(() => setFeedbackToast(''), 4000);
+        return false;
       }
-
-      doc.setFontSize(8);
-      doc.setTextColor(30, 30, 30);
-
-      // Kiri: Ketua Panitia
-      doc.text('Mengetahui,', 40, signY);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Ketua Panitia HSN 2026', 40, signY + 4);
-      doc.text('Ust. H. Ahmad Mustofa, S.Pd.I', 40, signY + 16);
-      doc.setFont('helvetica', 'normal');
-      doc.text('MWC NU Poncokusumo', 40, signY + 20);
-
-      // Kanan: Sekretariat Pelaksana
-      doc.text(`Poncokusumo, ${dateStr}`, 240, signY, { align: 'right' });
-      doc.setFont('helvetica', 'bold');
-      doc.text('Sekretariat Pelaksana', 240, signY + 4, { align: 'right' });
-      doc.text('M. Wildan Maulana, S.Kom', 240, signY + 16, { align: 'right' });
-      doc.setFont('helvetica', 'normal');
-      doc.text('Koordinator Administrasi & Peserta', 240, signY + 20, { align: 'right' });
-
-      // Trigger download berkas PDF
-      const sanitizedCat = categoryFilter.replace(/[^a-zA-Z0-9]/g, '_');
-      const filename = `Rekap_Peserta_HSN2026_${categoryFilter === 'ALL' ? 'Semua' : sanitizedCat}.pdf`;
-      doc.save(filename);
-
-      setFeedbackToast(`Dokumen PDF "${filename}" berhasil diunduh!`);
-      setTimeout(() => setFeedbackToast(''), 4000);
-      return true;
     } catch (err) {
       console.error('Error generating PDF:', err);
       setFeedbackToast('Gagal memproses dokumen PDF. Silakan coba lagi.');
@@ -479,68 +362,11 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
   // Handle Browser Print Direct
   const handlePrintDocument = () => {
-    // Jalankan download PDF terlebih dahulu agar user selalu menerima berkas
+    // 1. Jalankan download PDF agar berkas tersimpan
     handleDownloadPDF();
 
-    // Coba trigger window.print() atau iframe printing
-    try {
-      const printTarget = document.getElementById('printable-participant-report');
-      if (!printTarget) {
-        window.print();
-        return;
-      }
-
-      let printFrame = document.getElementById('hsn-print-frame') as HTMLIFrameElement | null;
-      if (!printFrame) {
-        printFrame = document.createElement('iframe');
-        printFrame.id = 'hsn-print-frame';
-        printFrame.style.position = 'fixed';
-        printFrame.style.right = '0';
-        printFrame.style.bottom = '0';
-        printFrame.style.width = '0';
-        printFrame.style.height = '0';
-        printFrame.style.border = '0';
-        document.body.appendChild(printFrame);
-      }
-
-      const frameDoc = printFrame.contentWindow?.document || printFrame.contentDocument;
-      if (frameDoc) {
-        frameDoc.open();
-        frameDoc.write(`
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <title>Rekapitulasi Peserta Terdaftar HSN 2026</title>
-            <style>
-              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 20px; color: #111; }
-              table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px; }
-              th, td { border: 1px solid #333; padding: 6px 8px; }
-              th { background-color: #f2f2f2; text-align: left; }
-              .text-center { text-align: center; }
-              @page { size: A4 landscape; margin: 10mm; }
-            </style>
-          </head>
-          <body>
-            ${printTarget.innerHTML}
-          </body>
-          </html>
-        `);
-        frameDoc.close();
-
-        setTimeout(() => {
-          try {
-            printFrame?.contentWindow?.focus();
-            printFrame?.contentWindow?.print();
-          } catch (e) {
-            window.print();
-          }
-        }, 300);
-      } else {
-        window.print();
-      }
-    } catch (e) {
-      window.print();
-    }
+    // 2. Cetak dokumen secara terisolasi tanpa terpengaruh gaya tema gelap
+    printElementSafely('printable-participant-report');
   };
 
   return (
@@ -676,6 +502,21 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             >
               <Globe className="w-3.5 h-3.5 text-[#00D9F5]" />
               <span>Deploy ke Vercel</span>
+            </button>
+          )}
+
+          {/* Tab Database Supabase CMS */}
+          {isSuperAdmin && (
+            <button
+              onClick={() => setActiveTab('supabase')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
+                activeTab === 'supabase'
+                  ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-emerald-300 border border-emerald-400/60 shadow'
+                  : 'text-emerald-400/80 hover:bg-white/5'
+              }`}
+            >
+              <Database className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Database Supabase</span>
             </button>
           )}
         </div>
@@ -855,6 +696,17 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
+                  {isSuperAdmin && (
+                    <button
+                      onClick={() => setActiveTab('supabase')}
+                      className="px-3 py-2 rounded-xl text-xs font-bold text-emerald-300 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+                      title="Buka Panel Database Supabase CMS"
+                    >
+                      <Database className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Database Supabase</span>
+                      <span className="sm:hidden">Supabase</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => setShowAddCompModal(true)}
                     className="px-4 py-2 rounded-xl text-xs font-bold text-[#031525] bg-gradient-to-r from-[#D9B45B] to-[#00D9F5] hover:brightness-110 transition-all flex items-center gap-1.5 shadow active:scale-95"
@@ -1356,6 +1208,15 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
           {/* TAB 6: DEPLOYMENT KE VERCEL & SUPABASE (KHUSUS SUPER ADMIN) */}
           {activeTab === 'deployment' && isSuperAdmin && <AdminDeploymentTab />}
+
+          {/* TAB 7: DATABASE SUPABASE CMS (KHUSUS SUPER ADMIN) */}
+          {activeTab === 'supabase' && isSuperAdmin && (
+            <AdminSupabaseTab
+              competitions={competitions}
+              onRefreshCompetitions={onRefreshCompetitions}
+              onRefreshParticipants={onRefreshParticipants}
+            />
+          )}
         </div>
       </div>
 
@@ -1747,6 +1608,20 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 <FileDown className="w-4 h-4 text-emerald-400" />
                 <span className="hidden sm:inline">Unduh</span><span>.PDF</span>
               </button>
+
+              {/* Tombol Buka Tab Baru jika blob URL tersedia */}
+              {pdfReportBlobUrl && (
+                <a
+                  href={pdfReportBlobUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-2 rounded-xl bg-cyan-600/30 hover:bg-cyan-600/50 border border-cyan-400/40 text-[#00D9F5] text-xs font-bold flex items-center gap-1.5 transition-all"
+                  title="Buka berkas PDF di tab peramban baru"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Buka</span><span> PDF</span>
+                </a>
+              )}
 
               {/* Tombol Tutup Modal */}
               <button

@@ -135,7 +135,9 @@
 
   /* Show only the printable container and all its contents */
   #printable-participant-report,
-  #printable-participant-report * {
+  #printable-participant-report *,
+  #printable-registration-ticket,
+  #printable-registration-ticket * {
     visibility: visible !important;
   }
 
@@ -146,7 +148,21 @@
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
-    padding: 15mm !important;
+    padding: 12mm !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  #printable-registration-ticket {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 12mm !important;
     background: #ffffff !important;
     color: #000000 !important;
     box-shadow: none !important;
@@ -159,7 +175,8 @@
   }
 
   @page {
-    size: A4 landscape;
-    margin: 10mm;
+    size: auto;
+    margin: 8mm;
   }
 }
+

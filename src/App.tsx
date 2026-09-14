@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { HeroSection } from './components/HeroSection';
 import { CountdownSection } from './components/CountdownSection';
@@ -24,6 +24,15 @@ import { AdminDashboardModal } from './components/AdminDashboardModal';
 
 import { COMPETITIONS, SAMPLE_PARTICIPANTS, DOWNLOAD_DOCUMENTS, INITIAL_STATS } from './data/initialData';
 import { Competition, CategoryGeneration, ParticipantRegistration } from './types';
+import { 
+  fetchCompetitionsFromSupabase, 
+  insertCompetitionToSupabase, 
+  updateCompetitionInSupabase, 
+  deleteCompetitionFromSupabase,
+  fetchParticipantsFromSupabase,
+  updateParticipantStatusInSupabase,
+  isSupabaseConnected
+} from './lib/supabaseClient';
 import { Sparkles, MessageCircle, Shield } from 'lucide-react';
 
 export default function App() {
@@ -38,6 +47,47 @@ export default function App() {
   // App data state (allowing real-time interaction in CMS)
   const [competitions, setCompetitions] = useState<Competition[]>(COMPETITIONS);
   const [participants, setParticipants] = useState<ParticipantRegistration[]>(SAMPLE_PARTICIPANTS);
+  const [isSupabaseLive, setIsSupabaseLive] = useState(false);
+  const [supabaseLoading, setSupabaseLoading] = useState(false);
+
+  // Fetch live competitions & participants from Supabase on mount
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadDataFromSupabase() {
+      const connected = isSupabaseConnected();
+      setIsSupabaseLive(connected);
+
+      try {
+        const { data: remoteComps, error: compErr } = await fetchCompetitionsFromSupabase();
+        if (isMounted && remoteComps && remoteComps.length > 0) {
+          setCompetitions(remoteComps);
+          setIsSupabaseLive(true);
+        }
+
+        const { data: remoteParticipants, error: partErr } = await fetchParticipantsFromSupabase();
+        if (isMounted && remoteParticipants && remoteParticipants.length > 0) {
+          setParticipants(remoteParticipants);
+        }
+      } catch (err) {
+        console.warn('Supabase fetch note:', err);
+      } finally {
+        if (isMounted) setSupabaseLoading(false);
+      }
+    }
+
+    loadDataFromSupabase();
+
+    const handleCredentialsUpdated = () => {
+      loadDataFromSupabase();
+    };
+    window.addEventListener('supabase_credentials_updated', handleCredentialsUpdated);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener('supabase_credentials_updated', handleCredentialsUpdated);
+    };
+  }, []);
 
   // Handlers
   const handleOpenRegister = () => {
@@ -68,20 +118,26 @@ export default function App() {
     setParticipants((prev) =>
       prev.map((p) => (p.id === id ? { ...p, status } : p))
     );
+    updateParticipantStatusInSupabase(id, status).catch(console.warn);
   };
 
   const handleAddCompetition = (newComp: Competition) => {
     setCompetitions((prev) => [newComp, ...prev]);
+    insertCompetitionToSupabase(newComp).then((res) => {
+      if (res.success) setIsSupabaseLive(true);
+    }).catch(console.warn);
   };
 
   const handleDeleteCompetition = (id: string) => {
     setCompetitions((prev) => prev.filter((c) => c.id !== id));
+    deleteCompetitionFromSupabase(id).catch(console.warn);
   };
 
   const handleUpdateCompetition = (updatedComp: Competition) => {
     setCompetitions((prev) =>
       prev.map((c) => (c.id === updatedComp.id ? updatedComp : c))
     );
+    updateCompetitionInSupabase(updatedComp).catch(console.warn);
   };
 
   return (
@@ -136,6 +192,7 @@ export default function App() {
         <CompetitionsSection
           competitions={competitions}
           onRegisterCompetition={handleRegisterSpecificCompetition}
+          isSupabaseLive={isSupabaseLive}
         />
 
         {/* 8. Event Timeline */}
@@ -213,6 +270,8 @@ export default function App() {
         onAddCompetition={handleAddCompetition}
         onUpdateCompetition={handleUpdateCompetition}
         onDeleteCompetition={handleDeleteCompetition}
+        onRefreshCompetitions={setCompetitions}
+        onRefreshParticipants={setParticipants}
         documents={DOWNLOAD_DOCUMENTS}
       />
     </div>

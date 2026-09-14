@@ -7,6 +7,7 @@ import {
   Upload, 
   FileCheck, 
   Download, 
+  FileDown,
   QrCode, 
   Printer,
   ShieldCheck,
@@ -18,9 +19,12 @@ import {
   Calendar,
   Receipt,
   Trash2,
-  Image as ImageIcon
+  Image as ImageIcon,
+  ExternalLink
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { generateRegistrationTicketPDF, printElementSafely } from '../lib/pdfGenerator';
+import { insertParticipantToSupabase, uploadFileToSupabaseStorage } from '../lib/supabaseClient';
 
 interface RegistrationModalProps {
   isOpen: boolean;
@@ -55,6 +59,9 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createdTicket, setCreatedTicket] = useState<ParticipantRegistration | null>(null);
+  const [pdfDownloadUrl, setPdfDownloadUrl] = useState<string | null>(null);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [pdfNotice, setPdfNotice] = useState<string | null>(null);
 
   const handlePaymentProofChange = (file: File | null) => {
     if (!file) {
@@ -125,13 +132,13 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleFormSubmit = (e: React.FormEvent) => {
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
 
     setIsSubmitting(true);
 
-    setTimeout(() => {
+    try {
       // Generate standard registration code e.g. HSN26-SMP-0042
       const catCode = category.split('/')[0].replace(/[^A-Za-z]/g, '').toUpperCase();
       const randomNum = Math.floor(1000 + Math.random() * 9000);
@@ -141,6 +148,33 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
 
       const now = new Date();
       const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} WIB`;
+
+      let finalPaymentProofUrl = paymentProofPreview || undefined;
+      let finalDocUrl: string | undefined = undefined;
+
+      // 1. Upload Bukti Pembayaran ke Supabase Storage jika ada file
+      if (paymentProofFile) {
+        try {
+          const uploadRes = await uploadFileToSupabaseStorage('registrations', 'payment_proofs', paymentProofFile);
+          if (uploadRes.success && uploadRes.url) {
+            finalPaymentProofUrl = uploadRes.url;
+          }
+        } catch (uploadErr) {
+          console.info('Supabase payment upload fallback to data preview:', uploadErr);
+        }
+      }
+
+      // 2. Upload Dokumen Mandat ke Supabase Storage jika ada file
+      if (documentFile) {
+        try {
+          const docUploadRes = await uploadFileToSupabaseStorage('registrations', 'mandates', documentFile);
+          if (docUploadRes.success && docUploadRes.url) {
+            finalDocUrl = docUploadRes.url;
+          }
+        } catch (docErr) {
+          console.info('Supabase doc upload fallback:', docErr);
+        }
+      }
 
       const newRecord: ParticipantRegistration = {
         id: `reg-${Date.now()}`,
@@ -155,8 +189,9 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
         competitionId: selectedCompId,
         competitionTitle: matchedComp ? matchedComp.title : 'Perlombaan HSN 2026',
         documentName: documentFile ? documentFile.name : 'surat_keterangan_mandat.pdf',
+        documentUrl: finalDocUrl,
         paymentProofName: paymentProofFile ? paymentProofFile.name : undefined,
-        paymentProofUrl: paymentProofPreview || undefined,
+        paymentProofUrl: finalPaymentProofUrl,
         registeredAt: dateStr,
         status: 'Terverifikasi',
       };
@@ -164,6 +199,23 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
       onSuccessRegister(newRecord);
       setCreatedTicket(newRecord);
       setIsSubmitting(false);
+
+      // Persist to Supabase if connected
+      insertParticipantToSupabase(newRecord).then((res) => {
+        if (!res.success && res.error) {
+          console.info('Supabase sync note:', res.error);
+        }
+      });
+
+      // Automatically generate PDF ready for download
+      try {
+        const gen = generateRegistrationTicketPDF(newRecord);
+        if (gen.url) {
+          setPdfDownloadUrl(gen.url);
+        }
+      } catch (e) {
+        console.warn('Auto PDF generation note:', e);
+      }
 
       // Trigger Confetti Celebration
       try {
@@ -176,11 +228,35 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
       } catch (err) {
         console.error('Confetti error:', err);
       }
-    }, 900);
+    } catch (submitErr) {
+      console.error('Submit error:', submitErr);
+      setIsSubmitting(false);
+    }
   };
 
   const handlePrintTicket = () => {
-    window.print();
+    printElementSafely('printable-registration-ticket');
+  };
+
+  const handleSavePDFTicket = () => {
+    if (!createdTicket) return;
+    setIsGeneratingPDF(true);
+    try {
+      const result = generateRegistrationTicketPDF(createdTicket);
+      if (result.success) {
+        setPdfNotice(`Berkas ${result.filename} berhasil diunduh.`);
+        if (result.url) setPdfDownloadUrl(result.url);
+      } else {
+        // Fallback to printer dialog
+        printElementSafely('printable-registration-ticket');
+      }
+    } catch (err) {
+      console.error('PDF generation error:', err);
+      printElementSafely('printable-registration-ticket');
+    } finally {
+      setIsGeneratingPDF(false);
+      setTimeout(() => setPdfNotice(null), 5000);
+    }
   };
 
   const handleDownloadTicketText = () => {
@@ -262,7 +338,30 @@ MWC NU Kecamatan Poncokusumo, Kabupaten Malang, Jawa Timur.
           {createdTicket ? (
             /* SUCCESS TICKET VIEW */
             <div className="space-y-6">
-              <div className="p-6 rounded-3xl bg-gradient-to-br from-[#006B4F]/25 via-[#031525] to-[#008F72]/20 border-2 border-[#D9B45B] shadow-2xl relative overflow-hidden">
+              {pdfNotice && (
+                <div className="p-3.5 rounded-2xl bg-emerald-500/20 border border-emerald-500/50 flex items-center justify-between gap-3 text-emerald-300 text-xs font-semibold animate-fade-in">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>{pdfNotice}</span>
+                  </div>
+                  {pdfDownloadUrl && (
+                    <a
+                      href={pdfDownloadUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1 rounded-lg bg-emerald-500/30 hover:bg-emerald-500/40 text-white text-[11px] font-bold flex items-center gap-1 shrink-0 transition-colors"
+                    >
+                      <span>Buka PDF</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
+              )}
+
+              <div 
+                id="printable-registration-ticket" 
+                className="p-6 rounded-3xl bg-gradient-to-br from-[#006B4F]/25 via-[#031525] to-[#008F72]/20 border-2 border-[#D9B45B] shadow-2xl relative overflow-hidden"
+              >
                 {/* Tech Corner Markers */}
                 <div className="absolute top-2 left-2 w-3 h-3 border-t-2 border-l-2 border-[#00D9F5]" />
                 <div className="absolute top-2 right-2 w-3 h-3 border-t-2 border-r-2 border-[#00D9F5]" />
@@ -357,29 +456,64 @@ MWC NU Kecamatan Poncokusumo, Kabupaten Malang, Jawa Timur.
               </div>
 
               {/* Action Buttons for Ticket */}
-              <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
+              <div className="flex flex-wrap items-center justify-end gap-2.5 pt-2">
                 <button
                   type="button"
                   onClick={handleDownloadTicketText}
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-white/10 hover:bg-white/20 border border-white/20 transition-all flex items-center gap-2"
+                  className="px-3.5 py-2.5 rounded-xl text-xs font-semibold text-white/80 bg-white/5 hover:bg-white/10 border border-white/15 transition-all flex items-center gap-1.5"
+                  title="Simpan ringkasan format teks biasa"
                 >
-                  <Download className="w-4 h-4 text-[#00D9F5]" />
-                  <span>Simpan Kartu (.txt)</span>
+                  <Download className="w-3.5 h-3.5 text-[#DDE7E8]" />
+                  <span>Format .txt</span>
                 </button>
+
+                {pdfDownloadUrl && (
+                  <a
+                    href={pdfDownloadUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-2.5 rounded-xl text-xs font-semibold text-[#00D9F5] bg-[#00D9F5]/10 hover:bg-[#00D9F5]/20 border border-[#00D9F5]/30 transition-all flex items-center gap-1.5"
+                    title="Buka dokumen PDF resmi di jendela baru"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Buka PDF</span>
+                  </a>
+                )}
 
                 <button
                   type="button"
                   onClick={handlePrintTicket}
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-[#006B4F] hover:bg-[#008F72] transition-all flex items-center gap-2"
+                  className="px-3.5 py-2.5 rounded-xl text-xs font-bold text-white bg-white/15 hover:bg-white/25 border border-white/20 transition-all flex items-center gap-1.5"
+                  title="Cetak langsung menggunakan printer atau dialog cetak peramban"
                 >
-                  <Printer className="w-4 h-4" />
-                  <span>Cetak Kartu</span>
+                  <Printer className="w-4 h-4 text-[#F2C96D]" />
+                  <span>Cetak Langsung</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSavePDFTicket}
+                  disabled={isGeneratingPDF}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider text-[#031525] bg-gradient-to-r from-[#D9B45B] via-[#F2C96D] to-[#00D9F5] hover:brightness-110 active:scale-95 shadow-lg shadow-[#00D9F5]/25 transition-all flex items-center gap-2"
+                  title="Cetak & Unduh Dokumen PDF Bukti Registrasi Resmi"
+                >
+                  {isGeneratingPDF ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-[#031525] border-t-transparent rounded-full animate-spin" />
+                      <span>Membuat PDF...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FileDown className="w-4 h-4 text-[#031525]" />
+                      <span>Cetak / Simpan PDF</span>
+                    </>
+                  )}
                 </button>
 
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider text-[#031525] bg-gradient-to-r from-[#D9B45B] to-[#00D9F5] hover:brightness-110 transition-all"
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-[#DDE7E8] bg-white/10 hover:bg-white/20 transition-all"
                 >
                   Selesai
                 </button>
