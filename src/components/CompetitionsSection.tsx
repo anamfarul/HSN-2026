@@ -66,9 +66,9 @@ export const CompetitionsSection: React.FC<CompetitionsSectionProps> = ({
             <span>AJANG PRESTASI & KREATIVITAS</span>
           </div>
           <h2 className="font-heading text-3xl sm:text-4xl md:text-5xl font-black uppercase text-white tracking-tight">
-            FESTIVAL &
+            FESTIVAL
             <span className="block text-transparent bg-clip-text bg-gradient-to-r from-[#00D9F5] via-[#D9B45B] to-[#F2C96D]">
-              KOMPETISI SANTRI 2026
+              SANTRI NUSANTARA 2026
             </span>
           </h2>
           <p className="mt-4 text-sm sm:text-base text-[#DDE7E8]/85">
