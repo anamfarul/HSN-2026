@@ -20,11 +20,18 @@ import {
   Receipt,
   Trash2,
   Image as ImageIcon,
-  ExternalLink
+  ExternalLink,
+  Database,
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { generateRegistrationTicketPDF, printElementSafely } from '../lib/pdfGenerator';
-import { insertParticipantToSupabase, uploadFileToSupabaseStorage } from '../lib/supabaseClient';
+import { 
+  insertParticipantToSupabase, 
+  uploadFileToSupabaseStorage,
+  isSupabaseConnected 
+} from '../lib/supabaseClient';
 
 interface RegistrationModalProps {
   isOpen: boolean;
@@ -62,6 +69,13 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
   const [pdfDownloadUrl, setPdfDownloadUrl] = useState<string | null>(null);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [pdfNotice, setPdfNotice] = useState<string | null>(null);
+
+  // Supabase Database Sync Feedback State
+  const [supabaseSyncStatus, setSupabaseSyncStatus] = useState<{
+    status: 'idle' | 'pending' | 'synced' | 'local_only' | 'error';
+    message: string;
+  }>({ status: 'idle', message: '' });
+  const [isRetryingSync, setIsRetryingSync] = useState(false);
 
   const handlePaymentProofChange = (file: File | null) => {
     if (!file) {
@@ -200,12 +214,32 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
       setCreatedTicket(newRecord);
       setIsSubmitting(false);
 
-      // Persist to Supabase if connected
-      insertParticipantToSupabase(newRecord).then((res) => {
-        if (!res.success && res.error) {
-          console.info('Supabase sync note:', res.error);
-        }
-      });
+      // Persist to Supabase with transparent status tracking
+      if (!isSupabaseConnected()) {
+        setSupabaseSyncStatus({
+          status: 'local_only',
+          message: 'Kredensial Supabase (URL & Anon Key) belum dihubungkan di CMS Admin. Data tersimpan di penyimpanan lokal.',
+        });
+      } else {
+        setSupabaseSyncStatus({
+          status: 'pending',
+          message: 'Menghubungkan & menyimpan data pendaftaran ke Cloud Database Supabase...',
+        });
+
+        insertParticipantToSupabase(newRecord).then((res) => {
+          if (res.success) {
+            setSupabaseSyncStatus({
+              status: 'synced',
+              message: 'Data registrasi resmi tersimpan di Cloud Database Supabase (tabel participants).',
+            });
+          } else {
+            setSupabaseSyncStatus({
+              status: 'error',
+              message: res.error || 'Gagal menyimpan data ke Supabase.',
+            });
+          }
+        });
+      }
 
       // Automatically generate PDF ready for download
       try {
@@ -231,6 +265,37 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
     } catch (submitErr) {
       console.error('Submit error:', submitErr);
       setIsSubmitting(false);
+    }
+  };
+
+  const handleRetrySupabaseSync = async () => {
+    if (!createdTicket) return;
+    setIsRetryingSync(true);
+    setSupabaseSyncStatus({
+      status: 'pending',
+      message: 'Mencoba menyimpan ulang data ke Cloud Database Supabase...',
+    });
+
+    try {
+      const res = await insertParticipantToSupabase(createdTicket);
+      if (res.success) {
+        setSupabaseSyncStatus({
+          status: 'synced',
+          message: 'Sukses! Data registrasi resmi tersimpan di Cloud Database Supabase (tabel participants).',
+        });
+      } else {
+        setSupabaseSyncStatus({
+          status: 'error',
+          message: res.error || 'Gagal menyimpan ke Supabase.',
+        });
+      }
+    } catch (err: any) {
+      setSupabaseSyncStatus({
+        status: 'error',
+        message: err?.message || 'Terjadi kesalahan saat menghubungi Supabase.',
+      });
+    } finally {
+      setIsRetryingSync(false);
     }
   };
 
@@ -354,6 +419,52 @@ MWC NU Kecamatan Poncokusumo, Kabupaten Malang, Jawa Timur.
                       <span>Buka PDF</span>
                       <ExternalLink className="w-3 h-3" />
                     </a>
+                  )}
+                </div>
+              )}
+
+              {/* Supabase Database Persistence Status Banner */}
+              {supabaseSyncStatus.status !== 'idle' && (
+                <div className={`p-4 rounded-2xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                  supabaseSyncStatus.status === 'synced'
+                    ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-200 shadow-lg'
+                    : supabaseSyncStatus.status === 'pending'
+                    ? 'bg-sky-950/80 border-[#00D9F5]/50 text-sky-200 animate-pulse shadow-lg'
+                    : supabaseSyncStatus.status === 'local_only'
+                    ? 'bg-amber-950/80 border-amber-500/60 text-amber-200 shadow-lg'
+                    : 'bg-rose-950/80 border-rose-500/60 text-rose-200 shadow-lg'
+                }`}>
+                  <div className="flex items-start gap-2.5">
+                    <Database className={`w-4 h-4 shrink-0 mt-0.5 ${
+                      supabaseSyncStatus.status === 'synced' ? 'text-emerald-400' :
+                      supabaseSyncStatus.status === 'pending' ? 'text-[#00D9F5]' :
+                      supabaseSyncStatus.status === 'local_only' ? 'text-amber-400' : 'text-rose-400'
+                    }`} />
+                    <div>
+                      <div className="font-bold flex items-center gap-1.5">
+                        <span>
+                          {supabaseSyncStatus.status === 'synced' && 'Tersimpan di Cloud Database Supabase (Live)'}
+                          {supabaseSyncStatus.status === 'pending' && 'Menghubungkan ke Supabase...'}
+                          {supabaseSyncStatus.status === 'local_only' && 'Status Database: Penyimpanan Lokal'}
+                          {supabaseSyncStatus.status === 'error' && 'Peringatan: Gagal Menyimpan ke Database Supabase'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] opacity-90 mt-0.5">
+                        {supabaseSyncStatus.message}
+                      </p>
+                    </div>
+                  </div>
+
+                  {supabaseSyncStatus.status === 'error' && (
+                    <button
+                      type="button"
+                      onClick={handleRetrySupabaseSync}
+                      disabled={isRetryingSync}
+                      className="px-3.5 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 shrink-0 transition-colors shadow"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isRetryingSync ? 'animate-spin' : ''}`} />
+                      <span>{isRetryingSync ? 'Mencoba...' : 'Coba Kirim Ulang'}</span>
+                    </button>
                   )}
                 </div>
               )}

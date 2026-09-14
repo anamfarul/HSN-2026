@@ -119,37 +119,67 @@ export function mapCompetitionToSupabase(comp: Competition): Record<string, any>
 }
 
 // Test live connection to Supabase
-export async function testSupabaseConnection(): Promise<{ success: boolean; message: string; count?: number }> {
+export async function testSupabaseConnection(): Promise<{ 
+  success: boolean; 
+  message: string; 
+  count?: number;
+  tables?: { competitions: boolean; participants: boolean };
+}> {
   const client = getSupabaseClient();
   if (!client) {
     return {
       success: false,
-      message: 'Kredensial Supabase (URL atau Anon Key) belum diisi.',
+      message: 'Kredensial Supabase (URL atau Anon Key) belum diisi di CMS Admin.',
+      tables: { competitions: false, participants: false }
     };
   }
 
   try {
-    const { data, error, count } = await client
+    // 1. Tes tabel competitions
+    const { data: compData, error: compErr, count: compCount } = await client
       .from('competitions')
       .select('id, code, title', { count: 'exact', head: false })
       .limit(1);
 
-    if (error) {
+    // 2. Tes tabel participants
+    const { error: partErr, count: partCount } = await client
+      .from('participants')
+      .select('id, registration_number', { count: 'exact', head: false })
+      .limit(1);
+
+    const hasCompTable = !compErr;
+    const hasPartTable = !partErr;
+
+    if (!hasCompTable && !hasPartTable) {
       return {
         success: false,
-        message: `Koneksi gagal ke tabel 'competitions': ${error.message}`,
+        message: 'Koneksi ke Supabase terhubung, namun tabel "competitions" & "participants" belum ada. Harap salin & jalankan skrip SQL di Supabase SQL Editor.',
+        tables: { competitions: false, participants: false }
       };
     }
 
+    if (!hasPartTable) {
+      return {
+        success: false,
+        message: `Tabel "participants" (pendaftaran) belum ada atau izin RLS belum diatur (${partErr?.message}). Data pendaftaran belum bisa tersimpan ke Supabase.`,
+        tables: { competitions: hasCompTable, participants: false }
+      };
+    }
+
+    const totalComps = compCount ?? compData?.length ?? 0;
+    const totalParts = partCount ?? 0;
+
     return {
       success: true,
-      message: `Terhubung ke Supabase! Ditemukan ${count ?? data?.length ?? 0} data di tabel competitions.`,
-      count: count ?? data?.length ?? 0,
+      message: `Terhubung & Siap! Ditemukan ${totalComps} data lomba & ${totalParts} pendaftar di Supabase.`,
+      count: totalComps,
+      tables: { competitions: hasCompTable, participants: hasPartTable }
     };
   } catch (err: any) {
     return {
       success: false,
       message: `Gagal menghubungi Supabase: ${err.message || 'Kesalahan jaringan'}`,
+      tables: { competitions: false, participants: false }
     };
   }
 }
@@ -298,17 +328,23 @@ export function mapSupabaseToParticipant(row: any): any {
 
 // Map ParticipantRegistration to Supabase participants table row
 export function mapParticipantToSupabase(p: any): Record<string, any> {
+  // Pastikan format tanggal birth_date adalah YYYY-MM-DD atau null jika kosong
+  let cleanBirthDate: string | null = null;
+  if (p.birthDate && typeof p.birthDate === 'string' && p.birthDate.trim().length >= 4) {
+    cleanBirthDate = p.birthDate.trim();
+  }
+
   return {
     registration_number: p.registrationNumber,
-    full_name: p.fullName,
-    institution: p.institution,
+    full_name: (p.fullName || '').trim(),
+    institution: (p.institution || '').trim(),
     category: p.category,
-    birth_date: p.birthDate || null,
-    whatsapp: p.whatsapp,
-    email: p.email || null,
-    address: p.address,
+    birth_date: cleanBirthDate,
+    whatsapp: (p.whatsapp || '').trim(),
+    email: p.email ? p.email.trim() : null,
+    address: (p.address || '').trim(),
     competition_id: p.competitionId || null,
-    competition_title: p.competitionTitle,
+    competition_title: p.competitionTitle || 'Perlombaan HSN 2026',
     document_name: p.documentName || null,
     document_url: p.documentUrl || null,
     payment_proof_name: p.paymentProofName || null,
@@ -321,16 +357,41 @@ export function mapParticipantToSupabase(p: any): Record<string, any> {
 export async function insertParticipantToSupabase(participant: any): Promise<{ success: boolean; error: string | null }> {
   const client = getSupabaseClient();
   if (!client) {
-    return { success: false, error: 'Supabase client belum dikonfigurasi.' };
+    return { 
+      success: false, 
+      error: 'Kredensial Supabase (URL & Anon Key) belum diisi di CMS Admin. Data tersimpan di penyimpanan lokal.' 
+    };
   }
 
   try {
     const row = mapParticipantToSupabase(participant);
-    const { error } = await client.from('participants').insert([row]);
+    let { error } = await client.from('participants').insert([row]);
+
+    // Jika terjadi error foreign key pada competition_id karena tabel competitions belum terisi di Supabase
+    if (error && (
+      error.code === '23503' || 
+      error.message?.toLowerCase().includes('foreign key') || 
+      error.message?.toLowerCase().includes('violates foreign key constraint') ||
+      error.message?.toLowerCase().includes('competition_id')
+    )) {
+      console.warn('Foreign key competition_id fallback: mencoba simpan ulang dengan competition_id null...', error.message);
+      const fallbackRow = { ...row, competition_id: null };
+      const retryResult = await client.from('participants').insert([fallbackRow]);
+      if (!retryResult.error) {
+        return { success: true, error: null };
+      }
+      error = retryResult.error;
+    }
 
     if (error) {
       console.warn('Error inserting participant to Supabase:', error);
-      return { success: false, error: error.message };
+      let friendlyError = error.message;
+      if (error.code === '42P01' || error.message?.toLowerCase().includes('does not exist')) {
+        friendlyError = 'Tabel "participants" belum dibuat di Supabase. Jalankan skrip SQL di Supabase SQL Editor.';
+      } else if (error.code === '42501' || error.message?.toLowerCase().includes('violates row-level security policy')) {
+        friendlyError = 'Izin RLS Supabase menolak INSERT publik. Buka Supabase SQL Editor dan jalankan Policy RLS peserta.';
+      }
+      return { success: false, error: friendlyError };
     }
 
     return { success: true, error: null };
@@ -432,6 +493,39 @@ export async function uploadFileToSupabaseStorage(
     };
   } catch (err: any) {
     return { success: false, url: null, error: err.message || 'Gagal mengupload file ke Storage' };
+  }
+}
+
+// Insert contact message to Supabase contact_messages table
+export async function insertContactMessageToSupabase(message: {
+  name: string;
+  email?: string;
+  subject?: string;
+  message: string;
+}): Promise<{ success: boolean; error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, error: 'Supabase client belum dikonfigurasi.' };
+  }
+
+  try {
+    const { error } = await client.from('contact_messages').insert([
+      {
+        sender_name: message.name.trim(),
+        sender_email: message.email ? message.email.trim() : null,
+        subject: message.subject ? message.subject.trim() : 'Pesan dari Website HSN 2026',
+        message: message.message.trim(),
+      },
+    ]);
+
+    if (error) {
+      console.warn('Error inserting contact message:', error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, error: null };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Gagal menyimpan pesan kontak ke Supabase' };
   }
 }
 

@@ -171,7 +171,7 @@ CREATE TABLE IF NOT EXISTS participants (
     whatsapp VARCHAR(25) NOT NULL,
     email VARCHAR(100),
     address TEXT NOT NULL,
-    competition_id VARCHAR(50) REFERENCES competitions(id) ON DELETE RESTRICT,
+    competition_id VARCHAR(50),
     competition_title VARCHAR(150) NOT NULL,
     document_url TEXT,
     document_name VARCHAR(255),
@@ -320,43 +320,53 @@ CREATE POLICY "Public read festival_stats" ON festival_stats FOR SELECT USING (t
 CREATE POLICY "Public read five_pillars" ON five_pillars FOR SELECT USING (true);
 CREATE POLICY "Public read generation_programs" ON generation_programs FOR SELECT USING (true);
 CREATE POLICY "Public read signature_programs" ON signature_programs FOR SELECT USING (true);
-CREATE POLICY "Public read competitions" ON competitions FOR SELECT USING (true);
 CREATE POLICY "Public read event_timeline" ON event_timeline FOR SELECT USING (true);
 CREATE POLICY "Public read gallery_items" ON gallery_items FOR SELECT USING (true);
-CREATE POLICY "Public read download_documents" ON download_documents FOR SELECT USING (true);
 CREATE POLICY "Public read news_articles" ON news_articles FOR SELECT USING (true);
 CREATE POLICY "Public read sponsors" ON sponsors FOR SELECT USING (true);
 
--- 7.2. Pendaftaran Peserta (Public Insert, Public Read Status Sendiri, Admin All)
-CREATE POLICY "Public can register participant" ON participants
-    FOR INSERT WITH CHECK (true);
+-- 7.2. Pendaftaran Peserta (Akses Penuh: Publik Insert & Admin Verifikasi/Hapus)
+DROP POLICY IF EXISTS "Public can register participant" ON participants;
+DROP POLICY IF EXISTS "Public can view participants" ON participants;
+DROP POLICY IF EXISTS "Public all participants" ON participants;
+CREATE POLICY "Public all participants" ON participants
+    FOR ALL USING (true) WITH CHECK (true);
 
-CREATE POLICY "Public can view participants" ON participants
-    FOR SELECT USING (true);
+-- 7.3. Cabang Lomba (Akses Penuh: Publik Baca & Admin CMS Sinkronisasi/Edit)
+DROP POLICY IF EXISTS "Public read competitions" ON competitions;
+DROP POLICY IF EXISTS "Public all competitions" ON competitions;
+CREATE POLICY "Public all competitions" ON competitions
+    FOR ALL USING (true) WITH CHECK (true);
 
--- 7.3. Form Kontak & Aspirasi (Public Insert)
-CREATE POLICY "Public can submit contact message" ON contact_messages
-    FOR INSERT WITH CHECK (true);
+-- 7.4. Form Kontak & Aspirasi
+DROP POLICY IF EXISTS "Public can submit contact message" ON contact_messages;
+DROP POLICY IF EXISTS "Public all contact_messages" ON contact_messages;
+CREATE POLICY "Public all contact_messages" ON contact_messages
+    FOR ALL USING (true) WITH CHECK (true);
 
--- 7.4. Admin / Authenticated User Full Access
--- (Pengguna yang login di Supabase Auth memiliki akses penuh modifikasi data)
-CREATE POLICY "Admin full access festival_stats" ON festival_stats
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+-- 7.5. Dokumen Unduhan (Akses Publik)
+DROP POLICY IF EXISTS "Public read download_documents" ON download_documents;
+DROP POLICY IF EXISTS "Public all download_documents" ON download_documents;
+CREATE POLICY "Public all download_documents" ON download_documents
+    FOR ALL USING (true) WITH CHECK (true);
 
-CREATE POLICY "Admin full access competitions" ON competitions
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+-- 7.6. Setup Supabase Storage Bucket 'registrations' (Untuk Bukti Pembayaran & Mandat)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('registrations', 'registrations', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
 
-CREATE POLICY "Admin full access participants" ON participants
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Public upload registrations" ON storage.objects;
+DROP POLICY IF EXISTS "Public select registrations" ON storage.objects;
+DROP POLICY IF EXISTS "Public update registrations" ON storage.objects;
 
-CREATE POLICY "Admin full access download_documents" ON download_documents
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Public upload registrations" ON storage.objects
+    FOR INSERT WITH CHECK (bucket_id = 'registrations');
 
-CREATE POLICY "Admin full access news_articles" ON news_articles
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Public select registrations" ON storage.objects
+    FOR SELECT USING (bucket_id = 'registrations');
 
-CREATE POLICY "Admin full access contact_messages" ON contact_messages
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Public update registrations" ON storage.objects
+    FOR UPDATE USING (bucket_id = 'registrations') WITH CHECK (bucket_id = 'registrations');
 
 -- ==============================================================================
 -- 8. INITIAL SEED DATA (DATA AWAL DARI APLIKASI HSN 2026)

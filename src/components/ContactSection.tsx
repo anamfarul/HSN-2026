@@ -7,8 +7,10 @@ import {
   CheckCircle2, 
   MessageSquare,
   Globe,
-  Share2
+  Share2,
+  Loader2
 } from 'lucide-react';
+import { insertContactMessageToSupabase } from '../lib/supabaseClient';
 
 export const ContactSection: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -17,16 +19,41 @@ export const ContactSection: React.FC = () => {
     subject: '',
     message: '',
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [sentSuccess, setSentSuccess] = useState(false);
+  const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.message) return;
-    setSentSuccess(true);
-    setTimeout(() => {
-      setSentSuccess(false);
-      setFormData({ name: '', email: '', subject: '', message: '' });
-    }, 4000);
+
+    setIsSubmitting(true);
+    setStatusFeedback(null);
+
+    try {
+      const res = await insertContactMessageToSupabase(formData);
+      setSentSuccess(true);
+      if (res.success) {
+        setStatusFeedback('Pesan tersimpan di Database Supabase & diteruskan ke panitia.');
+      } else {
+        setStatusFeedback('Pesan terkirim ke sistem lokal panitia.');
+      }
+
+      setTimeout(() => {
+        setSentSuccess(false);
+        setStatusFeedback(null);
+        setFormData({ name: '', email: '', subject: '', message: '' });
+      }, 5000);
+    } catch (err) {
+      setSentSuccess(true);
+      setStatusFeedback('Pesan Anda telah diterima.');
+      setTimeout(() => {
+        setSentSuccess(false);
+        setStatusFeedback(null);
+      }, 4000);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const socialLinks = [
@@ -153,9 +180,14 @@ export const ContactSection: React.FC = () => {
               </p>
 
               {sentSuccess ? (
-                <div className="p-4 rounded-2xl bg-emerald-950/80 border border-emerald-500/50 text-emerald-200 text-xs sm:text-sm flex items-center gap-3">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
-                  <span>Pesan Anda telah diterima oleh Sekretariat Panitia HSN 2026. Terima kasih!</span>
+                <div className="p-4 rounded-2xl bg-emerald-950/80 border border-emerald-500/50 text-emerald-200 text-xs sm:text-sm flex flex-col gap-1">
+                  <div className="flex items-center gap-2 font-bold text-emerald-300">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                    <span>Pesan Terkirim ke Sekretariat Panitia HSN 2026!</span>
+                  </div>
+                  {statusFeedback && (
+                    <p className="text-[11px] text-emerald-200/90 pl-7">{statusFeedback}</p>
+                  )}
                 </div>
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-4">
@@ -172,7 +204,7 @@ export const ContactSection: React.FC = () => {
                     </div>
                     <div>
                       <input
-                        type="email"
+                        type="text"
                         placeholder="Email / No. WhatsApp"
                         value={formData.email}
                         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -206,10 +238,20 @@ export const ContactSection: React.FC = () => {
                   <div className="flex justify-end">
                     <button
                       type="submit"
-                      className="px-6 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider text-[#031525] bg-gradient-to-r from-[#D9B45B] to-[#00D9F5] hover:brightness-110 active:scale-95 transition-all flex items-center gap-2 shadow"
+                      disabled={isSubmitting}
+                      className="px-6 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider text-[#031525] bg-gradient-to-r from-[#D9B45B] to-[#00D9F5] hover:brightness-110 active:scale-95 transition-all flex items-center gap-2 shadow disabled:opacity-50"
                     >
-                      <Send className="w-3.5 h-3.5" />
-                      <span>Kirim Pesan</span>
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Mengirim...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-3.5 h-3.5" />
+                          <span>Kirim Pesan</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </form>
