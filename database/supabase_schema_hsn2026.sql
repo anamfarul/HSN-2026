@@ -14,6 +14,9 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
+-- Hapus tabel galeri jika ada di database (permintaan penghapusan fitur galeri)
+DROP TABLE IF EXISTS gallery_items CASCADE;
+
 -- ==============================================================================
 -- 2. CUSTOM ENUM TYPES
 -- ==============================================================================
@@ -196,18 +199,7 @@ CREATE TABLE IF NOT EXISTS event_timeline (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 4.8. Tabel Galeri Media Santri (Gallery Items)
-CREATE TABLE IF NOT EXISTS gallery_items (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    title VARCHAR(150) NOT NULL,
-    category VARCHAR(50) NOT NULL,
-    image_url TEXT NOT NULL,
-    caption TEXT NOT NULL,
-    event_date VARCHAR(50),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- 4.9. Tabel Dokumen Unduhan / Arsip (Download Center)
+-- 4.8. Tabel Dokumen Unduhan / Arsip (Download Center)
 CREATE TABLE IF NOT EXISTS download_documents (
     id VARCHAR(50) PRIMARY KEY,
     title VARCHAR(150) NOT NULL,
@@ -309,7 +301,6 @@ ALTER TABLE signature_programs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE competitions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE participants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE event_timeline ENABLE ROW LEVEL SECURITY;
-ALTER TABLE gallery_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE download_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE news_articles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sponsors ENABLE ROW LEVEL SECURITY;
@@ -321,7 +312,6 @@ CREATE POLICY "Public read five_pillars" ON five_pillars FOR SELECT USING (true)
 CREATE POLICY "Public read generation_programs" ON generation_programs FOR SELECT USING (true);
 CREATE POLICY "Public read signature_programs" ON signature_programs FOR SELECT USING (true);
 CREATE POLICY "Public read event_timeline" ON event_timeline FOR SELECT USING (true);
-CREATE POLICY "Public read gallery_items" ON gallery_items FOR SELECT USING (true);
 CREATE POLICY "Public read news_articles" ON news_articles FOR SELECT USING (true);
 CREATE POLICY "Public read sponsors" ON sponsors FOR SELECT USING (true);
 

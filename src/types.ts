@@ -79,15 +79,6 @@ export interface TimelineItem {
   activities: string[];
 }
 
-export interface GalleryItem {
-  id: string;
-  title: string;
-  category: 'SEMUA' | 'SANTRI' | 'PESANTREN' | 'BUDAYA' | 'DIGITAL' | 'MALAM PUNCAK';
-  imageUrl: string;
-  caption: string;
-  date: string;
-}
-
 export interface DownloadDoc {
   id: string;
   title: string;

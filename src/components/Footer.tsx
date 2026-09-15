@@ -121,11 +121,6 @@ export const Footer: React.FC<FooterProps> = ({ onOpenAdmin, onOpenRegister }) =
                 </a>
               </li>
               <li>
-                <a href="#galeri" className="hover:text-[#00D9F5] transition-colors">
-                  Dokumentasi Galeri
-                </a>
-              </li>
-              <li>
                 <a href="#unduhan" className="hover:text-[#00D9F5] transition-colors">
                   Download Proposal & Juknis
                 </a>

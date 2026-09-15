@@ -13,7 +13,6 @@ import { ProgramGenerationsSection } from './components/ProgramGenerationsSectio
 import { SignatureProgramsSection } from './components/SignatureProgramsSection';
 import { CompetitionsSection } from './components/CompetitionsSection';
 import { EventTimelineSection } from './components/EventTimelineSection';
-import { GallerySection } from './components/GallerySection';
 import { DownloadCenterSection } from './components/DownloadCenterSection';
 import { SponsorshipSection } from './components/SponsorshipSection';
 import { NewsSection } from './components/NewsSection';
@@ -198,10 +197,7 @@ export default function App() {
         {/* 8. Event Timeline */}
         <EventTimelineSection />
 
-        {/* 9. Media & Photo Gallery */}
-        <GallerySection />
-
-        {/* 10. Download Center */}
+        {/* 9. Download Center */}
         <DownloadCenterSection />
 
         {/* 11. Sponsorship & Partnership */}

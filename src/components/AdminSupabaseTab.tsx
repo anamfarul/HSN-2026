@@ -35,6 +35,9 @@ export const QUICK_SUPABASE_SETUP_SQL = `-- ====================================
 -- Jalankan skrip ini di Supabase Dashboard -> SQL Editor -> New query -> Run
 -- ==============================================================================
 
+-- Hapus tabel galeri jika ada di database
+DROP TABLE IF EXISTS gallery_items CASCADE;
+
 -- 1. Tipe ENUM Kategori & Status
 DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'category_generation_enum') THEN
@@ -567,7 +570,7 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                 <span>Skema Database Lengkap: database/supabase_schema_hsn2026.sql</span>
               </div>
               <p className="text-[10px] text-white/70">
-                Mencakup 12 tabel (lomba, pendaftaran, berita, sponsor, galeri, juknis, linimasa) & RLS Policy publik.
+                Mencakup 11 tabel (lomba, pendaftaran, berita, sponsor, juknis, linimasa) & RLS Policy publik.
               </p>
             </div>
             <button
