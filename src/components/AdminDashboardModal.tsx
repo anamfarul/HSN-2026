@@ -39,7 +39,13 @@ import {
   UserPlus,
   Globe,
   Receipt,
-  Database
+  Database,
+  Gift,
+  MapPin,
+  Award,
+  Eye,
+  LayoutGrid,
+  Table as TableIcon
 } from 'lucide-react';
 
 interface AdminDashboardModalProps {
@@ -127,13 +133,24 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     adminRole.toLowerCase().includes('koordinator') ||
     adminRole.toLowerCase().includes('lomba');
 
-  // State untuk Inline Edit Cabang Lomba
+  // State untuk Filter, Pencarian, Mode Tampilan, & Pratinjau Lomba (Sesuai Komponen Website)
+  const [compCategoryFilter, setCompCategoryFilter] = useState<string>('SEMUA');
+  const [compSearchQuery, setCompSearchQuery] = useState('');
+  const [compViewMode, setCompViewMode] = useState<'table' | 'grid'>('table');
+  const [previewCompModal, setPreviewCompModal] = useState<Competition | null>(null);
+
+  // State untuk Edit Cabang Lomba
   const [editingCompId, setEditingCompId] = useState<string | null>(null);
+  const [showEditCompModal, setShowEditCompModal] = useState<Competition | null>(null);
   const [editCompTitle, setEditCompTitle] = useState('');
   const [editCompCategory, setEditCompCategory] = useState<any>('SMP/MTs');
   const [editCompDeadline, setEditCompDeadline] = useState('');
   const [editCompDescription, setEditCompDescription] = useState('');
   const [editCompTarget, setEditCompTarget] = useState('');
+  const [editCompFee, setEditCompFee] = useState('');
+  const [editCompLocation, setEditCompLocation] = useState('');
+  const [editCompContact, setEditCompContact] = useState('');
+  const [editCompTm, setEditCompTm] = useState('');
 
   // State untuk Upload Juknis Lomba
   const [uploadJuknisComp, setUploadJuknisComp] = useState<Competition | null>(null);
@@ -144,15 +161,21 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
   const handleStartEditComp = (comp: Competition) => {
     setEditingCompId(comp.id);
+    setShowEditCompModal(comp);
     setEditCompTitle(comp.title);
     setEditCompCategory(comp.category);
     setEditCompDeadline(comp.deadline);
     setEditCompDescription(comp.description);
     setEditCompTarget(comp.targetAudience || '');
+    setEditCompFee(comp.registrationFee || 'Gratis');
+    setEditCompLocation(comp.location || 'Kompleks Pesantren Poncokusumo');
+    setEditCompContact(comp.contactPerson || '0812-XXXX-XXXX (Panitia)');
+    setEditCompTm(comp.technicalMeeting || '12 Oktober 2026');
   };
 
   const handleCancelEditComp = () => {
     setEditingCompId(null);
+    setShowEditCompModal(null);
   };
 
   const handleSaveEditComp = (comp: Competition) => {
@@ -164,11 +187,16 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       deadline: editCompDeadline.trim() || comp.deadline,
       description: editCompDescription.trim() || comp.description,
       targetAudience: editCompTarget.trim() || comp.targetAudience,
+      registrationFee: editCompFee.trim() || comp.registrationFee,
+      location: editCompLocation.trim() || comp.location,
+      contactPerson: editCompContact.trim() || comp.contactPerson,
+      technicalMeeting: editCompTm.trim() || comp.technicalMeeting,
     };
     if (onUpdateCompetition) {
       onUpdateCompetition(updated);
     }
     setEditingCompId(null);
+    setShowEditCompModal(null);
     setFeedbackToast(`Perubahan lomba "${updated.title}" berhasil disimpan!`);
     setTimeout(() => setFeedbackToast(''), 4000);
   };
@@ -205,12 +233,16 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     setTimeout(() => setFeedbackToast(''), 4500);
   };
 
-  // New Competition Form State
+  // New Competition Form State (Matching Website fields)
   const [showAddCompModal, setShowAddCompModal] = useState(false);
   const [newCompTitle, setNewCompTitle] = useState('');
   const [newCompCategory, setNewCompCategory] = useState<CategoryGeneration>('SMP/MTs');
   const [newCompDeadline, setNewCompDeadline] = useState('10 Oktober 2026');
   const [newCompDescription, setNewCompDescription] = useState('');
+  const [newCompTarget, setNewCompTarget] = useState('');
+  const [newCompFee, setNewCompFee] = useState('Gratis');
+  const [newCompLocation, setNewCompLocation] = useState('Kompleks Pesantren Poncokusumo');
+  const [newCompContact, setNewCompContact] = useState('0812-XXXX-XXXX (Panitia)');
 
   // Helper untuk generate kode lomba otomatis sesuai kategori dan nomor urut
   const getNextCompCode = (category: string) => {
@@ -304,12 +336,12 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       code,
       title: newCompTitle.trim(),
       category: newCompCategory as any,
-      targetAudience: `Peserta kategori ${newCompCategory}`,
+      targetAudience: newCompTarget.trim() || `Peserta kategori ${newCompCategory}`,
       deadline: newCompDeadline.trim() || '10 Oktober 2026',
       technicalMeeting: '12 Oktober 2026',
-      location: 'Kompleks Pesantren Poncokusumo',
-      contactPerson: '0812-XXXX-XXXX (Panitia)',
-      registrationFee: 'Gratis',
+      location: newCompLocation.trim() || 'Kompleks Pesantren Poncokusumo',
+      contactPerson: newCompContact.trim() || '0812-XXXX-XXXX (Panitia)',
+      registrationFee: newCompFee.trim() || 'Gratis',
       iconName: 'Trophy',
       description:
         newCompDescription.trim() ||
@@ -330,6 +362,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     setShowAddCompModal(false);
     setNewCompTitle('');
     setNewCompDescription('');
+    setNewCompTarget('');
+    setNewCompFee('Gratis');
     setFeedbackToast(`Cabang lomba [${code}] "${created.title}" berhasil ditambahkan!`);
     setTimeout(() => setFeedbackToast(''), 4000);
   };
@@ -685,17 +719,56 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 </div>
               )}
 
+              {/* Main Competitions Header */}
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white/5 p-4 rounded-2xl border border-white/10">
-                <div>
-                  <h3 className="font-heading text-base font-bold text-white flex items-center gap-2">
-                    <Trophy className="w-4 h-4 text-[#F2C96D]" />
-                    <span>Daftar Cabang Perlombaan ({competitions.length})</span>
-                  </h3>
-                  <p className="text-xs text-[#DDE7E8]/70">
-                    Kelola data perlombaan, upload juknis resmi, dan atur batas pendaftaran.
-                  </p>
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-gradient-to-br from-[#006B4F] to-[#008F72] text-[#F2C96D] shadow-md shrink-0">
+                    <Trophy className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-heading text-base font-bold text-white flex items-center gap-2">
+                      <span>Tabel & Katalog Cabang Perlombaan</span>
+                      <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-[#00D9F5]/15 text-[#00D9F5] border border-[#00D9F5]/30">
+                        {competitions.length} Lomba
+                      </span>
+                    </h3>
+                    <p className="text-xs text-[#DDE7E8]/70">
+                      Kelola informasi lomba, sasaran peserta, juknis resmi, biaya pendaftaran, dan hadiah kejuaraan.
+                    </p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
+
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+                  {/* View Mode Toggle: Tabel vs Kartu Web */}
+                  <div className="flex items-center p-1 bg-[#020e19] border border-white/15 rounded-xl text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setCompViewMode('table')}
+                      className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition-all ${
+                        compViewMode === 'table'
+                          ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-[#F2C96D] shadow-sm'
+                          : 'text-[#DDE7E8]/70 hover:text-white'
+                      }`}
+                      title="Tampilan Tabel Data Lengkap"
+                    >
+                      <TableIcon className="w-3.5 h-3.5" />
+                      <span>Tabel Lomba</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCompViewMode('grid')}
+                      className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition-all ${
+                        compViewMode === 'grid'
+                          ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-[#F2C96D] shadow-sm'
+                          : 'text-[#DDE7E8]/70 hover:text-white'
+                      }`}
+                      title="Tampilan Kartu seperti di Website"
+                    >
+                      <LayoutGrid className="w-3.5 h-3.5" />
+                      <span>Kartu Web</span>
+                    </button>
+                  </div>
+
                   {isSuperAdmin && (
                     <button
                       onClick={() => setActiveTab('supabase')}
@@ -707,234 +780,443 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                       <span className="sm:hidden">Supabase</span>
                     </button>
                   )}
-                  <button
-                    onClick={() => setShowAddCompModal(true)}
-                    className="px-4 py-2 rounded-xl text-xs font-bold text-[#031525] bg-gradient-to-r from-[#D9B45B] to-[#00D9F5] hover:brightness-110 transition-all flex items-center gap-1.5 shadow active:scale-95"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Tambah Lomba Baru</span>
-                  </button>
+
+                  {canManageCompetitions && (
+                    <button
+                      onClick={() => setShowAddCompModal(true)}
+                      className="px-4 py-2 rounded-xl text-xs font-bold text-[#031525] bg-gradient-to-r from-[#D9B45B] to-[#00D9F5] hover:brightness-110 transition-all flex items-center gap-1.5 shadow active:scale-95"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Tambah Lomba Baru</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* Competitions Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {competitions.map((comp) => {
-                  const isEditing = editingCompId === comp.id;
+              {/* Filter and Search Toolbar (Matching CompetitionsSection on Website) */}
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#020e19] border border-white/10">
+                {/* Category Pills */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {[
+                    'SEMUA',
+                    'PAUD/TK',
+                    'SD/MI',
+                    'SMP/MTs',
+                    'SMA/MA/SMK',
+                    'IPNU/IPPNU',
+                    'FATAYAT',
+                    'MUSLIMAT',
+                  ].map((cat) => {
+                    const count =
+                      cat === 'SEMUA'
+                        ? competitions.length
+                        : competitions.filter((c) => c.category === cat).length;
+                    const isSelected = compCategoryFilter === cat;
 
-                  if (isEditing) {
                     return (
-                      <div
-                        key={comp.id}
-                        className="p-5 rounded-2xl bg-[#020e19] border-2 border-[#00D9F5]/70 flex flex-col justify-between shadow-xl shadow-[#00D9F5]/10 space-y-3 animate-fade-in"
+                      <button
+                        key={cat}
+                        onClick={() => setCompCategoryFilter(cat)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold tracking-wide uppercase transition-all flex items-center gap-1.5 ${
+                          isSelected
+                            ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-[#F2C96D] border border-[#D9B45B]/60 shadow-lg shadow-[#006B4F]/40 scale-105'
+                            : 'bg-white/5 text-[#DDE7E8] hover:bg-white/10 border border-white/10 hover:border-[#00D9F5]/30'
+                        }`}
                       >
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="font-mono text-xs font-bold text-[#00D9F5] px-2 py-0.5 rounded bg-[#00D9F5]/20 border border-[#00D9F5]/40">
-                              {comp.code} (Mode Edit)
-                            </span>
-                            <div className="flex items-center gap-1.5">
-                              {/* Save Icon Button */}
-                              <button
-                                type="button"
-                                onClick={() => handleSaveEditComp(comp)}
-                                className="p-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 border border-emerald-500/40 hover:scale-105 active:scale-95 transition-all shadow"
-                                title="Simpan Perubahan Lomba (Save)"
-                                aria-label="Simpan Perubahan Lomba"
-                              >
-                                <Save className="w-4 h-4 text-emerald-400" />
-                              </button>
-                              {/* Cancel Icon Button */}
-                              <button
-                                type="button"
-                                onClick={handleCancelEditComp}
-                                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-[#DDE7E8] transition-all"
-                                title="Batal Edit"
-                                aria-label="Batal Edit"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] text-white/70 font-semibold mb-1 uppercase tracking-wider">
-                              Nama Cabang Lomba
-                            </label>
-                            <input
-                              type="text"
-                              value={editCompTitle}
-                              onChange={(e) => setEditCompTitle(e.target.value)}
-                              className="w-full px-3 py-2 rounded-xl bg-black/50 border border-white/20 text-xs font-bold text-white focus:outline-none focus:border-[#00D9F5]"
-                            />
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-[10px] text-white/70 font-semibold mb-1 uppercase tracking-wider">
-                                Kategori
-                              </label>
-                              <select
-                                value={editCompCategory}
-                                onChange={(e) => setEditCompCategory(e.target.value as any)}
-                                className="w-full px-2.5 py-2 rounded-xl bg-black/50 border border-white/20 text-xs text-[#00D9F5] font-semibold focus:outline-none focus:border-[#00D9F5]"
-                              >
-                                <option value="PAUD/TK">PAUD/TK</option>
-                                <option value="SD/MI">SD/MI</option>
-                                <option value="SMP/MTs">SMP/MTs</option>
-                                <option value="SMA/MA/SMK">SMA/MA/SMK</option>
-                                <option value="IPNU/IPPNU">IPNU/IPPNU</option>
-                                <option value="FATAYAT">FATAYAT</option>
-                                <option value="MUSLIMAT">MUSLIMAT</option>
-                              </select>
-                            </div>
-
-                            <div>
-                              <label className="block text-[10px] text-white/70 font-semibold mb-1 uppercase tracking-wider">
-                                Batas Pendaftaran
-                              </label>
-                              <input
-                                type="text"
-                                value={editCompDeadline}
-                                onChange={(e) => setEditCompDeadline(e.target.value)}
-                                className="w-full px-2.5 py-2 rounded-xl bg-black/50 border border-white/20 text-xs text-white focus:outline-none focus:border-[#00D9F5]"
-                                placeholder="15 Oktober 2026"
-                              />
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] text-white/70 font-semibold mb-1 uppercase tracking-wider">
-                              Deskripsi Perlombaan
-                            </label>
-                            <textarea
-                              rows={2}
-                              value={editCompDescription}
-                              onChange={(e) => setEditCompDescription(e.target.value)}
-                              className="w-full px-3 py-2 rounded-xl bg-black/50 border border-white/20 text-xs text-[#DDE7E8] focus:outline-none focus:border-[#00D9F5]"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="pt-2.5 border-t border-white/10 flex items-center justify-between text-xs">
-                          <span className="text-[11px] text-[#00D9F5] font-semibold flex items-center gap-1">
-                            Klik icon Save di kanan atas atau tombol simpan
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleSaveEditComp(comp)}
-                            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:brightness-110 text-white text-xs font-bold flex items-center gap-1.5 shadow"
-                          >
-                            <Save className="w-3.5 h-3.5" />
-                            <span>Simpan</span>
-                          </button>
-                        </div>
-                      </div>
+                        <span>{cat}</span>
+                        <span
+                          className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                            isSelected
+                              ? 'bg-black/30 text-white'
+                              : 'bg-white/10 text-white/60'
+                          }`}
+                        >
+                          {count}
+                        </span>
+                      </button>
                     );
-                  }
+                  })}
+                </div>
 
-                  return (
-                    <div
-                      key={comp.id}
-                      className="p-5 rounded-2xl bg-[#020e19] border border-white/10 flex flex-col justify-between hover:border-white/25 transition-all group"
+                {/* Search Box */}
+                <div className="relative w-full md:w-72 shrink-0">
+                  <input
+                    type="text"
+                    placeholder="Cari nama lomba, sasaran, kode..."
+                    value={compSearchQuery}
+                    onChange={(e) => setCompSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-7 py-2 rounded-xl text-xs bg-black/40 border border-white/20 focus:border-[#00D9F5] text-white placeholder-white/40 focus:outline-none transition-colors"
+                  />
+                  <Search className="w-4 h-4 text-[#DDE7E8]/50 absolute left-3 top-1/2 -translate-y-1/2" />
+                  {compSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setCompSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-white/50 hover:text-white p-0.5"
                     >
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-mono text-xs font-bold text-[#F2C96D] px-2 py-0.5 rounded bg-[#D9B45B]/20">
-                            {comp.code}
-                          </span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#00D9F5]/20 text-[#00D9F5]">
-                            {comp.category}
-                          </span>
-                        </div>
-                        <h4 className="font-heading text-sm font-bold text-white mb-1">
-                          {comp.title}
-                        </h4>
-                        <p className="text-xs text-[#DDE7E8]/80 mb-3 line-clamp-2">
-                          {comp.description}
-                        </p>
-
-                        {/* Juknis Status Badge */}
-                        {comp.juknisFileName || comp.juknisUrl ? (
-                          <div className="mb-3 px-2.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between text-[11px]">
-                            <span className="flex items-center gap-1.5 text-emerald-300 font-medium truncate">
-                              <FileText className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                              <span className="truncate">{comp.juknisFileName || 'Juknis Lomba Resmi'}</span>
-                            </span>
-                            {comp.juknisUrl && (
-                              <a
-                                href={comp.juknisUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-[#00D9F5] hover:underline flex items-center gap-1 text-[10px] shrink-0 font-bold ml-2"
-                              >
-                                <span>Buka File</span>
-                                <ExternalLink className="w-3 h-3" />
-                              </a>
-                            )}
-                          </div>
-                        ) : (
-                          canManageCompetitions && (
-                            <button
-                              onClick={() => {
-                                setUploadJuknisComp(comp);
-                                setJuknisLinkUrl(comp.juknisUrl || '');
-                              }}
-                              className="mb-3 w-full py-1.5 px-2.5 rounded-xl border border-dashed border-white/20 hover:border-[#F2C96D]/60 hover:bg-white/5 flex items-center justify-center gap-1.5 text-[11px] text-[#DDE7E8]/70 hover:text-[#F2C96D] transition-all"
-                            >
-                              <FileUp className="w-3.5 h-3.5 text-[#F2C96D]" />
-                              <span>+ Upload Juknis Lomba (.pdf)</span>
-                            </button>
-                          )
-                        )}
-                      </div>
-
-                      <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs text-[#DDE7E8]/70">
-                        <span>Batas: {comp.deadline}</span>
-                        
-                        <div className="flex items-center gap-1.5">
-                          {/* Upload Juknis Icon */}
-                          {canManageCompetitions && (
-                            <button
-                              onClick={() => {
-                                setUploadJuknisComp(comp);
-                                setJuknisLinkUrl(comp.juknisUrl || '');
-                              }}
-                              className="p-1.5 rounded-lg text-[#F2C96D] hover:text-white hover:bg-[#D9B45B]/20 transition-all"
-                              title="Upload / Ganti Juknis Lomba"
-                              aria-label="Upload Juknis Lomba"
-                            >
-                              <FileUp className="w-4 h-4" />
-                            </button>
-                          )}
-
-                          {/* Edit Icon */}
-                          {canManageCompetitions && (
-                            <button
-                              onClick={() => handleStartEditComp(comp)}
-                              className="p-1.5 rounded-lg text-[#00D9F5] hover:text-white hover:bg-[#00D9F5]/20 transition-all"
-                              title="Edit Cabang Lomba"
-                              aria-label="Edit Cabang Lomba"
-                            >
-                              <Edit3 className="w-4 h-4" />
-                            </button>
-                          )}
-
-                          {/* Delete Icon */}
-                          <button
-                            onClick={() => onDeleteCompetition(comp.id)}
-                            className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/20 rounded-lg p-1.5 transition-colors"
-                            title="Hapus Cabang Lomba"
-                            aria-label="Hapus Cabang Lomba"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                      ✕
+                    </button>
+                  )}
+                </div>
               </div>
+
+              {/* Status Bar */}
+              {(() => {
+                const filteredAdminComps = competitions.filter((comp) => {
+                  const matchesCategory =
+                    compCategoryFilter === 'SEMUA' || comp.category === compCategoryFilter;
+                  const q = compSearchQuery.toLowerCase().trim();
+                  const matchesSearch =
+                    !q ||
+                    comp.title.toLowerCase().includes(q) ||
+                    comp.code.toLowerCase().includes(q) ||
+                    (comp.targetAudience && comp.targetAudience.toLowerCase().includes(q)) ||
+                    (comp.description && comp.description.toLowerCase().includes(q));
+                  return matchesCategory && matchesSearch;
+                });
+
+                return (
+                  <div className="space-y-4">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-[#DDE7E8]/70 px-1">
+                      <span>
+                        Menampilkan <strong className="text-white">{filteredAdminComps.length}</strong> dari{' '}
+                        <strong className="text-[#F2C96D]">{competitions.length}</strong> cabang lomba
+                        {compCategoryFilter !== 'SEMUA' && (
+                          <>
+                            {' '}pada kategori <strong className="text-[#00D9F5]">{compCategoryFilter}</strong>
+                          </>
+                        )}
+                      </span>
+                      <span className="text-[11px] text-emerald-400 flex items-center gap-1.5 font-medium">
+                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                        <span>
+                          {competitions.filter((c) => c.juknisUrl || c.juknisFileName).length} Juknis Resmi Terunggah
+                        </span>
+                      </span>
+                    </div>
+
+                    {/* TABLE VIEW */}
+                    {compViewMode === 'table' && (
+                      <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#020e19] shadow-xl">
+                        <table className="w-full text-left text-xs text-[#DDE7E8]">
+                          <thead className="bg-white/5 border-b border-white/10 font-bold text-white uppercase text-[10px] tracking-wider">
+                            <tr>
+                              <th className="p-3.5 whitespace-nowrap">Kode Lomba</th>
+                              <th className="p-3.5 min-w-[220px]">Cabang Lomba & Sasaran</th>
+                              <th className="p-3.5 whitespace-nowrap">Kategori</th>
+                              <th className="p-3.5 whitespace-nowrap">Biaya & Batas</th>
+                              <th className="p-3.5 min-w-[180px]">Juknis & Hadiah</th>
+                              <th className="p-3.5 text-right whitespace-nowrap">Aksi Panitia</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-white/5">
+                            {filteredAdminComps.map((comp) => (
+                              <tr key={comp.id} className="hover:bg-white/5 transition-colors group">
+                                {/* 1. Kode Lomba */}
+                                <td className="p-3.5 whitespace-nowrap align-top">
+                                  <span className="font-mono text-xs font-bold text-[#F2C96D] px-2.5 py-1 rounded-lg bg-[#D9B45B]/20 border border-[#D9B45B]/30 block w-fit shadow-sm">
+                                    {comp.code}
+                                  </span>
+                                </td>
+
+                                {/* 2. Cabang Lomba & Sasaran */}
+                                <td className="p-3.5 align-top">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewCompModal(comp)}
+                                    className="font-heading text-sm font-bold text-white hover:text-[#F2C96D] text-left transition-colors block"
+                                  >
+                                    {comp.title}
+                                  </button>
+                                  <div className="text-[11px] text-[#00D9F5] font-semibold mt-0.5 flex items-center gap-1">
+                                    <span>Sasaran: {comp.targetAudience || `Kategori ${comp.category}`}</span>
+                                  </div>
+                                  <p className="text-[11px] text-[#DDE7E8]/70 mt-1 line-clamp-2 leading-relaxed">
+                                    {comp.description}
+                                  </p>
+                                </td>
+
+                                {/* 3. Kategori */}
+                                <td className="p-3.5 whitespace-nowrap align-top">
+                                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-[#00D9F5]/15 text-[#00D9F5] border border-[#00D9F5]/30 uppercase tracking-wider block w-fit">
+                                    {comp.category}
+                                  </span>
+                                </td>
+
+                                {/* 4. Biaya & Batas */}
+                                <td className="p-3.5 whitespace-nowrap align-top space-y-1.5">
+                                  <div className="flex items-center gap-1.5 text-xs">
+                                    <Gift className="w-3.5 h-3.5 text-[#00D9F5] shrink-0" />
+                                    <span className="font-bold text-emerald-400">
+                                      {comp.registrationFee || 'Gratis'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 text-[11px] text-[#DDE7E8]/80">
+                                    <Clock className="w-3.5 h-3.5 text-[#F2C96D] shrink-0" />
+                                    <span>{comp.deadline}</span>
+                                  </div>
+                                </td>
+
+                                {/* 5. Juknis & Hadiah */}
+                                <td className="p-3.5 align-top space-y-2">
+                                  {comp.juknisFileName || comp.juknisUrl ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <span
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-medium max-w-[140px] truncate"
+                                        title={comp.juknisFileName || 'Juknis Resmi'}
+                                      >
+                                        <FileText className="w-3 h-3 text-emerald-400 shrink-0" />
+                                        <span className="truncate">{comp.juknisFileName || 'Juknis.pdf'}</span>
+                                      </span>
+                                      {comp.juknisUrl && (
+                                        <a
+                                          href={comp.juknisUrl}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="p-1 rounded text-[#00D9F5] hover:text-white hover:bg-white/10 transition-colors"
+                                          title="Buka File Juknis"
+                                        >
+                                          <ExternalLink className="w-3.5 h-3.5" />
+                                        </a>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    canManageCompetitions && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setUploadJuknisComp(comp);
+                                          setJuknisLinkUrl(comp.juknisUrl || '');
+                                        }}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-dashed border-[#F2C96D]/40 text-[#F2C96D] text-[10px] font-medium hover:bg-[#D9B45B]/10 transition-colors"
+                                      >
+                                        <FileUp className="w-3 h-3" />
+                                        <span>+ Upload Juknis</span>
+                                      </button>
+                                    )
+                                  )}
+
+                                  <div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPreviewCompModal(comp)}
+                                      className="inline-flex items-center gap-1 text-[11px] font-bold text-[#F2C96D] hover:underline"
+                                    >
+                                      <Award className="w-3 h-3 text-[#F2C96D]" />
+                                      <span>Hadiah & Aturan</span>
+                                    </button>
+                                  </div>
+                                </td>
+
+                                {/* 6. Aksi Panitia */}
+                                <td className="p-3.5 text-right whitespace-nowrap align-top">
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    {/* Preview Website Modal */}
+                                    <button
+                                      type="button"
+                                      onClick={() => setPreviewCompModal(comp)}
+                                      title="Lihat Pratinjau Detail Lomba & Hadiah"
+                                      className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-[#00D9F5] hover:text-white transition-colors"
+                                    >
+                                      <Eye className="w-4 h-4" />
+                                    </button>
+
+                                    {/* Upload Juknis */}
+                                    {canManageCompetitions && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setUploadJuknisComp(comp);
+                                          setJuknisLinkUrl(comp.juknisUrl || '');
+                                        }}
+                                        title="Upload / Ganti Juknis Resmi (.pdf)"
+                                        className="p-1.5 rounded-lg bg-[#D9B45B]/15 hover:bg-[#D9B45B]/30 text-[#F2C96D] transition-colors"
+                                      >
+                                        <FileUp className="w-4 h-4" />
+                                      </button>
+                                    )}
+
+                                    {/* Edit Lomba */}
+                                    {canManageCompetitions && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleStartEditComp(comp)}
+                                        title="Edit Cabang Lomba"
+                                        className="p-1.5 rounded-lg bg-[#00D9F5]/15 hover:bg-[#00D9F5]/30 text-[#00D9F5] transition-colors"
+                                      >
+                                        <Edit3 className="w-4 h-4" />
+                                      </button>
+                                    )}
+
+                                    {/* Delete Lomba */}
+                                    <button
+                                      type="button"
+                                      onClick={() => onDeleteCompetition(comp.id)}
+                                      title="Hapus Cabang Lomba"
+                                      className="p-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 transition-colors"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* GRID CARD VIEW (Matching Website CompetitionsSection) */}
+                    {compViewMode === 'grid' && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {filteredAdminComps.map((comp) => (
+                          <div
+                            key={comp.id}
+                            className="rounded-2xl p-5 bg-[#020e19] border border-white/10 hover:border-[#00D9F5]/40 transition-all flex flex-col justify-between shadow-lg group"
+                          >
+                            <div>
+                              {/* Header: Code & Category Badge */}
+                              <div className="flex items-center justify-between gap-2 mb-3">
+                                <span className="font-mono text-xs font-bold text-[#F2C96D] px-2.5 py-0.5 rounded bg-[#D9B45B]/20 border border-[#D9B45B]/30">
+                                  {comp.code}
+                                </span>
+                                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#00D9F5]/15 text-[#00D9F5] border border-[#00D9F5]/30 uppercase tracking-wider">
+                                  {comp.category}
+                                </span>
+                              </div>
+
+                              <h4 className="font-heading text-base font-bold text-white group-hover:text-[#F2C96D] transition-colors mb-1">
+                                {comp.title}
+                              </h4>
+
+                              <p className="text-xs text-[#00D9F5] font-medium mb-2.5">
+                                Sasaran: {comp.targetAudience}
+                              </p>
+
+                              <p className="text-xs text-[#DDE7E8]/80 leading-relaxed mb-4 line-clamp-3">
+                                {comp.description}
+                              </p>
+
+                              {/* Info Pills */}
+                              <div className="space-y-1.5 py-2.5 border-y border-white/10 mb-4 text-xs text-[#DDE7E8]/90">
+                                <div className="flex items-center gap-2">
+                                  <Clock className="w-3.5 h-3.5 text-[#F2C96D]" />
+                                  <span>
+                                    Batas Pendaftaran: <strong className="text-white">{comp.deadline}</strong>
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Gift className="w-3.5 h-3.5 text-[#00D9F5]" />
+                                  <span>
+                                    Biaya: <strong className="text-emerald-400">{comp.registrationFee || 'Gratis'}</strong>
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Juknis Status Badge */}
+                              {comp.juknisFileName || comp.juknisUrl ? (
+                                <div className="mb-4 px-2.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between text-[11px]">
+                                  <span className="flex items-center gap-1.5 text-emerald-300 font-medium truncate">
+                                    <FileText className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                    <span className="truncate">{comp.juknisFileName || 'Juknis Lomba Resmi'}</span>
+                                  </span>
+                                  {comp.juknisUrl && (
+                                    <a
+                                      href={comp.juknisUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-[#00D9F5] hover:underline flex items-center gap-1 text-[10px] shrink-0 font-bold ml-2"
+                                    >
+                                      <span>Buka File</span>
+                                      <ExternalLink className="w-3 h-3" />
+                                    </a>
+                                  )}
+                                </div>
+                              ) : (
+                                canManageCompetitions && (
+                                  <button
+                                    onClick={() => {
+                                      setUploadJuknisComp(comp);
+                                      setJuknisLinkUrl(comp.juknisUrl || '');
+                                    }}
+                                    className="mb-4 w-full py-1.5 px-2.5 rounded-xl border border-dashed border-white/20 hover:border-[#F2C96D]/60 hover:bg-white/5 flex items-center justify-center gap-1.5 text-[11px] text-[#DDE7E8]/70 hover:text-[#F2C96D] transition-all"
+                                  >
+                                    <FileUp className="w-3.5 h-3.5 text-[#F2C96D]" />
+                                    <span>+ Upload Juknis Lomba (.pdf)</span>
+                                  </button>
+                                )
+                              )}
+                            </div>
+
+                            {/* Card Footer: Detail & Actions */}
+                            <div className="pt-3 border-t border-white/10 flex items-center justify-between gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setPreviewCompModal(comp)}
+                                className="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-[#DDE7E8] hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 transition-colors flex items-center gap-1.5"
+                              >
+                                <FileText className="w-3.5 h-3.5 text-[#00D9F5]" />
+                                <span>Juknis & Hadiah</span>
+                              </button>
+
+                              <div className="flex items-center gap-1">
+                                {canManageCompetitions && (
+                                  <button
+                                    onClick={() => {
+                                      setUploadJuknisComp(comp);
+                                      setJuknisLinkUrl(comp.juknisUrl || '');
+                                    }}
+                                    className="p-1.5 rounded-lg text-[#F2C96D] hover:text-white hover:bg-[#D9B45B]/20 transition-all"
+                                    title="Upload / Ganti Juknis Lomba"
+                                  >
+                                    <FileUp className="w-4 h-4" />
+                                  </button>
+                                )}
+                                {canManageCompetitions && (
+                                  <button
+                                    onClick={() => handleStartEditComp(comp)}
+                                    className="p-1.5 rounded-lg text-[#00D9F5] hover:text-white hover:bg-[#00D9F5]/20 transition-all"
+                                    title="Edit Cabang Lomba"
+                                  >
+                                    <Edit3 className="w-4 h-4" />
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => onDeleteCompetition(comp.id)}
+                                  className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/20 rounded-lg p-1.5 transition-colors"
+                                  title="Hapus Cabang Lomba"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Empty state */}
+                    {filteredAdminComps.length === 0 && (
+                      <div className="text-center py-12 px-4 rounded-2xl bg-[#020e19] border border-white/10 text-[#DDE7E8]/70">
+                        <Trophy className="w-10 h-10 mx-auto text-white/20 mb-2" />
+                        <p className="text-sm font-semibold text-white">Tidak ada cabang lomba yang cocok</p>
+                        <p className="text-xs text-[#DDE7E8]/60 mt-1">
+                          Coba atur ulang kata kunci pencarian atau filter kategori tingkatan.
+                        </p>
+                        <button
+                          onClick={() => {
+                            setCompCategoryFilter('SEMUA');
+                            setCompSearchQuery('');
+                          }}
+                          className="mt-3 px-3.5 py-1.5 rounded-xl bg-white/10 text-xs font-bold text-[#00D9F5] hover:bg-white/20 transition-colors"
+                        >
+                          Reset Filter
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -1224,7 +1506,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       {/* SUB-MODAL: Tambah Lomba */}
       {showAddCompModal && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
-          <div className="relative w-full max-w-lg rounded-3xl bg-[#031525] border border-[#00D9F5]/40 p-6 sm:p-7 shadow-2xl space-y-4">
+          <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-[#031525] border border-[#00D9F5]/40 p-6 sm:p-7 shadow-2xl space-y-4">
             <button
               onClick={() => setShowAddCompModal(false)}
               className="absolute top-5 right-5 text-white/60 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-all"
@@ -1241,7 +1523,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   Tambah Cabang Lomba Baru
                 </h3>
                 <p className="text-xs text-[#DDE7E8]/70">
-                  Formulir cabang lomba terintegrasi dengan kartu informasi lomba
+                  Formulir cabang lomba lengkap sesuai komponen tabel & katalog website
                 </p>
               </div>
             </div>
@@ -1288,7 +1570,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[#DDE7E8] font-bold mb-1">
-                    Kategori <span className="text-rose-400">*</span>
+                    Kategori Tingkatan <span className="text-rose-400">*</span>
                   </label>
                   <select
                     value={newCompCategory}
@@ -1320,7 +1602,65 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 </div>
               </div>
 
-              {/* 5. DESKRIPSI PERLOMBAAN */}
+              {/* 5. SASARAN PESERTA & 6. BIAYA PENDAFTARAN */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[#DDE7E8] font-bold mb-1">
+                    Sasaran Peserta
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={`Contoh: Santri / Siswa ${newCompCategory}`}
+                    value={newCompTarget}
+                    onChange={(e) => setNewCompTarget(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-medium text-white focus:outline-none focus:border-[#00D9F5] transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[#DDE7E8] font-bold mb-1">
+                    Biaya Pendaftaran
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: Gratis / Rp 50.000"
+                    value={newCompFee}
+                    onChange={(e) => setNewCompFee(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-medium text-emerald-400 focus:outline-none focus:border-[#00D9F5] transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* 7. LOKASI PELAKSANAAN & 8. NARAHUBUNG */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[#DDE7E8] font-bold mb-1">
+                    Lokasi / Media Pelaksanaan
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: Aula Pesantren / Online"
+                    value={newCompLocation}
+                    onChange={(e) => setNewCompLocation(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-medium text-white focus:outline-none focus:border-[#00D9F5] transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[#DDE7E8] font-bold mb-1">
+                    Narahubung Teknis
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: 0812-XXXX-XXXX (Ustadz A)"
+                    value={newCompContact}
+                    onChange={(e) => setNewCompContact(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-medium text-white focus:outline-none focus:border-[#00D9F5] transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* 9. DESKRIPSI PERLOMBAAN */}
               <div>
                 <label className="block text-[#DDE7E8] font-bold mb-1">
                   Deskripsi Perlombaan <span className="text-rose-400">*</span>
@@ -1352,6 +1692,369 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* SUB-MODAL: Edit Cabang Lomba (Komponen Lengkap Sesuai Website) */}
+      {showEditCompModal && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-[#031525] border border-[#00D9F5]/50 p-6 sm:p-7 shadow-2xl space-y-4">
+            <button
+              onClick={handleCancelEditComp}
+              className="absolute top-5 right-5 text-white/60 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-all"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#00D9F5]/20 border border-[#00D9F5]/40 flex items-center justify-center text-[#00D9F5] shrink-0">
+                <Edit3 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-heading text-lg font-bold text-white flex items-center gap-2">
+                  <span>Edit Cabang Lomba</span>
+                  <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[#00D9F5]/20 text-[#00D9F5] border border-[#00D9F5]/40">
+                    {showEditCompModal.code}
+                  </span>
+                </h3>
+                <p className="text-xs text-[#DDE7E8]/70">
+                  Perbarui seluruh atribut cabang perlombaan untuk website publik
+                </p>
+              </div>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSaveEditComp(showEditCompModal);
+              }}
+              className="space-y-3.5 text-xs"
+            >
+              {/* 1. NAMA CABANG LOMBA */}
+              <div>
+                <label className="block text-[#DDE7E8] font-bold mb-1">
+                  Nama Cabang Lomba <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editCompTitle}
+                  onChange={(e) => setEditCompTitle(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-semibold text-white focus:outline-none focus:border-[#00D9F5] transition-all"
+                />
+              </div>
+
+              {/* 2. KATEGORI & 3. BATAS PENDAFTARAN */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[#DDE7E8] font-bold mb-1">
+                    Kategori Tingkatan
+                  </label>
+                  <select
+                    value={editCompCategory}
+                    onChange={(e) => setEditCompCategory(e.target.value as any)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-bold text-[#00D9F5] focus:outline-none focus:border-[#00D9F5] transition-all cursor-pointer"
+                  >
+                    <option value="PAUD/TK">PAUD/TK</option>
+                    <option value="SD/MI">SD/MI</option>
+                    <option value="SMP/MTs">SMP/MTs</option>
+                    <option value="SMA/MA/SMK">SMA/MA/SMK</option>
+                    <option value="IPNU/IPPNU">IPNU/IPPNU</option>
+                    <option value="FATAYAT">FATAYAT</option>
+                    <option value="MUSLIMAT">MUSLIMAT</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[#DDE7E8] font-bold mb-1">
+                    Batas Pendaftaran
+                  </label>
+                  <input
+                    type="text"
+                    value={editCompDeadline}
+                    onChange={(e) => setEditCompDeadline(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-medium text-white focus:outline-none focus:border-[#00D9F5] transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* 4. SASARAN PESERTA & 5. BIAYA PENDAFTARAN */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[#DDE7E8] font-bold mb-1">
+                    Sasaran Peserta
+                  </label>
+                  <input
+                    type="text"
+                    value={editCompTarget}
+                    onChange={(e) => setEditCompTarget(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-medium text-white focus:outline-none focus:border-[#00D9F5] transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[#DDE7E8] font-bold mb-1">
+                    Biaya Pendaftaran
+                  </label>
+                  <input
+                    type="text"
+                    value={editCompFee}
+                    onChange={(e) => setEditCompFee(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-medium text-emerald-400 focus:outline-none focus:border-[#00D9F5] transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* 6. LOKASI PELAKSANAAN & 7. NARAHUBUNG */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[#DDE7E8] font-bold mb-1">
+                    Lokasi / Media Pelaksanaan
+                  </label>
+                  <input
+                    type="text"
+                    value={editCompLocation}
+                    onChange={(e) => setEditCompLocation(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-medium text-white focus:outline-none focus:border-[#00D9F5] transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[#DDE7E8] font-bold mb-1">
+                    Narahubung Teknis
+                  </label>
+                  <input
+                    type="text"
+                    value={editCompContact}
+                    onChange={(e) => setEditCompContact(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-medium text-white focus:outline-none focus:border-[#00D9F5] transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* 8. DESKRIPSI PERLOMBAAN */}
+              <div>
+                <label className="block text-[#DDE7E8] font-bold mb-1">
+                  Deskripsi Perlombaan
+                </label>
+                <textarea
+                  rows={3}
+                  value={editCompDescription}
+                  onChange={(e) => setEditCompDescription(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs text-[#DDE7E8] focus:outline-none focus:border-[#00D9F5] transition-all leading-relaxed"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={handleCancelEditComp}
+                  className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs text-white font-semibold transition-all"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-lg hover:brightness-110 active:scale-95 transition-all"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Simpan Perubahan</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* SUB-MODAL: Pratinjau Juknis & Detail Lomba Website (100% Identik dengan Website) */}
+      {previewCompModal && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl bg-[#020e19] border border-[#D9B45B]/50 p-6 sm:p-8 shadow-2xl space-y-6">
+            <button
+              onClick={() => setPreviewCompModal(null)}
+              className="absolute top-5 right-5 text-white/60 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-all"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Header Modal */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="font-mono text-xs font-bold text-[#F2C96D] px-2.5 py-0.5 rounded bg-[#D9B45B]/20 border border-[#D9B45B]/30">
+                  {previewCompModal.code}
+                </span>
+                <span className="text-xs font-bold px-3 py-0.5 rounded-full bg-[#00D9F5]/20 text-[#00D9F5] border border-[#00D9F5]/30">
+                  {previewCompModal.category}
+                </span>
+                <span className="text-xs text-[#DDE7E8]/70 font-semibold ml-auto">
+                  Pratinjau Tampilan Web
+                </span>
+              </div>
+              <h3 className="font-heading text-xl sm:text-2xl font-black text-white">
+                {previewCompModal.title}
+              </h3>
+              <p className="text-xs text-[#00D9F5] font-semibold mt-1">
+                Sasaran: {previewCompModal.targetAudience || `Peserta Kategori ${previewCompModal.category}`}
+              </p>
+            </div>
+
+            {/* Deskripsi */}
+            <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-1">
+                Deskripsi Perlombaan
+              </h4>
+              <p className="text-xs text-[#DDE7E8]/90 leading-relaxed">
+                {previewCompModal.description}
+              </p>
+            </div>
+
+            {/* Ketentuan & Aturan */}
+            {previewCompModal.rules && previewCompModal.rules.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-[#F2C96D] uppercase tracking-wider flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Ketentuan & Aturan Lomba</span>
+                </h4>
+                <ul className="space-y-1.5 text-xs text-[#DDE7E8]/90">
+                  {previewCompModal.rules.map((rule, idx) => (
+                    <li key={idx} className="flex items-start gap-2 bg-white/5 p-2.5 rounded-xl border border-white/5">
+                      <span className="text-[#00D9F5] font-bold">•</span>
+                      <span>{rule}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Hadiah Kejuaraan */}
+            {previewCompModal.prizes && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-[#F2C96D] uppercase tracking-wider flex items-center gap-1.5">
+                  <Award className="w-4 h-4" />
+                  <span>Apresiasi & Hadiah Kejuaraan</span>
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                  <div className="p-3 rounded-xl bg-gradient-to-br from-amber-500/10 to-amber-600/5 border border-amber-500/30">
+                    <span className="font-bold text-amber-300 block text-[11px]">Juara I</span>
+                    <span className="text-white text-xs mt-1 block font-medium">
+                      {previewCompModal.prizes.first || 'Trofi Juara I + Piagam + Pembinaan'}
+                    </span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-gradient-to-br from-slate-400/10 to-slate-500/5 border border-slate-400/30">
+                    <span className="font-bold text-slate-300 block text-[11px]">Juara II</span>
+                    <span className="text-white text-xs mt-1 block font-medium">
+                      {previewCompModal.prizes.second || 'Trofi Juara II + Piagam + Pembinaan'}
+                    </span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-gradient-to-br from-amber-700/10 to-amber-800/5 border border-amber-700/30">
+                    <span className="font-bold text-amber-400 block text-[11px]">Juara III</span>
+                    <span className="text-white text-xs mt-1 block font-medium">
+                      {previewCompModal.prizes.third || 'Trofi Juara III + Piagam + Pembinaan'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Info Teknis */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
+                <span className="text-white/60 block text-[11px]">Technical Meeting</span>
+                <span className="text-white font-semibold flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-[#00D9F5]" />
+                  <span>{previewCompModal.technicalMeeting || '12 Oktober 2026'}</span>
+                </span>
+              </div>
+              <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
+                <span className="text-white/60 block text-[11px]">Batas Pendaftaran</span>
+                <span className="text-white font-semibold flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-[#F2C96D]" />
+                  <span>{previewCompModal.deadline}</span>
+                </span>
+              </div>
+              <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
+                <span className="text-white/60 block text-[11px]">Lokasi / Media Pelaksanaan</span>
+                <span className="text-white font-semibold flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>{previewCompModal.location || 'Kompleks Pesantren Poncokusumo'}</span>
+                </span>
+              </div>
+              <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
+                <span className="text-white/60 block text-[11px]">Narahubung Teknis</span>
+                <span className="text-white font-semibold flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-purple-400" />
+                  <span>{previewCompModal.contactPerson || '0812-XXXX-XXXX (Panitia)'}</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Juknis Download Link */}
+            {previewCompModal.juknisUrl && (
+              <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs">
+                  <FileText className="w-5 h-5 text-emerald-400 shrink-0" />
+                  <div>
+                    <span className="font-bold text-white block">Petunjuk Teknis (Juknis) Resmi</span>
+                    <span className="text-[11px] text-[#DDE7E8]/70">
+                      {previewCompModal.juknisFileName || `${previewCompModal.code}_Juknis.pdf`}
+                    </span>
+                  </div>
+                </div>
+                <a
+                  href={previewCompModal.juknisUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs flex items-center gap-1.5 transition-colors shadow"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Unduh Juknis</span>
+                </a>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div className="pt-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                {canManageCompetitions && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const comp = previewCompModal;
+                      setPreviewCompModal(null);
+                      handleStartEditComp(comp);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-[#00D9F5]/20 hover:bg-[#00D9F5]/30 text-[#00D9F5] border border-[#00D9F5]/40 text-xs font-bold flex items-center gap-1.5 transition-all"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Edit Data Lomba</span>
+                  </button>
+                )}
+                {canManageCompetitions && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const comp = previewCompModal;
+                      setPreviewCompModal(null);
+                      setUploadJuknisComp(comp);
+                      setJuknisLinkUrl(comp.juknisUrl || '');
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-[#D9B45B]/20 hover:bg-[#D9B45B]/30 text-[#F2C96D] border border-[#D9B45B]/40 text-xs font-bold flex items-center gap-1.5 transition-all"
+                  >
+                    <FileUp className="w-3.5 h-3.5" />
+                    <span>Upload Juknis</span>
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setPreviewCompModal(null)}
+                className="px-5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold text-white transition-all ml-auto"
+              >
+                Tutup
+              </button>
+            </div>
           </div>
         </div>
       )}
