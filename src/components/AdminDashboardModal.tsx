@@ -44,6 +44,8 @@ import {
   MapPin,
   Award,
   Eye,
+  Calendar,
+  Info,
   LayoutGrid,
   Table as TableIcon
 } from 'lucide-react';
@@ -139,9 +141,10 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [compViewMode, setCompViewMode] = useState<'table' | 'grid'>('table');
   const [previewCompModal, setPreviewCompModal] = useState<Competition | null>(null);
 
-  // State untuk Edit Cabang Lomba
+  // State untuk Edit Cabang Lomba (Komponen Lengkap: Rules, Hadiah I-III, Technical Meeting, dll)
   const [editingCompId, setEditingCompId] = useState<string | null>(null);
   const [showEditCompModal, setShowEditCompModal] = useState<Competition | null>(null);
+  const [editFormTab, setEditFormTab] = useState<'all' | 'basic' | 'technical' | 'rules' | 'prizes'>('all');
   const [editCompTitle, setEditCompTitle] = useState('');
   const [editCompCategory, setEditCompCategory] = useState<any>('SMP/MTs');
   const [editCompDeadline, setEditCompDeadline] = useState('');
@@ -152,6 +155,18 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [editCompContact, setEditCompContact] = useState('');
   const [editCompTm, setEditCompTm] = useState('');
 
+  // Rules State
+  const [editCompRules, setEditCompRules] = useState<string[]>([]);
+  const [newRuleInput, setNewRuleInput] = useState('');
+  const [rulesEditMode, setRulesEditMode] = useState<'list' | 'bulk'>('list');
+  const [bulkRulesText, setBulkRulesText] = useState('');
+
+  // Prizes State (Juara I, II, III, & Apresiasi Tambahan)
+  const [editCompPrizeFirst, setEditCompPrizeFirst] = useState('');
+  const [editCompPrizeSecond, setEditCompPrizeSecond] = useState('');
+  const [editCompPrizeThird, setEditCompPrizeThird] = useState('');
+  const [editCompPrizeAll, setEditCompPrizeAll] = useState('');
+
   // State untuk Upload Juknis Lomba
   const [uploadJuknisComp, setUploadJuknisComp] = useState<Competition | null>(null);
   const [juknisInputMode, setJuknisInputMode] = useState<'file' | 'link'>('file');
@@ -159,9 +174,13 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [juknisLinkUrl, setJuknisLinkUrl] = useState('');
   const [feedbackToast, setFeedbackToast] = useState('');
 
-  const handleStartEditComp = (comp: Competition) => {
+  const handleStartEditComp = (
+    comp: Competition,
+    initialTab: 'all' | 'basic' | 'technical' | 'rules' | 'prizes' = 'all'
+  ) => {
     setEditingCompId(comp.id);
     setShowEditCompModal(comp);
+    setEditFormTab(initialTab);
     setEditCompTitle(comp.title);
     setEditCompCategory(comp.category);
     setEditCompDeadline(comp.deadline);
@@ -171,6 +190,25 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     setEditCompLocation(comp.location || 'Kompleks Pesantren Poncokusumo');
     setEditCompContact(comp.contactPerson || '0812-XXXX-XXXX (Panitia)');
     setEditCompTm(comp.technicalMeeting || '12 Oktober 2026');
+
+    // Rules initialization
+    const currentRules = comp.rules && comp.rules.length > 0 
+      ? [...comp.rules]
+      : [
+          'Peserta merupakan utusan sah dari lembaga/sekolah terkait.',
+          'Wajib melampirkan surat mandat resmi dan kartu pelajar/santri.',
+          'Keputusan dewan juri bersifat mutlak dan tidak dapat diganggu gugat.'
+        ];
+    setEditCompRules(currentRules);
+    setBulkRulesText(currentRules.join('\n'));
+    setNewRuleInput('');
+    setRulesEditMode('list');
+
+    // Prizes initialization
+    setEditCompPrizeFirst(comp.prizes?.first || 'Trofi Juara I + Piagam + Uang Pembinaan');
+    setEditCompPrizeSecond(comp.prizes?.second || 'Trofi Juara II + Piagam + Uang Pembinaan');
+    setEditCompPrizeThird(comp.prizes?.third || 'Trofi Juara III + Piagam + Uang Pembinaan');
+    setEditCompPrizeAll(comp.prizes?.all || '');
   };
 
   const handleCancelEditComp = () => {
@@ -180,6 +218,26 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
   const handleSaveEditComp = (comp: Competition) => {
     if (!editCompTitle.trim()) return;
+
+    // Resolve rules depending on mode
+    let finalRules: string[] = [];
+    if (rulesEditMode === 'bulk') {
+      finalRules = bulkRulesText
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+    } else {
+      finalRules = editCompRules.map((r) => r.trim()).filter((r) => r.length > 0);
+    }
+
+    if (finalRules.length === 0) {
+      finalRules = [
+        'Peserta merupakan utusan sah dari lembaga terkait.',
+        'Wajib melampirkan surat mandat resmi.',
+        'Keputusan dewan juri bersifat mutlak dan tidak dapat diganggu gugat.',
+      ];
+    }
+
     const updated: Competition = {
       ...comp,
       title: editCompTitle.trim(),
@@ -190,15 +248,29 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       registrationFee: editCompFee.trim() || comp.registrationFee,
       location: editCompLocation.trim() || comp.location,
       contactPerson: editCompContact.trim() || comp.contactPerson,
-      technicalMeeting: editCompTm.trim() || comp.technicalMeeting,
+      technicalMeeting: editCompTm.trim() || comp.technicalMeeting || '12 Oktober 2026',
+      rules: finalRules,
+      prizes: {
+        first: editCompPrizeFirst.trim() || comp.prizes?.first || 'Trofi Juara I + Piagam + Uang Pembinaan',
+        second: editCompPrizeSecond.trim() || comp.prizes?.second || 'Trofi Juara II + Piagam + Uang Pembinaan',
+        third: editCompPrizeThird.trim() || comp.prizes?.third || 'Trofi Juara III + Piagam + Uang Pembinaan',
+        all: editCompPrizeAll.trim() || undefined,
+      },
     };
+
     if (onUpdateCompetition) {
       onUpdateCompetition(updated);
     }
+
+    // Perbarui juga data di modal pratinjau jika sedang aktif
+    if (previewCompModal && previewCompModal.id === comp.id) {
+      setPreviewCompModal(updated);
+    }
+
     setEditingCompId(null);
     setShowEditCompModal(null);
-    setFeedbackToast(`Perubahan lomba "${updated.title}" berhasil disimpan!`);
-    setTimeout(() => setFeedbackToast(''), 4000);
+    setFeedbackToast(`Rincian lomba "${updated.title}" (aturan, hadiah, & TM) berhasil diperbarui!`);
+    setTimeout(() => setFeedbackToast(''), 4500);
   };
 
   const handleSaveUploadedJuknis = (e: React.FormEvent) => {
@@ -243,6 +315,16 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [newCompFee, setNewCompFee] = useState('Gratis');
   const [newCompLocation, setNewCompLocation] = useState('Kompleks Pesantren Poncokusumo');
   const [newCompContact, setNewCompContact] = useState('0812-XXXX-XXXX (Panitia)');
+  const [newCompTm, setNewCompTm] = useState('12 Oktober 2026');
+  const [newCompRules, setNewCompRules] = useState<string[]>([
+    'Peserta merupakan utusan sah dari lembaga/sekolah terkait.',
+    'Wajib melampirkan surat mandat resmi dan kartu pelajar/santri.',
+    'Keputusan dewan juri bersifat mutlak dan tidak dapat diganggu gugat.',
+  ]);
+  const [newCompPrizeFirst, setNewCompPrizeFirst] = useState('Trofi Juara I + Piagam + Uang Pembinaan');
+  const [newCompPrizeSecond, setNewCompPrizeSecond] = useState('Trofi Juara II + Piagam + Uang Pembinaan');
+  const [newCompPrizeThird, setNewCompPrizeThird] = useState('Trofi Juara III + Piagam + Uang Pembinaan');
+  const [newCompPrizeAll, setNewCompPrizeAll] = useState('E-Sertifikat Nasional ber-barcode');
 
   // Helper untuk generate kode lomba otomatis sesuai kategori dan nomor urut
   const getNextCompCode = (category: string) => {
@@ -338,7 +420,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       category: newCompCategory as any,
       targetAudience: newCompTarget.trim() || `Peserta kategori ${newCompCategory}`,
       deadline: newCompDeadline.trim() || '10 Oktober 2026',
-      technicalMeeting: '12 Oktober 2026',
+      technicalMeeting: newCompTm.trim() || '12 Oktober 2026',
       location: newCompLocation.trim() || 'Kompleks Pesantren Poncokusumo',
       contactPerson: newCompContact.trim() || '0812-XXXX-XXXX (Panitia)',
       registrationFee: newCompFee.trim() || 'Gratis',
@@ -346,15 +428,12 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       description:
         newCompDescription.trim() ||
         `Perlombaan ${newCompTitle.trim()} yang diselenggarakan secara sportif dan kompetitif bagi generasi santri.`,
-      rules: [
-        'Peserta merupakan utusan sah dari lembaga terkait.',
-        'Wajib melampirkan surat mandat resmi.',
-        'Keputusan dewan juri bersifat mutlak dan tidak dapat diganggu gugat.',
-      ],
+      rules: newCompRules.filter((r) => r.trim().length > 0),
       prizes: {
-        first: 'Trofi Juara I + Piagam + Dana Pembinaan',
-        second: 'Trofi Juara II + Piagam + Dana Pembinaan',
-        third: 'Trofi Juara III + Piagam + Dana Pembinaan',
+        first: newCompPrizeFirst.trim() || 'Trofi Juara I + Piagam + Uang Pembinaan',
+        second: newCompPrizeSecond.trim() || 'Trofi Juara II + Piagam + Uang Pembinaan',
+        third: newCompPrizeThird.trim() || 'Trofi Juara III + Piagam + Uang Pembinaan',
+        all: newCompPrizeAll.trim() || undefined,
       },
     };
 
@@ -1696,32 +1775,104 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
         </div>
       )}
 
-      {/* SUB-MODAL: Edit Cabang Lomba (Komponen Lengkap Sesuai Website) */}
+      {/* SUB-MODAL: Edit Cabang Lomba (Komponen Lengkap Sesuai Website: Aturan, Hadiah I-III, Technical Meeting) */}
       {showEditCompModal && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
-          <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-[#031525] border border-[#00D9F5]/50 p-6 sm:p-7 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-3xl max-h-[92vh] overflow-y-auto rounded-3xl bg-[#031525] border border-[#00D9F5]/40 p-5 sm:p-7 shadow-2xl space-y-5">
             <button
               onClick={handleCancelEditComp}
-              className="absolute top-5 right-5 text-white/60 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-all"
+              className="absolute top-5 right-5 text-white/60 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-all z-10"
+              title="Tutup Modal"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[#00D9F5]/20 border border-[#00D9F5]/40 flex items-center justify-center text-[#00D9F5] shrink-0">
-                <Edit3 className="w-5 h-5" />
+            {/* Header Modal */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pr-8 pb-3 border-b border-white/10">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#00D9F5]/20 to-[#D9B45B]/20 border border-[#00D9F5]/40 flex items-center justify-center text-[#00D9F5] shrink-0 shadow-lg">
+                  <Edit3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-heading text-lg sm:text-xl font-bold text-white">
+                      Edit Cabang Lomba
+                    </h3>
+                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[#F2C96D]/20 text-[#F2C96D] border border-[#F2C96D]/40">
+                      {showEditCompModal.code}
+                    </span>
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#00D9F5]/15 text-[#00D9F5] border border-[#00D9F5]/30">
+                      {showEditCompModal.category}
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#DDE7E8]/70 mt-0.5">
+                    Kelola seluruh rincian lomba: aturan perlombaan, hadiah kejuaraan, TM, & info teknis
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-heading text-lg font-bold text-white flex items-center gap-2">
-                  <span>Edit Cabang Lomba</span>
-                  <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[#00D9F5]/20 text-[#00D9F5] border border-[#00D9F5]/40">
-                    {showEditCompModal.code}
-                  </span>
-                </h3>
-                <p className="text-xs text-[#DDE7E8]/70">
-                  Perbarui seluruh atribut cabang perlombaan untuk website publik
-                </p>
-              </div>
+            </div>
+
+            {/* Navigasi Cepat Tab/Kategori Form */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs border-b border-white/10">
+              <button
+                type="button"
+                onClick={() => setEditFormTab('all')}
+                className={`px-3 py-1.5 rounded-xl font-semibold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                  editFormTab === 'all'
+                    ? 'bg-[#00D9F5] text-[#031525] font-bold shadow-md shadow-[#00D9F5]/20'
+                    : 'bg-white/5 text-[#DDE7E8]/80 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <span>Semua Rincian</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditFormTab('rules')}
+                className={`px-3 py-1.5 rounded-xl font-semibold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                  editFormTab === 'rules'
+                    ? 'bg-[#F2C96D] text-[#031525] font-bold shadow-md shadow-[#F2C96D]/20'
+                    : 'bg-white/5 text-[#DDE7E8]/80 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Ketentuan & Aturan ({editCompRules.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditFormTab('prizes')}
+                className={`px-3 py-1.5 rounded-xl font-semibold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                  editFormTab === 'prizes'
+                    ? 'bg-amber-400 text-[#031525] font-bold shadow-md shadow-amber-400/20'
+                    : 'bg-white/5 text-[#DDE7E8]/80 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <Award className="w-3.5 h-3.5" />
+                <span>Hadiah Kejuaraan (I, II, III)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditFormTab('technical')}
+                className={`px-3 py-1.5 rounded-xl font-semibold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                  editFormTab === 'technical'
+                    ? 'bg-cyan-400 text-[#031525] font-bold shadow-md shadow-cyan-400/20'
+                    : 'bg-white/5 text-[#DDE7E8]/80 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <Clock className="w-3.5 h-3.5" />
+                <span>Info Teknis & TM</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditFormTab('basic')}
+                className={`px-3 py-1.5 rounded-xl font-semibold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                  editFormTab === 'basic'
+                    ? 'bg-emerald-400 text-[#031525] font-bold shadow-md shadow-emerald-400/20'
+                    : 'bg-white/5 text-[#DDE7E8]/80 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Data Pokok</span>
+              </button>
             </div>
 
             <form
@@ -1729,124 +1880,438 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 e.preventDefault();
                 handleSaveEditComp(showEditCompModal);
               }}
-              className="space-y-3.5 text-xs"
+              className="space-y-6 text-xs"
             >
-              {/* 1. NAMA CABANG LOMBA */}
-              <div>
-                <label className="block text-[#DDE7E8] font-bold mb-1">
-                  Nama Cabang Lomba <span className="text-rose-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editCompTitle}
-                  onChange={(e) => setEditCompTitle(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-semibold text-white focus:outline-none focus:border-[#00D9F5] transition-all"
-                />
-              </div>
+              {/* SECTION 1: KETENTUAN & ATURAN PERLOMBAAN */}
+              {(editFormTab === 'all' || editFormTab === 'rules') && (
+                <div className="p-4 sm:p-5 rounded-2xl bg-[#020e19] border border-[#F2C96D]/30 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded-lg bg-[#D9B45B]/20 text-[#F2C96D]">
+                        <CheckCircle2 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-heading text-sm font-bold text-white flex items-center gap-2">
+                          <span>Ketentuan & Aturan Perlombaan</span>
+                          <span className="font-mono text-[11px] px-2 py-0.5 rounded-full bg-[#D9B45B]/20 text-[#F2C96D]">
+                            {editCompRules.length} Butir
+                          </span>
+                        </h4>
+                        <p className="text-[11px] text-[#DDE7E8]/70">
+                          Rincian syarat, petunjuk teknis pelaksanaan, dan tata tertib lomba
+                        </p>
+                      </div>
+                    </div>
 
-              {/* 2. KATEGORI & 3. BATAS PENDAFTARAN */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[#DDE7E8] font-bold mb-1">
-                    Kategori Tingkatan
-                  </label>
-                  <select
-                    value={editCompCategory}
-                    onChange={(e) => setEditCompCategory(e.target.value as any)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-bold text-[#00D9F5] focus:outline-none focus:border-[#00D9F5] transition-all cursor-pointer"
-                  >
-                    <option value="PAUD/TK">PAUD/TK</option>
-                    <option value="SD/MI">SD/MI</option>
-                    <option value="SMP/MTs">SMP/MTs</option>
-                    <option value="SMA/MA/SMK">SMA/MA/SMK</option>
-                    <option value="IPNU/IPPNU">IPNU/IPPNU</option>
-                    <option value="FATAYAT">FATAYAT</option>
-                    <option value="MUSLIMAT">MUSLIMAT</option>
-                  </select>
+                    <div className="flex items-center gap-1 bg-white/5 p-1 rounded-xl border border-white/10 self-start sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (rulesEditMode === 'bulk') {
+                            const parsed = bulkRulesText
+                              .split('\n')
+                              .map((l) => l.trim())
+                              .filter((l) => l.length > 0);
+                            setEditCompRules(parsed);
+                          }
+                          setRulesEditMode('list');
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
+                          rulesEditMode === 'list'
+                            ? 'bg-[#F2C96D] text-[#031525] font-bold shadow'
+                            : 'text-white/70 hover:text-white'
+                        }`}
+                      >
+                        Mode Daftar Item
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBulkRulesText(editCompRules.join('\n'));
+                          setRulesEditMode('bulk');
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
+                          rulesEditMode === 'bulk'
+                            ? 'bg-[#F2C96D] text-[#031525] font-bold shadow'
+                            : 'text-white/70 hover:text-white'
+                        }`}
+                      >
+                        Mode Paste Banyak
+                      </button>
+                    </div>
+                  </div>
+
+                  {rulesEditMode === 'list' ? (
+                    <div className="space-y-2.5">
+                      {editCompRules.map((rule, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-start gap-2.5 p-2 rounded-xl bg-white/5 border border-white/10 group focus-within:border-[#F2C96D]/50 transition-all"
+                        >
+                          <span className="font-mono font-bold text-[#F2C96D] text-[11px] mt-2 px-2 py-0.5 rounded bg-[#D9B45B]/15 shrink-0">
+                            #{idx + 1}
+                          </span>
+                          <input
+                            type="text"
+                            value={rule}
+                            onChange={(e) => {
+                              const updated = [...editCompRules];
+                              updated[idx] = e.target.value;
+                              setEditCompRules(updated);
+                            }}
+                            className="flex-1 bg-transparent text-white text-xs py-1.5 focus:outline-none"
+                            placeholder="Tuliskan butir aturan lomba..."
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = editCompRules.filter((_, i) => i !== idx);
+                              setEditCompRules(updated);
+                            }}
+                            title="Hapus butir aturan ini"
+                            className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-500/20 transition-colors mt-0.5"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+
+                      {/* Input Tambah Aturan Baru */}
+                      <div className="flex items-center gap-2 pt-1">
+                        <input
+                          type="text"
+                          value={newRuleInput}
+                          onChange={(e) => setNewRuleInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              if (newRuleInput.trim()) {
+                                setEditCompRules([...editCompRules, newRuleInput.trim()]);
+                                setNewRuleInput('');
+                              }
+                            }
+                          }}
+                          placeholder="Ketik butir aturan baru lalu tekan Enter atau klik Tambah..."
+                          className="flex-1 px-3 py-2 rounded-xl bg-[#031525] border border-white/20 text-xs text-white placeholder:text-white/40 focus:outline-none focus:border-[#F2C96D] transition-all"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (newRuleInput.trim()) {
+                              setEditCompRules([...editCompRules, newRuleInput.trim()]);
+                              setNewRuleInput('');
+                            }
+                          }}
+                          className="px-3.5 py-2 rounded-xl bg-[#D9B45B]/20 hover:bg-[#D9B45B]/30 text-[#F2C96D] border border-[#D9B45B]/40 font-bold flex items-center gap-1.5 transition-all shrink-0"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Tambah Butir</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <textarea
+                        rows={6}
+                        value={bulkRulesText}
+                        onChange={(e) => setBulkRulesText(e.target.value)}
+                        placeholder="Tempel / tuliskan aturan lomba di sini (1 baris = 1 butir aturan)..."
+                        className="w-full p-3 rounded-xl bg-[#031525] border border-white/20 text-xs text-[#DDE7E8] font-mono leading-relaxed focus:outline-none focus:border-[#F2C96D] transition-all"
+                      />
+                      <div className="flex items-center justify-between text-[11px] text-[#DDE7E8]/70">
+                        <span>*Setiap baris baru akan dikonversi menjadi butir aturan tersendiri.</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const parsed = bulkRulesText
+                              .split('\n')
+                              .map((l) => l.trim())
+                              .filter((l) => l.length > 0);
+                            setEditCompRules(parsed);
+                            setRulesEditMode('list');
+                          }}
+                          className="px-3 py-1 rounded-lg bg-[#F2C96D] text-[#031525] font-bold hover:brightness-110 transition-all"
+                        >
+                          Terapkan ke Daftar Aturan
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
+              )}
 
-                <div>
-                  <label className="block text-[#DDE7E8] font-bold mb-1">
-                    Batas Pendaftaran
-                  </label>
-                  <input
-                    type="text"
-                    value={editCompDeadline}
-                    onChange={(e) => setEditCompDeadline(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-medium text-white focus:outline-none focus:border-[#00D9F5] transition-all"
-                  />
+              {/* SECTION 2: RINCIAN HADIAH KEJUARAAN (JUARA I, II, III) */}
+              {(editFormTab === 'all' || editFormTab === 'prizes') && (
+                <div className="p-4 sm:p-5 rounded-2xl bg-[#020e19] border border-amber-500/30 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400">
+                      <Award className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-heading text-sm font-bold text-white flex items-center gap-2">
+                        <span>Rincian Hadiah Kejuaraan</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300">
+                          Juara I, II, III
+                        </span>
+                      </h4>
+                      <p className="text-[11px] text-[#DDE7E8]/70">
+                        Apresiasi dan penghargaan resmi bagi para pemenang cabang lomba
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* JUARA I */}
+                    <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/40 space-y-2 relative group focus-within:border-amber-400">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-amber-300 text-xs flex items-center gap-1.5">
+                          <span>🥇 Juara I</span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/30 text-amber-200">
+                            Utama
+                          </span>
+                        </span>
+                      </div>
+                      <textarea
+                        rows={2}
+                        value={editCompPrizeFirst}
+                        onChange={(e) => setEditCompPrizeFirst(e.target.value)}
+                        placeholder="Contoh: Trofi Juara I + Piagam + Uang Pembinaan Rp 1.500.000"
+                        className="w-full p-2 rounded-xl bg-[#031525] border border-amber-500/30 text-xs text-white placeholder:text-white/40 focus:outline-none focus:border-amber-400 leading-snug"
+                      />
+                    </div>
+
+                    {/* JUARA II */}
+                    <div className="p-3.5 rounded-2xl bg-slate-400/10 border border-slate-400/40 space-y-2 relative group focus-within:border-slate-300">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-300 text-xs flex items-center gap-1.5">
+                          <span>🥈 Juara II</span>
+                        </span>
+                      </div>
+                      <textarea
+                        rows={2}
+                        value={editCompPrizeSecond}
+                        onChange={(e) => setEditCompPrizeSecond(e.target.value)}
+                        placeholder="Contoh: Trofi Juara II + Piagam + Uang Pembinaan Rp 1.000.000"
+                        className="w-full p-2 rounded-xl bg-[#031525] border border-slate-400/30 text-xs text-white placeholder:text-white/40 focus:outline-none focus:border-slate-300 leading-snug"
+                      />
+                    </div>
+
+                    {/* JUARA III */}
+                    <div className="p-3.5 rounded-2xl bg-amber-700/10 border border-amber-700/40 space-y-2 relative group focus-within:border-amber-500">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-amber-400 text-xs flex items-center gap-1.5">
+                          <span>🥉 Juara III</span>
+                        </span>
+                      </div>
+                      <textarea
+                        rows={2}
+                        value={editCompPrizeThird}
+                        onChange={(e) => setEditCompPrizeThird(e.target.value)}
+                        placeholder="Contoh: Trofi Juara III + Piagam + Uang Pembinaan Rp 500.000"
+                        className="w-full p-2 rounded-xl bg-[#031525] border border-amber-700/30 text-xs text-white placeholder:text-white/40 focus:outline-none focus:border-amber-500 leading-snug"
+                      />
+                    </div>
+                  </div>
+
+                  {/* APRESIASI TAMBAHAN / SELURUH PESERTA */}
+                  <div>
+                    <label className="block text-[#DDE7E8] font-bold mb-1">
+                      Apresiasi Seluruh Peserta / Tambahan (Opsional)
+                    </label>
+                    <input
+                      type="text"
+                      value={editCompPrizeAll}
+                      onChange={(e) => setEditCompPrizeAll(e.target.value)}
+                      placeholder="Contoh: E-Sertifikat Nasional Ber-barcode untuk seluruh peserta terdaftar"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#031525] border border-white/20 text-xs text-[#00D9F5] focus:outline-none focus:border-[#00D9F5] transition-all"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {/* 4. SASARAN PESERTA & 5. BIAYA PENDAFTARAN */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[#DDE7E8] font-bold mb-1">
-                    Sasaran Peserta
-                  </label>
-                  <input
-                    type="text"
-                    value={editCompTarget}
-                    onChange={(e) => setEditCompTarget(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-medium text-white focus:outline-none focus:border-[#00D9F5] transition-all"
-                  />
+              {/* SECTION 3: INFORMASI TEKNIS & TECHNICAL MEETING */}
+              {(editFormTab === 'all' || editFormTab === 'technical') && (
+                <div className="p-4 sm:p-5 rounded-2xl bg-[#020e19] border border-[#00D9F5]/30 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-[#00D9F5]/20 text-[#00D9F5]">
+                      <Clock className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-heading text-sm font-bold text-white flex items-center gap-2">
+                        <span>Informasi Teknis & Pelaksanaan</span>
+                      </h4>
+                      <p className="text-[11px] text-[#DDE7E8]/70">
+                        Technical meeting, lokasi penyelenggaraan, dan narahubung panitia
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* TECHNICAL MEETING (Sorotan Khusus) */}
+                  <div className="p-3.5 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-cyan-300 font-bold text-xs flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5" />
+                        <span>Informasi Teknis: Jadwal Technical Meeting (TM)</span>
+                        <span className="text-rose-400">*</span>
+                      </label>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300">
+                        Wajib Diikuti Peserta
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      value={editCompTm}
+                      onChange={(e) => setEditCompTm(e.target.value)}
+                      placeholder="Contoh: 12 Oktober 2026 - Pukul 09.00 WIB (Aula Pesantren / Zoom Meeting)"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#031525] border border-cyan-400/40 text-xs font-semibold text-white focus:outline-none focus:border-cyan-300 transition-all shadow-inner"
+                    />
+                    <p className="text-[10px] text-cyan-200/70">
+                      *Jadwal pengarahan teknis, ketentuan nomor urut undian panggung, dan media tatap muka.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[#DDE7E8] font-bold mb-1">
+                        Batas Akhir Pendaftaran <span className="text-rose-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={editCompDeadline}
+                        onChange={(e) => setEditCompDeadline(e.target.value)}
+                        placeholder="Contoh: 10 Oktober 2026"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-[#031525] border border-white/20 text-xs font-medium text-white focus:outline-none focus:border-[#00D9F5] transition-all"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[#DDE7E8] font-bold mb-1">
+                        Biaya Pendaftaran
+                      </label>
+                      <input
+                        type="text"
+                        value={editCompFee}
+                        onChange={(e) => setEditCompFee(e.target.value)}
+                        placeholder="Contoh: Gratis / Rp 50.000,-"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-[#031525] border border-white/20 text-xs font-semibold text-emerald-400 focus:outline-none focus:border-[#00D9F5] transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[#DDE7E8] font-bold mb-1">
+                        Lokasi / Media Pelaksanaan
+                      </label>
+                      <input
+                        type="text"
+                        value={editCompLocation}
+                        onChange={(e) => setEditCompLocation(e.target.value)}
+                        placeholder="Contoh: Kompleks Pesantren Poncokusumo / Online"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-[#031525] border border-white/20 text-xs font-medium text-white focus:outline-none focus:border-[#00D9F5] transition-all"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[#DDE7E8] font-bold mb-1">
+                        Narahubung Teknis
+                      </label>
+                      <input
+                        type="text"
+                        value={editCompContact}
+                        onChange={(e) => setEditCompContact(e.target.value)}
+                        placeholder="Contoh: 0812-3456-7890 (Panitia Teknis)"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-[#031525] border border-white/20 text-xs font-medium text-white focus:outline-none focus:border-[#00D9F5] transition-all"
+                      />
+                    </div>
+                  </div>
                 </div>
+              )}
 
-                <div>
-                  <label className="block text-[#DDE7E8] font-bold mb-1">
-                    Biaya Pendaftaran
-                  </label>
-                  <input
-                    type="text"
-                    value={editCompFee}
-                    onChange={(e) => setEditCompFee(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-medium text-emerald-400 focus:outline-none focus:border-[#00D9F5] transition-all"
-                  />
+              {/* SECTION 4: DATA POKOK LOMBA */}
+              {(editFormTab === 'all' || editFormTab === 'basic') && (
+                <div className="p-4 sm:p-5 rounded-2xl bg-[#020e19] border border-white/10 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-white/10 text-white">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-heading text-sm font-bold text-white flex items-center gap-2">
+                        <span>Data Pokok Lomba</span>
+                      </h4>
+                      <p className="text-[11px] text-[#DDE7E8]/70">
+                        Judul, kategori generasi sasaran, dan ringkasan deskripsi
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[#DDE7E8] font-bold mb-1">
+                      Nama Cabang Lomba <span className="text-rose-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editCompTitle}
+                      onChange={(e) => setEditCompTitle(e.target.value)}
+                      placeholder="Contoh: Musabaqah Hifdzil Qur'an (MHQ)"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#031525] border border-white/20 text-xs font-semibold text-white focus:outline-none focus:border-[#00D9F5] transition-all"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[#DDE7E8] font-bold mb-1">
+                        Kategori Tingkatan <span className="text-rose-400">*</span>
+                      </label>
+                      <select
+                        value={editCompCategory}
+                        onChange={(e) => setEditCompCategory(e.target.value as any)}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-[#031525] border border-white/20 text-xs font-bold text-[#00D9F5] focus:outline-none focus:border-[#00D9F5] transition-all cursor-pointer"
+                      >
+                        <option value="PAUD/TK">PAUD/TK</option>
+                        <option value="SD/MI">SD/MI</option>
+                        <option value="SMP/MTs">SMP/MTs</option>
+                        <option value="SMA/MA/SMK">SMA/MA/SMK</option>
+                        <option value="IPNU/IPPNU">IPNU/IPPNU</option>
+                        <option value="FATAYAT">FATAYAT</option>
+                        <option value="MUSLIMAT">MUSLIMAT</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[#DDE7E8] font-bold mb-1">
+                        Sasaran Peserta
+                      </label>
+                      <input
+                        type="text"
+                        value={editCompTarget}
+                        onChange={(e) => setEditCompTarget(e.target.value)}
+                        placeholder="Contoh: Santri / Siswa SMP & MTs sederajat"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-[#031525] border border-white/20 text-xs font-medium text-white focus:outline-none focus:border-[#00D9F5] transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[#DDE7E8] font-bold mb-1">
+                      Deskripsi Perlombaan
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={editCompDescription}
+                      onChange={(e) => setEditCompDescription(e.target.value)}
+                      placeholder="Ringkasan penjelasan cabang lomba..."
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#031525] border border-white/20 text-xs text-[#DDE7E8] focus:outline-none focus:border-[#00D9F5] transition-all leading-relaxed"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {/* 6. LOKASI PELAKSANAAN & 7. NARAHUBUNG */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[#DDE7E8] font-bold mb-1">
-                    Lokasi / Media Pelaksanaan
-                  </label>
-                  <input
-                    type="text"
-                    value={editCompLocation}
-                    onChange={(e) => setEditCompLocation(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-medium text-white focus:outline-none focus:border-[#00D9F5] transition-all"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[#DDE7E8] font-bold mb-1">
-                    Narahubung Teknis
-                  </label>
-                  <input
-                    type="text"
-                    value={editCompContact}
-                    onChange={(e) => setEditCompContact(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-medium text-white focus:outline-none focus:border-[#00D9F5] transition-all"
-                  />
-                </div>
-              </div>
-
-              {/* 8. DESKRIPSI PERLOMBAAN */}
-              <div>
-                <label className="block text-[#DDE7E8] font-bold mb-1">
-                  Deskripsi Perlombaan
-                </label>
-                <textarea
-                  rows={3}
-                  value={editCompDescription}
-                  onChange={(e) => setEditCompDescription(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs text-[#DDE7E8] focus:outline-none focus:border-[#00D9F5] transition-all leading-relaxed"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-white/10">
+              {/* Action Buttons */}
+              <div className="flex items-center justify-between gap-3 pt-3 border-t border-white/10 sticky bottom-0 bg-[#031525] py-2">
                 <button
                   type="button"
                   onClick={handleCancelEditComp}
@@ -1854,13 +2319,15 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 >
                   Batal
                 </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-lg hover:brightness-110 active:scale-95 transition-all"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>Simpan Perubahan</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#D9B45B] via-emerald-500 to-[#00D9F5] text-[#031525] text-xs font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-[#00D9F5]/20 hover:brightness-110 active:scale-95 transition-all"
+                  >
+                    <Save className="w-4 h-4 text-[#031525]" />
+                    <span>Simpan Seluruh Rincian Lomba</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -1910,12 +2377,33 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             </div>
 
             {/* Ketentuan & Aturan */}
-            {previewCompModal.rules && previewCompModal.rules.length > 0 && (
-              <div className="space-y-2">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
                 <h4 className="text-xs font-bold text-[#F2C96D] uppercase tracking-wider flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4" />
                   <span>Ketentuan & Aturan Lomba</span>
+                  {previewCompModal.rules && (
+                    <span className="font-mono text-[10px] px-1.5 py-0.2 rounded bg-[#F2C96D]/20 text-[#F2C96D]">
+                      {previewCompModal.rules.length}
+                    </span>
+                  )}
                 </h4>
+                {canManageCompetitions && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const c = previewCompModal;
+                      setPreviewCompModal(null);
+                      handleStartEditComp(c, 'rules');
+                    }}
+                    className="text-[11px] font-bold text-[#F2C96D] hover:underline flex items-center gap-1 bg-[#F2C96D]/10 px-2 py-0.5 rounded-lg border border-[#F2C96D]/20 transition-all hover:bg-[#F2C96D]/20"
+                  >
+                    <Edit3 className="w-3 h-3" />
+                    <span>Edit Aturan</span>
+                  </button>
+                )}
+              </div>
+              {previewCompModal.rules && previewCompModal.rules.length > 0 ? (
                 <ul className="space-y-1.5 text-xs text-[#DDE7E8]/90">
                   {previewCompModal.rules.map((rule, idx) => (
                     <li key={idx} className="flex items-start gap-2 bg-white/5 p-2.5 rounded-xl border border-white/5">
@@ -1924,68 +2412,114 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                     </li>
                   ))}
                 </ul>
-              </div>
-            )}
+              ) : (
+                <p className="text-xs text-white/50 italic bg-white/5 p-2.5 rounded-xl border border-white/5">
+                  Belum ada ketentuan khusus yang ditambahkan.
+                </p>
+              )}
+            </div>
 
             {/* Hadiah Kejuaraan */}
-            {previewCompModal.prizes && (
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold text-[#F2C96D] uppercase tracking-wider flex items-center gap-1.5">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
                   <Award className="w-4 h-4" />
                   <span>Apresiasi & Hadiah Kejuaraan</span>
                 </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
-                  <div className="p-3 rounded-xl bg-gradient-to-br from-amber-500/10 to-amber-600/5 border border-amber-500/30">
-                    <span className="font-bold text-amber-300 block text-[11px]">Juara I</span>
-                    <span className="text-white text-xs mt-1 block font-medium">
-                      {previewCompModal.prizes.first || 'Trofi Juara I + Piagam + Pembinaan'}
-                    </span>
-                  </div>
-                  <div className="p-3 rounded-xl bg-gradient-to-br from-slate-400/10 to-slate-500/5 border border-slate-400/30">
-                    <span className="font-bold text-slate-300 block text-[11px]">Juara II</span>
-                    <span className="text-white text-xs mt-1 block font-medium">
-                      {previewCompModal.prizes.second || 'Trofi Juara II + Piagam + Pembinaan'}
-                    </span>
-                  </div>
-                  <div className="p-3 rounded-xl bg-gradient-to-br from-amber-700/10 to-amber-800/5 border border-amber-700/30">
-                    <span className="font-bold text-amber-400 block text-[11px]">Juara III</span>
-                    <span className="text-white text-xs mt-1 block font-medium">
-                      {previewCompModal.prizes.third || 'Trofi Juara III + Piagam + Pembinaan'}
-                    </span>
-                  </div>
+                {canManageCompetitions && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const c = previewCompModal;
+                      setPreviewCompModal(null);
+                      handleStartEditComp(c, 'prizes');
+                    }}
+                    className="text-[11px] font-bold text-amber-300 hover:underline flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20 transition-all hover:bg-amber-500/20"
+                  >
+                    <Edit3 className="w-3 h-3" />
+                    <span>Edit Hadiah</span>
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                <div className="p-3 rounded-xl bg-gradient-to-br from-amber-500/10 to-amber-600/5 border border-amber-500/30">
+                  <span className="font-bold text-amber-300 block text-[11px]">Juara I</span>
+                  <span className="text-white text-xs mt-1 block font-medium">
+                    {previewCompModal.prizes?.first || 'Trofi Juara I + Piagam + Pembinaan'}
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-gradient-to-br from-slate-400/10 to-slate-500/5 border border-slate-400/30">
+                  <span className="font-bold text-slate-300 block text-[11px]">Juara II</span>
+                  <span className="text-white text-xs mt-1 block font-medium">
+                    {previewCompModal.prizes?.second || 'Trofi Juara II + Piagam + Pembinaan'}
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-gradient-to-br from-amber-700/10 to-amber-800/5 border border-amber-700/30">
+                  <span className="font-bold text-amber-400 block text-[11px]">Juara III</span>
+                  <span className="text-white text-xs mt-1 block font-medium">
+                    {previewCompModal.prizes?.third || 'Trofi Juara III + Piagam + Pembinaan'}
+                  </span>
                 </div>
               </div>
-            )}
+              {previewCompModal.prizes?.all && (
+                <div className="p-2.5 rounded-xl bg-[#00D9F5]/10 border border-[#00D9F5]/20 text-[11px] text-[#00D9F5]">
+                  <span className="font-bold">Apresiasi Peserta: </span>
+                  <span>{previewCompModal.prizes.all}</span>
+                </div>
+              )}
+            </div>
 
             {/* Info Teknis */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
-                <span className="text-white/60 block text-[11px]">Technical Meeting</span>
-                <span className="text-white font-semibold flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-[#00D9F5]" />
-                  <span>{previewCompModal.technicalMeeting || '12 Oktober 2026'}</span>
-                </span>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-[#00D9F5] uppercase tracking-wider flex items-center gap-1.5">
+                  <Clock className="w-4 h-4" />
+                  <span>Informasi Teknis & Jadwal</span>
+                </h4>
+                {canManageCompetitions && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const c = previewCompModal;
+                      setPreviewCompModal(null);
+                      handleStartEditComp(c, 'technical');
+                    }}
+                    className="text-[11px] font-bold text-[#00D9F5] hover:underline flex items-center gap-1 bg-[#00D9F5]/10 px-2 py-0.5 rounded-lg border border-[#00D9F5]/20 transition-all hover:bg-[#00D9F5]/20"
+                  >
+                    <Edit3 className="w-3 h-3" />
+                    <span>Edit Info Teknis / TM</span>
+                  </button>
+                )}
               </div>
-              <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
-                <span className="text-white/60 block text-[11px]">Batas Pendaftaran</span>
-                <span className="text-white font-semibold flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-[#F2C96D]" />
-                  <span>{previewCompModal.deadline}</span>
-                </span>
-              </div>
-              <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
-                <span className="text-white/60 block text-[11px]">Lokasi / Media Pelaksanaan</span>
-                <span className="text-white font-semibold flex items-center gap-1.5">
-                  <MapPin className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>{previewCompModal.location || 'Kompleks Pesantren Poncokusumo'}</span>
-                </span>
-              </div>
-              <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
-                <span className="text-white/60 block text-[11px]">Narahubung Teknis</span>
-                <span className="text-white font-semibold flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5 text-purple-400" />
-                  <span>{previewCompModal.contactPerson || '0812-XXXX-XXXX (Panitia)'}</span>
-                </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/30 space-y-1">
+                  <span className="text-cyan-300 block text-[11px] font-bold">Technical Meeting (TM)</span>
+                  <span className="text-white font-semibold flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-[#00D9F5]" />
+                    <span>{previewCompModal.technicalMeeting || '12 Oktober 2026'}</span>
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
+                  <span className="text-white/60 block text-[11px]">Batas Pendaftaran</span>
+                  <span className="text-white font-semibold flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-[#F2C96D]" />
+                    <span>{previewCompModal.deadline}</span>
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
+                  <span className="text-white/60 block text-[11px]">Lokasi / Media Pelaksanaan</span>
+                  <span className="text-white font-semibold flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{previewCompModal.location || 'Kompleks Pesantren Poncokusumo'}</span>
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
+                  <span className="text-white/60 block text-[11px]">Narahubung Teknis</span>
+                  <span className="text-white font-semibold flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-purple-400" />
+                    <span>{previewCompModal.contactPerson || '0812-XXXX-XXXX (Panitia)'}</span>
+                  </span>
+                </div>
               </div>
             </div>
 
