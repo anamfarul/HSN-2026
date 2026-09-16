@@ -1215,6 +1215,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
               competitions={competitions}
               onRefreshCompetitions={onRefreshCompetitions}
               onRefreshParticipants={onRefreshParticipants}
+              setFeedbackToast={setFeedbackToast}
             />
           )}
         </div>

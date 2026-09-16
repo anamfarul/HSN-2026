@@ -150,7 +150,7 @@ interface AdminSupabaseTabProps {
   competitions: Competition[];
   onRefreshCompetitions: (newComps: Competition[]) => void;
   onRefreshParticipants?: (newParticipants: ParticipantRegistration[]) => void;
-  setFeedbackToast: (msg: string) => void;
+  setFeedbackToast?: (msg: string) => void;
 }
 
 export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
@@ -171,6 +171,29 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
   const [showSqlViewer, setShowSqlViewer] = useState(false);
   const [pingTesting, setPingTesting] = useState(false);
   const [pingResult, setPingResult] = useState<string | null>(null);
+  const [internalToast, setInternalToast] = useState<string | null>(null);
+
+  // Safe notification helper that handles both parent toast and internal fallback
+  const notify = (msg: string) => {
+    setInternalToast(msg);
+    if (typeof setFeedbackToast === 'function') {
+      try {
+        setFeedbackToast(msg);
+      } catch (err) {
+        console.warn('Parent feedbackToast error:', err);
+      }
+    }
+    setTimeout(() => {
+      setInternalToast(null);
+      if (typeof setFeedbackToast === 'function') {
+        try {
+          setFeedbackToast('');
+        } catch {
+          // ignore
+        }
+      }
+    }, 4000);
+  };
 
   useEffect(() => {
     const creds = getSupabaseCredentials();
@@ -185,6 +208,8 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
         if (res.tables) {
           setTableStatus(res.tables);
         }
+      }).catch((err) => {
+        setStatusMessage(`Gagal: ${err?.message || 'Tidak dapat menghubungi server'}`);
       });
     }
   }, []);
@@ -223,8 +248,7 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
       window.dispatchEvent(new CustomEvent('supabase_credentials_updated'));
     }
 
-    setFeedbackToast('Kredensial Supabase berhasil disimpan & dibersihkan!');
-    setTimeout(() => setFeedbackToast(''), 4000);
+    notify('Kredensial Supabase berhasil disimpan & dibersihkan!');
 
     // Auto test
     handleTestConnection();
@@ -240,31 +264,27 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
       if (res.tables) {
         setTableStatus(res.tables);
       }
-      if (res.success) {
-        setFeedbackToast(res.message);
-      } else {
-        setFeedbackToast(`Koneksi Gagal: ${res.message}`);
-      }
+      notify(res.success ? res.message : `Koneksi Gagal: ${res.message}`);
     } catch (err: any) {
       setIsConnected(false);
-      setStatusMessage(`Gagal: ${err.message}`);
+      const errMsg = err?.message || 'Terjadi kesalahan sistem saat menghubungi Supabase';
+      setStatusMessage(`Gagal: ${errMsg}`);
+      notify(`Koneksi Gagal: ${errMsg}`);
     } finally {
       setTesting(false);
-      setTimeout(() => setFeedbackToast(''), 4000);
     }
   };
 
   const handleCopySql = () => {
     navigator.clipboard.writeText(QUICK_SUPABASE_SETUP_SQL);
     setCopiedSql(true);
-    setFeedbackToast('Skrip SQL berhasil disalin! Tempelkan dan jalankan di Supabase SQL Editor.');
+    notify('Skrip SQL berhasil disalin! Tempelkan dan jalankan di Supabase SQL Editor.');
     setTimeout(() => setCopiedSql(false), 4000);
   };
 
   const handleSyncToSupabase = async () => {
     if (!isConnected) {
-      setFeedbackToast('Harap hubungkan ke Supabase terlebih dahulu.');
-      setTimeout(() => setFeedbackToast(''), 4000);
+      notify('Harap hubungkan ke Supabase terlebih dahulu.');
       return;
     }
 
@@ -272,17 +292,16 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
     try {
       const res = await syncAllCompetitionsToSupabase(competitions);
       if (res.success) {
-        setFeedbackToast(`Sukses! ${res.count} cabang lomba berhasil disinkronkan ke Supabase.`);
+        notify(`Sukses! ${res.count} cabang lomba berhasil disinkronkan ke Supabase.`);
         setStatusMessage(`Sinkronisasi berhasil: ${res.count} data tersimpan di tabel 'competitions'.`);
       } else {
-        setFeedbackToast(`Gagal sinkronisasi: ${res.error}`);
+        notify(`Gagal sinkronisasi: ${res.error}`);
         setStatusMessage(`Error: ${res.error}`);
       }
     } catch (err: any) {
-      setFeedbackToast(`Terjadi kesalahan: ${err.message}`);
+      notify(`Terjadi kesalahan: ${err.message}`);
     } finally {
       setSyncing(false);
-      setTimeout(() => setFeedbackToast(''), 4000);
     }
   };
 
@@ -291,12 +310,12 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
     try {
       const { data: remoteComps, error: compErr } = await fetchCompetitionsFromSupabase();
       if (compErr) {
-        setFeedbackToast(`Gagal memuat lomba: ${compErr}`);
+        notify(`Gagal memuat lomba: ${compErr}`);
       } else if (remoteComps && remoteComps.length > 0) {
         onRefreshCompetitions(remoteComps);
-        setFeedbackToast(`Berhasil memuat ${remoteComps.length} cabang lomba dari Supabase!`);
+        notify(`Berhasil memuat ${remoteComps.length} cabang lomba dari Supabase!`);
       } else {
-        setFeedbackToast('Tabel competitions di Supabase masih kosong.');
+        notify('Tabel competitions di Supabase masih kosong.');
       }
 
       if (onRefreshParticipants) {
@@ -306,10 +325,9 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
         }
       }
     } catch (err: any) {
-      setFeedbackToast(`Kesalahan: ${err.message}`);
+      notify(`Kesalahan: ${err.message}`);
     } finally {
       setFetching(false);
-      setTimeout(() => setFeedbackToast(''), 4000);
     }
   };
 
@@ -659,6 +677,14 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Local Toast Alert */}
+      {internalToast && (
+        <div className="fixed bottom-6 right-6 z-50 animate-bounce-in max-w-md bg-[#031525] border border-[#00D9F5] text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-xs font-semibold">
+          <Sparkles className="w-4 h-4 text-[#00D9F5] shrink-0" />
+          <span>{internalToast}</span>
+        </div>
+      )}
     </div>
   );
 };

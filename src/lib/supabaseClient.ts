@@ -218,13 +218,42 @@ export async function testSupabaseConnection(): Promise<{
       .select('id, registration_number', { count: 'exact', head: false })
       .limit(1);
 
+    // Periksa apakah ada error autentikasi (Anon Key salah/kadaluarsa)
+    const allErrors = [compErr, partErr].filter(Boolean);
+    const authError = allErrors.find((e: any) => {
+      const msg = (e?.message || '') + (e?.details || '');
+      return /invalid.*(key|jwt|apikey)|unauthorized|401|jws/i.test(msg);
+    });
+
+    if (authError) {
+      return {
+        success: false,
+        message: `Kunci Anon Key Supabase tidak valid (${authError.message}). Harap salin ulang "anon public key" dari Dashboard Supabase: Project Settings → API.`,
+        tables: { competitions: false, participants: false }
+      };
+    }
+
+    // Periksa jika ada error jaringan di respon
+    const netError = allErrors.find((e: any) => {
+      const msg = (e?.message || '') + (e?.details || '');
+      return /failed to fetch|networkerror|load failed|enotfound/i.test(msg);
+    });
+
+    if (netError) {
+      return {
+        success: false,
+        message: `Gagal menghubungi server database Supabase (${url}). Pastikan proyek Supabase dalam status Aktif (bukan Paused) dan URL API benar.`,
+        tables: { competitions: false, participants: false }
+      };
+    }
+
     const hasCompTable = !compErr;
     const hasPartTable = !partErr;
 
     if (!hasCompTable && !hasPartTable) {
       return {
         success: false,
-        message: 'Koneksi ke Supabase terhubung, namun tabel "competitions" & "participants" belum ada. Harap salin & jalankan skrip SQL di Supabase SQL Editor.',
+        message: 'Koneksi ke Supabase terhubung, namun tabel "competitions" & "participants" belum ada di database. Harap salin & jalankan skrip SQL di Supabase SQL Editor.',
         tables: { competitions: false, participants: false }
       };
     }
@@ -232,8 +261,16 @@ export async function testSupabaseConnection(): Promise<{
     if (!hasPartTable) {
       return {
         success: false,
-        message: `Tabel "participants" (pendaftaran) belum ada atau izin RLS belum diatur (${partErr?.message}). Data pendaftaran belum bisa tersimpan ke Supabase.`,
+        message: `Tabel "participants" (pendaftaran) belum ada atau izin RLS belum diatur (${partErr?.message}). Jalankan skrip SQL skema untuk mengaktifkannya.`,
         tables: { competitions: hasCompTable, participants: false }
+      };
+    }
+
+    if (!hasCompTable) {
+      return {
+        success: false,
+        message: `Tabel "competitions" belum ada (${compErr?.message}). Anda dapat menyinkronkan data lokal ke Supabase setelah menjalankan skrip SQL.`,
+        tables: { competitions: false, participants: hasPartTable }
       };
     }
 
