@@ -18,6 +18,28 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 DROP TABLE IF EXISTS gallery_items CASCADE;
 
 -- ==============================================================================
+-- 1.1. MIGRASI & PERBAIKAN KOLOM DATABASE LAMA (IDEMPOTENT MIGRATION)
+-- ==============================================================================
+ALTER TABLE IF EXISTS public.competitions 
+  ADD COLUMN IF NOT EXISTS target_audience VARCHAR(150),
+  ADD COLUMN IF NOT EXISTS technical_meeting VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS location VARCHAR(150),
+  ADD COLUMN IF NOT EXISTS contact_person VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS icon_name VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS juknis_url TEXT,
+  ADD COLUMN IF NOT EXISTS juknis_file_name VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+
+ALTER TABLE IF EXISTS public.participants 
+  ADD COLUMN IF NOT EXISTS document_url TEXT,
+  ADD COLUMN IF NOT EXISTS document_name VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS payment_proof_url TEXT,
+  ADD COLUMN IF NOT EXISTS payment_proof_name VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS notes TEXT;
+
+NOTIFY pgrst, 'reload schema';
+
+-- ==============================================================================
 -- 2. CUSTOM ENUM TYPES
 -- ==============================================================================
 DO $$ BEGIN

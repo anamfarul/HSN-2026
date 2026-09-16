@@ -366,13 +366,29 @@ export async function insertCompetitionToSupabase(comp: Competition): Promise<{ 
   }
 
   try {
-    const row = mapCompetitionToSupabase(comp);
-    const { error } = await client.from('competitions').insert([row]);
+    let row = mapCompetitionToSupabase(comp);
+    let attempts = 6;
+    let lastError: any = null;
 
-    if (error) {
-      return { success: false, error: error.message };
+    while (attempts > 0) {
+      attempts--;
+      const { error } = await client.from('competitions').insert([row]);
+      if (!error) {
+        return { success: true, error: null };
+      }
+
+      lastError = error;
+      const match = error.message?.match(/Could not find the '([^']+)' column of 'competitions'/i);
+      if (match && match[1]) {
+        const missingCol = match[1];
+        console.warn(`Supabase schema cache missing column '${missingCol}' in competitions table. Auto-stripping and retrying...`);
+        delete row[missingCol];
+        continue;
+      }
+      break;
     }
-    return { success: true, error: null };
+
+    return { success: false, error: lastError?.message || 'Gagal menambahkan lomba ke Supabase' };
   } catch (err: any) {
     return { success: false, error: err.message || 'Gagal menambahkan lomba ke Supabase' };
   }
@@ -386,16 +402,33 @@ export async function updateCompetitionInSupabase(comp: Competition): Promise<{ 
   }
 
   try {
-    const row = mapCompetitionToSupabase(comp);
-    const { error } = await client
-      .from('competitions')
-      .update(row)
-      .eq('id', comp.id);
+    let row = mapCompetitionToSupabase(comp);
+    let attempts = 6;
+    let lastError: any = null;
 
-    if (error) {
-      return { success: false, error: error.message };
+    while (attempts > 0) {
+      attempts--;
+      const { error } = await client
+        .from('competitions')
+        .update(row)
+        .eq('id', comp.id);
+
+      if (!error) {
+        return { success: true, error: null };
+      }
+
+      lastError = error;
+      const match = error.message?.match(/Could not find the '([^']+)' column of 'competitions'/i);
+      if (match && match[1]) {
+        const missingCol = match[1];
+        console.warn(`Supabase schema cache missing column '${missingCol}' in competitions table. Auto-stripping and retrying...`);
+        delete row[missingCol];
+        continue;
+      }
+      break;
     }
-    return { success: true, error: null };
+
+    return { success: false, error: lastError?.message || 'Gagal memperbarui lomba di Supabase' };
   } catch (err: any) {
     return { success: false, error: err.message || 'Gagal memperbarui lomba di Supabase' };
   }
@@ -420,7 +453,7 @@ export async function deleteCompetitionFromSupabase(id: string): Promise<{ succe
   }
 }
 
-// Sync/Seed all competitions to Supabase in bulk
+// Sync/Seed all competitions to Supabase in bulk (with automatic schema-cache self healing)
 export async function syncAllCompetitionsToSupabase(competitions: Competition[]): Promise<{ success: boolean; count: number; error: string | null }> {
   const client = getSupabaseClient();
   if (!client) {
@@ -429,18 +462,39 @@ export async function syncAllCompetitionsToSupabase(competitions: Competition[])
 
   try {
     const listToSync = competitions && competitions.length > 0 ? competitions : INITIAL_COMPETITIONS;
-    const rows = listToSync.map(mapCompetitionToSupabase);
+    let rows = listToSync.map(mapCompetitionToSupabase);
 
-    // Upsert all rows by primary key (id)
-    const { error } = await client
-      .from('competitions')
-      .upsert(rows, { onConflict: 'id' });
+    let attempts = 6;
+    let lastError: any = null;
 
-    if (error) {
-      return { success: false, count: 0, error: error.message };
+    while (attempts > 0) {
+      attempts--;
+      // Upsert all rows by primary key (id)
+      const { error } = await client
+        .from('competitions')
+        .upsert(rows, { onConflict: 'id' });
+
+      if (!error) {
+        return { success: true, count: rows.length, error: null };
+      }
+
+      lastError = error;
+      // Periksa apakah ada kolom yang tidak ditemukan di schema cache Supabase (seperti juknis_file_name, juknis_url, dll.)
+      const match = error.message?.match(/Could not find the '([^']+)' column of 'competitions'/i);
+      if (match && match[1]) {
+        const missingCol = match[1];
+        console.warn(`Supabase schema missing column '${missingCol}' in competitions table. Auto-stripping '${missingCol}' from sync payload and retrying...`);
+        rows = rows.map((r) => {
+          const clone = { ...r };
+          delete clone[missingCol];
+          return clone;
+        });
+        continue;
+      }
+      break;
     }
 
-    return { success: true, count: rows.length, error: null };
+    return { success: false, count: 0, error: lastError?.message || 'Gagal melakukan sinkronisasi massal' };
   } catch (err: any) {
     return { success: false, count: 0, error: err.message || 'Gagal melakukan sinkronisasi massal' };
   }
@@ -496,7 +550,7 @@ export function mapParticipantToSupabase(p: any): Record<string, any> {
   };
 }
 
-// Insert new participant registration into Supabase
+// Insert new participant registration into Supabase (with automatic schema-cache self healing)
 export async function insertParticipantToSupabase(participant: any): Promise<{ success: boolean; error: string | null }> {
   const client = getSupabaseClient();
   if (!client) {
@@ -507,31 +561,49 @@ export async function insertParticipantToSupabase(participant: any): Promise<{ s
   }
 
   try {
-    const row = mapParticipantToSupabase(participant);
-    let { error } = await client.from('participants').insert([row]);
+    let row = mapParticipantToSupabase(participant);
+    let attempts = 6;
+    let lastError: any = null;
 
-    // Jika terjadi error foreign key pada competition_id karena tabel competitions belum terisi di Supabase
-    if (error && (
-      error.code === '23503' || 
-      error.message?.toLowerCase().includes('foreign key') || 
-      error.message?.toLowerCase().includes('violates foreign key constraint') ||
-      error.message?.toLowerCase().includes('competition_id')
-    )) {
-      console.warn('Foreign key competition_id fallback: mencoba simpan ulang dengan competition_id null...', error.message);
-      const fallbackRow = { ...row, competition_id: null };
-      const retryResult = await client.from('participants').insert([fallbackRow]);
-      if (!retryResult.error) {
+    while (attempts > 0) {
+      attempts--;
+      const { error } = await client.from('participants').insert([row]);
+      if (!error) {
         return { success: true, error: null };
       }
-      error = retryResult.error;
+
+      lastError = error;
+
+      // 1. Cek jika kolom belum ada di schema cache tabel participants Supabase (misal payment_proof_name, payment_proof_url, document_name, dll.)
+      const missingMatch = error.message?.match(/Could not find the '([^']+)' column of 'participants'/i);
+      if (missingMatch && missingMatch[1]) {
+        const missingCol = missingMatch[1];
+        console.warn(`Supabase schema missing column '${missingCol}' in participants table. Auto-stripping '${missingCol}' and retrying...`);
+        delete row[missingCol];
+        continue;
+      }
+
+      // 2. Cek jika terjadi error foreign key pada competition_id karena tabel competitions belum terisi di Supabase
+      if (row.competition_id && (
+        error.code === '23503' || 
+        error.message?.toLowerCase().includes('foreign key') || 
+        error.message?.toLowerCase().includes('violates foreign key constraint') ||
+        error.message?.toLowerCase().includes('competition_id')
+      )) {
+        console.warn('Foreign key competition_id fallback: mencoba simpan ulang dengan competition_id null...', error.message);
+        row.competition_id = null;
+        continue;
+      }
+
+      break;
     }
 
-    if (error) {
-      console.warn('Error inserting participant to Supabase:', error);
-      let friendlyError = error.message;
-      if (error.code === '42P01' || error.message?.toLowerCase().includes('does not exist')) {
+    if (lastError) {
+      console.warn('Error inserting participant to Supabase:', lastError);
+      let friendlyError = lastError.message;
+      if (lastError.code === '42P01' || lastError.message?.toLowerCase().includes('does not exist')) {
         friendlyError = 'Tabel "participants" belum dibuat di Supabase. Jalankan skrip SQL di Supabase SQL Editor.';
-      } else if (error.code === '42501' || error.message?.toLowerCase().includes('violates row-level security policy')) {
+      } else if (lastError.code === '42501' || lastError.message?.toLowerCase().includes('violates row-level security policy')) {
         friendlyError = 'Izin RLS Supabase menolak INSERT publik. Buka Supabase SQL Editor dan jalankan Policy RLS peserta.';
       }
       return { success: false, error: friendlyError };

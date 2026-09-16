@@ -35,6 +35,35 @@ import {
 } from '../lib/supabaseClient';
 import { Competition, ParticipantRegistration } from '../types';
 
+export const FIX_COLUMNS_MIGRATION_SQL = `-- ==============================================================================
+-- SKRIP PERBAIKAN SCHEMA CACHE SUPABASE: FESTIVAL HARI SANTRI 2026
+-- Salin dan jalankan di Supabase Dashboard -> SQL Editor -> New Query -> Run
+-- Menambahkan kolom-kolom baru tanpa menghapus data tabel yang sudah ada!
+-- ==============================================================================
+
+-- 1. Pastikan kolom tabel competitions lengkap
+ALTER TABLE IF EXISTS public.competitions 
+  ADD COLUMN IF NOT EXISTS target_audience VARCHAR(150),
+  ADD COLUMN IF NOT EXISTS technical_meeting VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS location VARCHAR(150),
+  ADD COLUMN IF NOT EXISTS contact_person VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS icon_name VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS juknis_url TEXT,
+  ADD COLUMN IF NOT EXISTS juknis_file_name VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+
+-- 2. Pastikan kolom tabel participants lengkap
+ALTER TABLE IF EXISTS public.participants 
+  ADD COLUMN IF NOT EXISTS document_url TEXT,
+  ADD COLUMN IF NOT EXISTS document_name VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS payment_proof_url TEXT,
+  ADD COLUMN IF NOT EXISTS payment_proof_name VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS notes TEXT;
+
+-- 3. Reload cache schema PostgREST Supabase agar langsung aktif
+NOTIFY pgrst, 'reload schema';
+`;
+
 export const QUICK_SUPABASE_SETUP_SQL = `-- ==============================================================================
 -- SKRIP SETUP RESMI SUPABASE DATABASE & RLS: FESTIVAL HARI SANTRI 2026
 -- Jalankan skrip ini di Supabase Dashboard -> SQL Editor -> New query -> Run
@@ -42,6 +71,26 @@ export const QUICK_SUPABASE_SETUP_SQL = `-- ====================================
 
 -- Hapus tabel galeri jika ada di database
 DROP TABLE IF EXISTS gallery_items CASCADE;
+
+-- 0. MIGRASI & PERBAIKAN KOLOM DATABASE YANG SUDAH ADA (ADD COLUMN IF NOT EXISTS)
+ALTER TABLE IF EXISTS public.competitions 
+  ADD COLUMN IF NOT EXISTS target_audience VARCHAR(150),
+  ADD COLUMN IF NOT EXISTS technical_meeting VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS location VARCHAR(150),
+  ADD COLUMN IF NOT EXISTS contact_person VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS icon_name VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS juknis_url TEXT,
+  ADD COLUMN IF NOT EXISTS juknis_file_name VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+
+ALTER TABLE IF EXISTS public.participants 
+  ADD COLUMN IF NOT EXISTS document_url TEXT,
+  ADD COLUMN IF NOT EXISTS document_name VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS payment_proof_url TEXT,
+  ADD COLUMN IF NOT EXISTS payment_proof_name VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS notes TEXT;
+
+NOTIFY pgrst, 'reload schema';
 
 -- 1. Tipe ENUM Kategori & Status
 DO $$ BEGIN
@@ -278,8 +327,13 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
   const handleCopySql = () => {
     navigator.clipboard.writeText(QUICK_SUPABASE_SETUP_SQL);
     setCopiedSql(true);
-    notify('Skrip SQL berhasil disalin! Tempelkan dan jalankan di Supabase SQL Editor.');
+    notify('Skrip SQL setup database berhasil disalin! Tempelkan dan jalankan di Supabase SQL Editor.');
     setTimeout(() => setCopiedSql(false), 4000);
+  };
+
+  const handleCopyMigrationSql = () => {
+    navigator.clipboard.writeText(FIX_COLUMNS_MIGRATION_SQL);
+    notify('Skrip SQL perbaikan kolom Supabase disalin! Jalankan di Supabase SQL Editor untuk menambah kolom yang kurang.');
   };
 
   const handleSyncToSupabase = async () => {
@@ -655,25 +709,37 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
             </div>
           </div>
 
-          {/* Database Schema Reference */}
-          <div className="p-3.5 rounded-xl bg-[#006B4F]/20 border border-[#006B4F]/40 text-[11px] text-[#DDE7E8]/90 flex items-center justify-between gap-3">
+          {/* Database Schema Reference & Migration */}
+          <div className="p-3.5 rounded-xl bg-[#006B4F]/20 border border-[#006B4F]/40 text-[11px] text-[#DDE7E8]/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <div className="flex items-center gap-1.5 font-bold text-[#F2C96D] mb-0.5">
                 <FileCode className="w-3.5 h-3.5" />
-                <span>Skema Database Lengkap: database/supabase_schema_hsn2026.sql</span>
+                <span>Skema Database & Migrasi Kolom Supabase</span>
               </div>
               <p className="text-[10px] text-white/70">
-                Mencakup 11 tabel (lomba, pendaftaran, berita, sponsor, juknis, linimasa) & RLS Policy publik.
+                Sistem kini otomatis menyesuaikan kolom. Jika ingin memperbarui tabel database Supabase secara manual, salin skrip di bawah.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={handleCopySql}
-              className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-[#00D9F5] hover:text-white text-[11px] font-bold flex items-center gap-1 shrink-0 transition-colors"
-            >
-              <Copy className="w-3 h-3" />
-              <span>Salin SQL</span>
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleCopyMigrationSql}
+                title="Menambahkan kolom juknis dan berkas bukti pembayaran pada tabel yang sudah ada"
+                className="px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 hover:text-white text-[11px] font-bold flex items-center gap-1 transition-colors"
+              >
+                <Sparkles className="w-3 h-3 text-amber-400" />
+                <span>Fix Kolom (ALTER)</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleCopySql}
+                title="Salin skrip setup lengkap Supabase"
+                className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-[#00D9F5] hover:text-white text-[11px] font-bold flex items-center gap-1 transition-colors"
+              >
+                <Copy className="w-3 h-3" />
+                <span>Salin SQL Lengkap</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
