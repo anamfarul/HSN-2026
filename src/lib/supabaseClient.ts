@@ -2,39 +2,106 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Competition, CategoryGeneration } from '../types';
 import { INITIAL_COMPETITIONS } from '../data/initialData';
 
-// Helper to get active credentials from environment or localStorage
+// Helper to sanitize Supabase Project URL to prevent "TypeError: Failed to fetch"
+export function sanitizeSupabaseUrl(rawUrl: string): string {
+  if (!rawUrl) return '';
+  let url = rawUrl.trim();
+
+  // Strip wrapping quotes (single, double, backticks)
+  url = url.replace(/^["'`]|["'`]$/g, '').trim();
+
+  // 1. Detect if user pasted Dashboard URL from browser address bar
+  // Example: https://supabase.com/dashboard/project/abcdefghijklmn/settings/api
+  // or https://supabase.com/dashboard/project/abcdefghijklmn
+  const dashboardMatch = url.match(/(?:supabase\.com\/dashboard\/project|app\.supabase\.com\/project)\/([a-zA-Z0-9_-]+)/i);
+  if (dashboardMatch && dashboardMatch[1]) {
+    return `https://${dashboardMatch[1]}.supabase.co`;
+  }
+
+  // 2. Remove trailing slashes and API paths like /rest/v1
+  url = url.replace(/\/+$/, '');
+  url = url.replace(/\/rest\/v1\/?$/i, '');
+
+  // 3. If user only pasted project reference ID e.g. "whjygchtrnihymuruvmrkw"
+  if (/^[a-zA-Z0-9_-]{12,35}$/.test(url) && !url.includes('.')) {
+    return `https://${url}.supabase.co`;
+  }
+
+  // 4. Add https:// if user only wrote "xxx.supabase.co" without protocol
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    url = `https://${url}`;
+  }
+
+  // 5. Enforce https for Supabase domains
+  if (url.startsWith('http://') && url.includes('.supabase.co')) {
+    url = url.replace('http://', 'https://');
+  }
+
+  return url;
+}
+
+// Helper to sanitize anon key
+export function sanitizeSupabaseKey(rawKey: string): string {
+  if (!rawKey) return '';
+  let key = rawKey.trim();
+  key = key.replace(/^["'`]|["'`]$/g, '').trim();
+  return key;
+}
+
+// Helper to get active credentials from environment or localStorage with automatic sanitization
 export function getSupabaseCredentials(): { url: string; anonKey: string } {
   const envUrl = (import.meta as any).env?.VITE_SUPABASE_URL || '';
   const envKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
 
-  const storedUrl = typeof window !== 'undefined' ? localStorage.getItem('hsn2026_supabase_url') || '' : '';
-  const storedKey = typeof window !== 'undefined' ? localStorage.getItem('hsn2026_supabase_anon_key') || '' : '';
+  const rawStoredUrl = typeof window !== 'undefined' ? localStorage.getItem('hsn2026_supabase_url') || '' : '';
+  const rawStoredKey = typeof window !== 'undefined' ? localStorage.getItem('hsn2026_supabase_anon_key') || '' : '';
 
-  const url = (storedUrl || envUrl).trim();
-  const anonKey = (storedKey || envKey).trim();
+  const cleanUrl = sanitizeSupabaseUrl(rawStoredUrl || envUrl);
+  const cleanKey = sanitizeSupabaseKey(rawStoredKey || envKey);
 
-  return { url, anonKey };
+  // Self-heal: If stored value in localStorage had formatting defects, overwrite with sanitized version
+  if (typeof window !== 'undefined' && rawStoredUrl && cleanUrl && rawStoredUrl !== cleanUrl) {
+    try {
+      localStorage.setItem('hsn2026_supabase_url', cleanUrl);
+    } catch {
+      // ignore
+    }
+  }
+  if (typeof window !== 'undefined' && rawStoredKey && cleanKey && rawStoredKey !== cleanKey) {
+    try {
+      localStorage.setItem('hsn2026_supabase_anon_key', cleanKey);
+    } catch {
+      // ignore
+    }
+  }
+
+  return { url: cleanUrl, anonKey: cleanKey };
 }
 
 export function saveSupabaseCredentials(url: string, anonKey: string): void {
+  const cleanUrl = sanitizeSupabaseUrl(url);
+  const cleanKey = sanitizeSupabaseKey(anonKey);
+
   if (typeof window !== 'undefined') {
-    if (url.trim()) {
-      localStorage.setItem('hsn2026_supabase_url', url.trim());
+    if (cleanUrl) {
+      localStorage.setItem('hsn2026_supabase_url', cleanUrl);
     } else {
       localStorage.removeItem('hsn2026_supabase_url');
     }
 
-    if (anonKey.trim()) {
-      localStorage.setItem('hsn2026_supabase_anon_key', anonKey.trim());
+    if (cleanKey) {
+      localStorage.setItem('hsn2026_supabase_anon_key', cleanKey);
     } else {
       localStorage.removeItem('hsn2026_supabase_anon_key');
     }
   }
   // Reset cached client instance
   cachedClient = null;
+  lastClientConfig = '';
 }
 
 let cachedClient: SupabaseClient | null = null;
+let lastClientConfig = '';
 
 export function getSupabaseClient(): SupabaseClient | null {
   const { url, anonKey } = getSupabaseCredentials();
@@ -50,13 +117,15 @@ export function getSupabaseClient(): SupabaseClient | null {
     return null;
   }
 
-  if (!cachedClient) {
+  const currentConfigKey = `${url}_${anonKey.substring(0, 10)}`;
+  if (!cachedClient || lastClientConfig !== currentConfigKey) {
     cachedClient = createClient(url, anonKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
       },
     });
+    lastClientConfig = currentConfigKey;
   }
 
   return cachedClient;
@@ -64,7 +133,7 @@ export function getSupabaseClient(): SupabaseClient | null {
 
 export function isSupabaseConnected(): boolean {
   const { url, anonKey } = getSupabaseCredentials();
-  return Boolean(url && anonKey && url.includes('.supabase.co'));
+  return Boolean(url && anonKey && (url.includes('.supabase.co') || url.includes('localhost') || url.includes('127.0.0.1')));
 }
 
 // Map database row to app's Competition interface
@@ -126,7 +195,9 @@ export async function testSupabaseConnection(): Promise<{
   tables?: { competitions: boolean; participants: boolean };
 }> {
   const client = getSupabaseClient();
-  if (!client) {
+  const { url } = getSupabaseCredentials();
+
+  if (!client || !url) {
     return {
       success: false,
       message: 'Kredensial Supabase (URL atau Anon Key) belum diisi di CMS Admin.',
@@ -176,11 +247,46 @@ export async function testSupabaseConnection(): Promise<{
       tables: { competitions: hasCompTable, participants: hasPartTable }
     };
   } catch (err: any) {
+    let friendly = err?.message || 'Kesalahan jaringan';
+    if (friendly.includes('Failed to fetch') || friendly.includes('NetworkError') || friendly.includes('Load failed')) {
+      friendly = `Gagal menghubungi Supabase (${url}). Pastikan: (1) URL Supabase benar, (2) Proyek Supabase aktif / tidak dijeda (paused), (3) Adblocker/Brave Shields tidak memblokir domain supabase.co.`;
+    }
     return {
       success: false,
-      message: `Gagal menghubungi Supabase: ${err.message || 'Kesalahan jaringan'}`,
+      message: friendly,
       tables: { competitions: false, participants: false }
     };
+  }
+}
+
+// Direct lightweight ping tester to verify if Supabase API is reachable
+export async function pingSupabaseEndpoint(customUrl?: string): Promise<{ reachable: boolean; status?: number; error?: string }> {
+  const { url: defaultUrl } = getSupabaseCredentials();
+  const targetUrl = sanitizeSupabaseUrl(customUrl || defaultUrl);
+
+  if (!targetUrl) {
+    return { reachable: false, error: 'URL Supabase belum diisi.' };
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 7000);
+    const resp = await fetch(`${targetUrl}/rest/v1/`, {
+      method: 'GET',
+      headers: {
+        'apikey': getSupabaseCredentials().anonKey || 'public',
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    // Any HTTP response (200, 401, 403, 404, etc.) means the domain is alive & reachable
+    return { reachable: true, status: resp.status };
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      return { reachable: false, error: 'Waktu tunggu habis (Timeout 7 detik). Proyek Supabase kemungkinan sedang dijeda (paused) atau jaringan lambat.' };
+    }
+    return { reachable: false, error: err?.message || 'Gagal menghubungi server Supabase (Failed to fetch).' };
   }
 }
 
@@ -397,7 +503,14 @@ export async function insertParticipantToSupabase(participant: any): Promise<{ s
     return { success: true, error: null };
   } catch (err: any) {
     console.warn('Exception inserting participant to Supabase:', err);
-    return { success: false, error: err.message || 'Gagal menyimpan data ke Supabase' };
+    let errMsg = err?.message || 'Gagal menyimpan data ke Supabase';
+    if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError') || errMsg.includes('Load failed')) {
+      const { url } = getSupabaseCredentials();
+      errMsg = `Koneksi ke Supabase terputus (Failed to fetch). ` +
+        `Kemungkinan: Proyek Supabase sedang dijeda (paused) di dashboard, ` +
+        `URL (${url || 'belum diisi'}) tidak dapat diakses, atau diblokir adblocker/jaringan.`;
+    }
+    return { success: false, error: errMsg };
   }
 }
 

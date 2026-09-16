@@ -23,14 +23,23 @@ import {
   ExternalLink,
   Database,
   AlertTriangle,
-  RefreshCw
+  RefreshCw,
+  Settings,
+  ChevronDown,
+  ChevronUp,
+  Save,
+  Wifi
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { generateRegistrationTicketPDF, printElementSafely } from '../lib/pdfGenerator';
 import { 
   insertParticipantToSupabase, 
   uploadFileToSupabaseStorage,
-  isSupabaseConnected 
+  isSupabaseConnected,
+  getSupabaseCredentials,
+  saveSupabaseCredentials,
+  sanitizeSupabaseUrl,
+  pingSupabaseEndpoint 
 } from '../lib/supabaseClient';
 
 interface RegistrationModalProps {
@@ -76,6 +85,11 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
     message: string;
   }>({ status: 'idle', message: '' });
   const [isRetryingSync, setIsRetryingSync] = useState(false);
+  const [showCredsDrawer, setShowCredsDrawer] = useState(false);
+  const [quickUrl, setQuickUrl] = useState('');
+  const [quickKey, setQuickKey] = useState('');
+  const [pingTesting, setPingTesting] = useState(false);
+  const [pingMessage, setPingMessage] = useState<string | null>(null);
 
   const handlePaymentProofChange = (file: File | null) => {
     if (!file) {
@@ -226,19 +240,30 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
           message: 'Menghubungkan & menyimpan data pendaftaran ke Cloud Database Supabase...',
         });
 
-        insertParticipantToSupabase(newRecord).then((res) => {
-          if (res.success) {
-            setSupabaseSyncStatus({
-              status: 'synced',
-              message: 'Data registrasi resmi tersimpan di Cloud Database Supabase (tabel participants).',
-            });
-          } else {
+        insertParticipantToSupabase(newRecord)
+          .then((res) => {
+            if (res.success) {
+              setSupabaseSyncStatus({
+                status: 'synced',
+                message: 'Data registrasi resmi tersimpan di Cloud Database Supabase (tabel participants).',
+              });
+            } else {
+              setSupabaseSyncStatus({
+                status: 'error',
+                message: res.error || 'Gagal menyimpan data ke Supabase.',
+              });
+            }
+          })
+          .catch((err) => {
+            let msg = err?.message || 'Terjadi kesalahan saat menghubungi Supabase.';
+            if (msg.includes('Failed to fetch')) {
+              msg = 'Koneksi ke server database Supabase tidak dapat dijangkau (Failed to fetch). Periksa URL API atau status aktif proyek Supabase Anda.';
+            }
             setSupabaseSyncStatus({
               status: 'error',
-              message: res.error || 'Gagal menyimpan data ke Supabase.',
+              message: msg,
             });
-          }
-        });
+          });
       }
 
       // Automatically generate PDF ready for download
@@ -268,6 +293,44 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
     }
   };
 
+  const handleToggleCredsDrawer = () => {
+    if (!showCredsDrawer) {
+      const creds = getSupabaseCredentials();
+      setQuickUrl(creds.url);
+      setQuickKey(creds.anonKey);
+      setPingMessage(null);
+    }
+    setShowCredsDrawer(!showCredsDrawer);
+  };
+
+  const handleQuickPing = async () => {
+    setPingTesting(true);
+    setPingMessage(null);
+    try {
+      const ping = await pingSupabaseEndpoint(quickUrl);
+      if (ping.reachable) {
+        setPingMessage(`Domain Supabase aktif & terjangkau! (Status HTTP: ${ping.status})`);
+      } else {
+        setPingMessage(`Gagal: ${ping.error}`);
+      }
+    } catch (err: any) {
+      setPingMessage(`Gagal: ${err.message}`);
+    } finally {
+      setPingTesting(false);
+    }
+  };
+
+  const handleQuickSaveAndRetry = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanUrl = sanitizeSupabaseUrl(quickUrl);
+    const cleanKey = quickKey.trim();
+    saveSupabaseCredentials(cleanUrl, cleanKey);
+    setQuickUrl(cleanUrl);
+    setQuickKey(cleanKey);
+    setShowCredsDrawer(false);
+    await handleRetrySupabaseSync();
+  };
+
   const handleRetrySupabaseSync = async () => {
     if (!createdTicket) return;
     setIsRetryingSync(true);
@@ -290,9 +353,13 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
         });
       }
     } catch (err: any) {
+      let msg = err?.message || 'Terjadi kesalahan saat menghubungi Supabase.';
+      if (msg.includes('Failed to fetch')) {
+        msg = 'Koneksi ke server database Supabase tidak dapat dijangkau (Failed to fetch). Periksa URL API atau status aktif proyek Supabase Anda.';
+      }
       setSupabaseSyncStatus({
         status: 'error',
-        message: err?.message || 'Terjadi kesalahan saat menghubungi Supabase.',
+        message: msg,
       });
     } finally {
       setIsRetryingSync(false);
@@ -425,46 +492,146 @@ MWC NU Kecamatan Poncokusumo, Kabupaten Malang, Jawa Timur.
 
               {/* Supabase Database Persistence Status Banner */}
               {supabaseSyncStatus.status !== 'idle' && (
-                <div className={`p-4 rounded-2xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                <div className={`p-4 sm:p-5 rounded-2xl border text-xs flex flex-col gap-3 transition-all ${
                   supabaseSyncStatus.status === 'synced'
                     ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-200 shadow-lg'
                     : supabaseSyncStatus.status === 'pending'
                     ? 'bg-sky-950/80 border-[#00D9F5]/50 text-sky-200 animate-pulse shadow-lg'
                     : supabaseSyncStatus.status === 'local_only'
                     ? 'bg-amber-950/80 border-amber-500/60 text-amber-200 shadow-lg'
-                    : 'bg-rose-950/80 border-rose-500/60 text-rose-200 shadow-lg'
+                    : 'bg-gradient-to-r from-amber-950/90 via-[#1b1008] to-rose-950/90 border-amber-500/60 text-amber-200 shadow-xl'
                 }`}>
-                  <div className="flex items-start gap-2.5">
-                    <Database className={`w-4 h-4 shrink-0 mt-0.5 ${
-                      supabaseSyncStatus.status === 'synced' ? 'text-emerald-400' :
-                      supabaseSyncStatus.status === 'pending' ? 'text-[#00D9F5]' :
-                      supabaseSyncStatus.status === 'local_only' ? 'text-amber-400' : 'text-rose-400'
-                    }`} />
-                    <div>
-                      <div className="font-bold flex items-center gap-1.5">
-                        <span>
-                          {supabaseSyncStatus.status === 'synced' && 'Tersimpan di Cloud Database Supabase (Live)'}
-                          {supabaseSyncStatus.status === 'pending' && 'Menghubungkan ke Supabase...'}
-                          {supabaseSyncStatus.status === 'local_only' && 'Status Database: Penyimpanan Lokal'}
-                          {supabaseSyncStatus.status === 'error' && 'Peringatan: Gagal Menyimpan ke Database Supabase'}
-                        </span>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-start gap-2.5">
+                      <Database className={`w-4 h-4 shrink-0 mt-0.5 ${
+                        supabaseSyncStatus.status === 'synced' ? 'text-emerald-400' :
+                        supabaseSyncStatus.status === 'pending' ? 'text-[#00D9F5]' :
+                        supabaseSyncStatus.status === 'local_only' ? 'text-amber-400' : 'text-amber-400'
+                      }`} />
+                      <div>
+                        <div className="font-bold flex items-center gap-1.5">
+                          <span>
+                            {supabaseSyncStatus.status === 'synced' && 'Tersimpan di Cloud Database Supabase (Live)'}
+                            {supabaseSyncStatus.status === 'pending' && 'Menghubungkan ke Supabase...'}
+                            {supabaseSyncStatus.status === 'local_only' && 'Status Database: Tersimpan di Penyimpanan Lokal Website'}
+                            {supabaseSyncStatus.status === 'error' && 'Status Cloud Database: Tertunda (Pendaftaran Lokal Anda Sukses & Aman)'}
+                          </span>
+                        </div>
+                        <div className="text-[11px] opacity-95 mt-1 leading-relaxed space-y-1">
+                          {supabaseSyncStatus.status === 'error' ? (
+                            <>
+                              <p className="text-emerald-300 font-semibold flex items-center gap-1.5">
+                                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                <span>Nomor registrasi <strong>{createdTicket.registrationNumber}</strong> telah resmi terbit. Berkas tiket di bawah ini sah & dapat langsung diunduh atau dicetak.</span>
+                              </p>
+                              <p className="text-amber-200/90">
+                                <strong>Catatan Sinkronisasi Cloud:</strong> {supabaseSyncStatus.message}
+                              </p>
+                            </>
+                          ) : (
+                            <p>{supabaseSyncStatus.message}</p>
+                          )}
+                        </div>
                       </div>
-                      <p className="text-[11px] opacity-90 mt-0.5">
-                        {supabaseSyncStatus.message}
-                      </p>
                     </div>
+
+                    {supabaseSyncStatus.status === 'error' && (
+                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto pt-1 sm:pt-0">
+                        <button
+                          type="button"
+                          onClick={handleToggleCredsDrawer}
+                          className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs flex items-center gap-1.5 transition-colors border border-white/15"
+                        >
+                          <Settings className="w-3.5 h-3.5 text-[#00D9F5]" />
+                          <span>{showCredsDrawer ? 'Tutup Pengaturan' : 'Periksa URL Supabase'}</span>
+                          {showCredsDrawer ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleRetrySupabaseSync}
+                          disabled={isRetryingSync}
+                          className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-[#008F72] hover:brightness-110 text-white font-bold text-xs flex items-center justify-center gap-1.5 shrink-0 transition-all shadow"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isRetryingSync ? 'animate-spin' : ''}`} />
+                          <span>{isRetryingSync ? 'Menyimpan...' : 'Coba Kirim Ulang'}</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
 
-                  {supabaseSyncStatus.status === 'error' && (
-                    <button
-                      type="button"
-                      onClick={handleRetrySupabaseSync}
-                      disabled={isRetryingSync}
-                      className="px-3.5 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 shrink-0 transition-colors shadow"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${isRetryingSync ? 'animate-spin' : ''}`} />
-                      <span>{isRetryingSync ? 'Mencoba...' : 'Coba Kirim Ulang'}</span>
-                    </button>
+                  {/* Quick Inline Credentials Drawer */}
+                  {showCredsDrawer && (
+                    <form onSubmit={handleQuickSaveAndRetry} className="mt-2 pt-3 border-t border-white/15 space-y-3 bg-[#020e19]/90 p-3.5 sm:p-4 rounded-xl text-left animate-fade-in">
+                      <div className="flex items-center justify-between text-xs text-[#00D9F5] font-bold">
+                        <span>Pemeriksaan Cepat Kredensial Supabase</span>
+                        <span className="text-[10px] text-[#F2C96D]">Format URL akan dibersihkan otomatis</span>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-white/90 mb-1">
+                            Project URL (Format: https://[project-id].supabase.co)
+                          </label>
+                          <input
+                            type="text"
+                            value={quickUrl}
+                            onChange={(e) => setQuickUrl(e.target.value)}
+                            placeholder="https://xxxxxxxxxxxxxxxx.supabase.co"
+                            className="w-full px-3 py-2 rounded-lg bg-[#031525] border border-white/20 text-xs font-mono text-white focus:outline-none focus:border-[#00D9F5]"
+                          />
+                          <p className="text-[10px] text-white/60 mt-0.5">
+                            Jika Anda menyalin URL dari address bar browser (seperti <code>supabase.com/dashboard/project/...</code>), sistem akan otomatis mengubahnya ke URL API resmi.
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-semibold text-white/90 mb-1">
+                            Anon Public Key
+                          </label>
+                          <input
+                            type="text"
+                            value={quickKey}
+                            onChange={(e) => setQuickKey(e.target.value)}
+                            placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                            className="w-full px-3 py-2 rounded-lg bg-[#031525] border border-white/20 text-xs font-mono text-white focus:outline-none focus:border-[#00D9F5]"
+                          />
+                        </div>
+                      </div>
+
+                      {pingMessage && (
+                        <div className={`p-2.5 rounded-lg text-xs font-semibold ${
+                          pingMessage.includes('aktif & terjangkau')
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                        }`}>
+                          {pingMessage}
+                        </div>
+                      )}
+
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={handleQuickPing}
+                          disabled={pingTesting}
+                          className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center justify-center gap-1.5 border border-white/10"
+                        >
+                          <Wifi className={`w-3.5 h-3.5 ${pingTesting ? 'animate-pulse text-[#00D9F5]' : ''}`} />
+                          <span>{pingTesting ? 'Menguji...' : 'Tes Ping URL (Periksa Status Server)'}</span>
+                        </button>
+
+                        <div className="flex items-center gap-2 justify-end">
+                          <button
+                            type="submit"
+                            disabled={isRetryingSync}
+                            className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-[#D9B45B] to-[#00D9F5] text-[#031525] font-black text-xs uppercase flex items-center justify-center gap-1.5 hover:brightness-110 shadow"
+                          >
+                            <Save className="w-3.5 h-3.5" />
+                            <span>Simpan & Kirim Ulang Sekarang</span>
+                          </button>
+                        </div>
+                      </div>
+                    </form>
                   )}
                 </div>
               )}

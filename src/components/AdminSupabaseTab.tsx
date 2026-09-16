@@ -17,7 +17,9 @@ import {
   FileCode,
   ChevronDown,
   ChevronUp,
-  HelpCircle
+  HelpCircle,
+  Wifi,
+  Info
 } from 'lucide-react';
 import { 
   getSupabaseCredentials, 
@@ -26,7 +28,10 @@ import {
   syncAllCompetitionsToSupabase,
   fetchCompetitionsFromSupabase,
   fetchParticipantsFromSupabase,
-  isSupabaseConnected
+  isSupabaseConnected,
+  sanitizeSupabaseUrl,
+  sanitizeSupabaseKey,
+  pingSupabaseEndpoint
 } from '../lib/supabaseClient';
 import { Competition, ParticipantRegistration } from '../types';
 
@@ -164,6 +169,8 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
   const [tableStatus, setTableStatus] = useState<{ competitions: boolean; participants: boolean } | null>(null);
   const [copiedSql, setCopiedSql] = useState(false);
   const [showSqlViewer, setShowSqlViewer] = useState(false);
+  const [pingTesting, setPingTesting] = useState(false);
+  const [pingResult, setPingResult] = useState<string | null>(null);
 
   useEffect(() => {
     const creds = getSupabaseCredentials();
@@ -182,9 +189,32 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
     }
   }, []);
 
+  const handlePingServer = async () => {
+    setPingTesting(true);
+    setPingResult(null);
+    try {
+      const clean = sanitizeSupabaseUrl(url);
+      const res = await pingSupabaseEndpoint(clean);
+      if (res.reachable) {
+        setPingResult(`Domain Supabase ${clean} aktif & dapat dihubungi via REST API (HTTP Status: ${res.status}).`);
+      } else {
+        setPingResult(`Gagal terhubung: ${res.error}`);
+      }
+    } catch (err: any) {
+      setPingResult(`Gagal ping: ${err.message}`);
+    } finally {
+      setPingTesting(false);
+    }
+  };
+
   const handleSaveCredentials = (e: React.FormEvent) => {
     e.preventDefault();
-    saveSupabaseCredentials(url, anonKey);
+    const cleanUrl = sanitizeSupabaseUrl(url);
+    const cleanKey = sanitizeSupabaseKey(anonKey);
+    setUrl(cleanUrl);
+    setAnonKey(cleanKey);
+
+    saveSupabaseCredentials(cleanUrl, cleanKey);
     const connected = isSupabaseConnected();
     setIsConnected(connected);
     
@@ -193,7 +223,7 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
       window.dispatchEvent(new CustomEvent('supabase_credentials_updated'));
     }
 
-    setFeedbackToast('Kredensial Supabase berhasil disimpan!');
+    setFeedbackToast('Kredensial Supabase berhasil disimpan & dibersihkan!');
     setTimeout(() => setFeedbackToast(''), 4000);
 
     // Auto test
@@ -468,6 +498,17 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                 placeholder="https://xxxxxxxxxxxxxxxx.supabase.co"
                 className="w-full px-3.5 py-2.5 rounded-xl bg-[#031525] border border-white/15 focus:border-[#00D9F5] text-xs text-white placeholder-white/30 focus:outline-none font-mono"
               />
+              
+              {/* Dashboard URL Auto-detection banner */}
+              {(url.includes('supabase.com/dashboard/project') || url.includes('app.supabase.com/project')) && (
+                <div className="mt-2 p-2.5 rounded-lg bg-sky-500/20 border border-sky-400/40 text-[11px] text-sky-200 flex items-start gap-2 animate-fade-in">
+                  <Sparkles className="w-3.5 h-3.5 text-[#00D9F5] shrink-0 mt-0.5" />
+                  <span>
+                    <strong>Auto-Convert Terdeteksi:</strong> Link dashboard akan otomatis diubah ke format REST API: <code>{sanitizeSupabaseUrl(url)}</code> saat disimpan.
+                  </span>
+                </div>
+              )}
+
               <p className="text-[10px] text-white/50 mt-1">
                 Ditemukan di dashboard Supabase: Project Settings → API → Project URL.
               </p>
@@ -489,10 +530,44 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
               </p>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
+            {/* Ping Result Notification */}
+            {pingResult && (
+              <div className={`p-3 rounded-xl text-xs font-semibold flex items-start gap-2 border animate-fade-in ${
+                pingResult.includes('aktif')
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+              }`}>
+                {pingResult.includes('aktif') ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                )}
+                <span>{pingResult}</span>
+              </div>
+            )}
+
+            {/* Info on Paused Free Supabase Projects */}
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-200/90 flex items-start gap-2">
+              <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <span>
+                <strong>Catatan "Failed to fetch":</strong> Proyek Supabase gratis otomatis dijeda (paused) jika 7 hari tidak ada traffic. Jika muncul pesan gagal jaringan, buka <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer" className="underline text-[#00D9F5]">Supabase Dashboard</a> lalu klik <strong>"Restore project"</strong>.
+              </span>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-2">
+              <button
+                type="button"
+                onClick={handlePingServer}
+                disabled={pingTesting}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors border border-white/15"
+              >
+                <Wifi className={`w-3.5 h-3.5 ${pingTesting ? 'animate-pulse text-[#00D9F5]' : ''}`} />
+                <span>{pingTesting ? 'Menguji...' : 'Tes Ping API Domain'}</span>
+              </button>
+
               <button
                 type="submit"
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:brightness-110 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md"
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:brightness-110 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md"
               >
                 <Save className="w-3.5 h-3.5" />
                 <span>Simpan Kredensial</span>
