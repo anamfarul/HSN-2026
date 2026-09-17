@@ -30,6 +30,7 @@ import {
   deleteCompetitionFromSupabase,
   fetchParticipantsFromSupabase,
   updateParticipantStatusInSupabase,
+  deleteParticipantFromSupabase,
   isSupabaseConnected
 } from './lib/supabaseClient';
 import { Sparkles, MessageCircle, Shield } from 'lucide-react';
@@ -118,6 +119,16 @@ export default function App() {
       prev.map((p) => (p.id === id ? { ...p, status } : p))
     );
     updateParticipantStatusInSupabase(id, status).catch(console.warn);
+  };
+
+  const handleDeleteParticipant = (id: string) => {
+    const target = participants.find((p) => p.id === id);
+    setParticipants((prev) => prev.filter((p) => p.id !== id));
+    if (target) {
+      deleteParticipantFromSupabase(target.registrationNumber || target.id).catch(console.warn);
+    } else {
+      deleteParticipantFromSupabase(id).catch(console.warn);
+    }
   };
 
   const handleAddCompetition = (newComp: Competition) => {
@@ -262,6 +273,7 @@ export default function App() {
         onClose={() => setIsAdminModalOpen(false)}
         participants={participants}
         onUpdateParticipantStatus={handleUpdateParticipantStatus}
+        onDeleteParticipant={handleDeleteParticipant}
         competitions={competitions}
         onAddCompetition={handleAddCompetition}
         onUpdateCompetition={handleUpdateCompetition}

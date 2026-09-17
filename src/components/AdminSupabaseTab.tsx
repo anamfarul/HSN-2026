@@ -26,17 +26,21 @@ import {
   saveSupabaseCredentials, 
   testSupabaseConnection, 
   syncAllCompetitionsToSupabase,
+  syncAllParticipantsToSupabase,
+  syncAllAdminUsersToSupabase,
   fetchCompetitionsFromSupabase,
   fetchParticipantsFromSupabase,
+  fetchAdminUsersFromSupabase,
   isSupabaseConnected,
   sanitizeSupabaseUrl,
   sanitizeSupabaseKey,
   pingSupabaseEndpoint
 } from '../lib/supabaseClient';
-import { Competition, ParticipantRegistration } from '../types';
+import { AdminUser, Competition, ParticipantRegistration } from '../types';
+import { INITIAL_ADMIN_USERS } from '../data/initialUsers';
 
 export const FIX_COLUMNS_MIGRATION_SQL = `-- ==============================================================================
--- SKRIP PERBAIKAN SCHEMA CACHE SUPABASE: FESTIVAL HARI SANTRI 2026
+-- SKRIP PERBAIKAN SCHEMA CACHE & TABEL SUPABASE: FESTIVAL HARI SANTRI 2026
 -- Salin dan jalankan di Supabase Dashboard -> SQL Editor -> New Query -> Run
 -- Menambahkan kolom-kolom baru tanpa menghapus data tabel yang sudah ada!
 -- ==============================================================================
@@ -60,7 +64,25 @@ ALTER TABLE IF EXISTS public.participants
   ADD COLUMN IF NOT EXISTS payment_proof_name VARCHAR(255),
   ADD COLUMN IF NOT EXISTS notes TEXT;
 
--- 3. Reload cache schema PostgREST Supabase agar langsung aktif
+-- 3. Pastikan tabel admin_users tersedia
+CREATE TABLE IF NOT EXISTS public.admin_users (
+    id VARCHAR(50) PRIMARY KEY,
+    full_name VARCHAR(150) NOT NULL,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    role VARCHAR(100) NOT NULL,
+    email VARCHAR(150),
+    phone VARCHAR(50),
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public all admin_users" ON public.admin_users;
+CREATE POLICY "Public all admin_users" ON public.admin_users FOR ALL USING (true) WITH CHECK (true);
+
+-- 4. Reload cache schema PostgREST Supabase agar langsung aktif
 NOTIFY pgrst, 'reload schema';
 `;
 
@@ -156,7 +178,21 @@ CREATE TABLE IF NOT EXISTS participants (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 4. Tabel Pesan Kontak & Saran Aspirasi
+-- 4. Tabel Pengguna Panitia (Admin Users)
+CREATE TABLE IF NOT EXISTS admin_users (
+    id VARCHAR(50) PRIMARY KEY,
+    full_name VARCHAR(150) NOT NULL,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    role VARCHAR(100) NOT NULL,
+    email VARCHAR(150),
+    phone VARCHAR(50),
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 5. Tabel Pesan Kontak & Saran Aspirasi
 CREATE TABLE IF NOT EXISTS contact_messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sender_name VARCHAR(150) NOT NULL,
@@ -167,9 +203,10 @@ CREATE TABLE IF NOT EXISTS contact_messages (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 5. Kebijakan Row Level Security (RLS) untuk Akses Anon Key Publik & CMS
+-- 6. Kebijakan Row Level Security (RLS) untuk Akses Anon Key Publik & CMS
 ALTER TABLE competitions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE participants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE contact_messages ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Public all competitions" ON competitions;
@@ -178,10 +215,13 @@ CREATE POLICY "Public all competitions" ON competitions FOR ALL USING (true) WIT
 DROP POLICY IF EXISTS "Public all participants" ON participants;
 CREATE POLICY "Public all participants" ON participants FOR ALL USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Public all admin_users" ON admin_users;
+CREATE POLICY "Public all admin_users" ON admin_users FOR ALL USING (true) WITH CHECK (true);
+
 DROP POLICY IF EXISTS "Public all contact_messages" ON contact_messages;
 CREATE POLICY "Public all contact_messages" ON contact_messages FOR ALL USING (true) WITH CHECK (true);
 
--- 6. Setup Storage Bucket 'registrations' (Untuk Bukti Transfer & Surat Mandat)
+-- 7. Setup Storage Bucket 'registrations' (Untuk Bukti Transfer & Surat Mandat)
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('registrations', 'registrations', true)
 ON CONFLICT (id) DO UPDATE SET public = true;
@@ -197,6 +237,7 @@ CREATE POLICY "Public update registrations" ON storage.objects FOR UPDATE USING 
 
 interface AdminSupabaseTabProps {
   competitions: Competition[];
+  participants?: ParticipantRegistration[];
   onRefreshCompetitions: (newComps: Competition[]) => void;
   onRefreshParticipants?: (newParticipants: ParticipantRegistration[]) => void;
   setFeedbackToast?: (msg: string) => void;
@@ -204,6 +245,7 @@ interface AdminSupabaseTabProps {
 
 export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
   competitions,
+  participants,
   onRefreshCompetitions,
   onRefreshParticipants,
   setFeedbackToast,
@@ -214,8 +256,11 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
   const [testing, setTesting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [fetching, setFetching] = useState(false);
+  const [syncingUsers, setSyncingUsers] = useState(false);
+  const [fetchingUsers, setFetchingUsers] = useState(false);
+  const [syncingParticipants, setSyncingParticipants] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [tableStatus, setTableStatus] = useState<{ competitions: boolean; participants: boolean } | null>(null);
+  const [tableStatus, setTableStatus] = useState<{ competitions: boolean; participants: boolean; admin_users?: boolean } | null>(null);
   const [copiedSql, setCopiedSql] = useState(false);
   const [showSqlViewer, setShowSqlViewer] = useState(false);
   const [pingTesting, setPingTesting] = useState(false);
@@ -362,26 +407,130 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
   const handleFetchFromSupabase = async () => {
     setFetching(true);
     try {
+      let msgParts: string[] = [];
+
+      // 1. Fetch competitions
       const { data: remoteComps, error: compErr } = await fetchCompetitionsFromSupabase();
       if (compErr) {
-        notify(`Gagal memuat lomba: ${compErr}`);
+        console.warn('Lomba fetch error:', compErr);
       } else if (remoteComps && remoteComps.length > 0) {
         onRefreshCompetitions(remoteComps);
-        notify(`Berhasil memuat ${remoteComps.length} cabang lomba dari Supabase!`);
-      } else {
-        notify('Tabel competitions di Supabase masih kosong.');
+        msgParts.push(`${remoteComps.length} lomba`);
       }
 
+      // 2. Fetch participants
       if (onRefreshParticipants) {
         const { data: remoteParticipants } = await fetchParticipantsFromSupabase();
         if (remoteParticipants && remoteParticipants.length > 0) {
           onRefreshParticipants(remoteParticipants);
+          msgParts.push(`${remoteParticipants.length} peserta`);
         }
+      }
+
+      // 3. Fetch admin users
+      const { data: remoteUsers } = await fetchAdminUsersFromSupabase();
+      if (remoteUsers && remoteUsers.length > 0) {
+        try {
+          localStorage.setItem('hsn2026_registered_users', JSON.stringify(remoteUsers));
+          msgParts.push(`${remoteUsers.length} user panitia`);
+        } catch (_) {}
+      }
+
+      if (msgParts.length > 0) {
+        notify(`Berhasil menarik data dari Supabase: ${msgParts.join(', ')}!`);
+      } else {
+        notify('Koneksi berhasil, namun database Supabase masih belum memiliki data.');
       }
     } catch (err: any) {
       notify(`Kesalahan: ${err.message}`);
     } finally {
       setFetching(false);
+    }
+  };
+
+  const handleSyncUsersToSupabase = async () => {
+    if (!isConnected) {
+      notify('Harap hubungkan ke Supabase terlebih dahulu.');
+      return;
+    }
+    setSyncingUsers(true);
+    try {
+      let currentUsers: AdminUser[] = [];
+      try {
+        const stored = localStorage.getItem('hsn2026_registered_users');
+        if (stored) currentUsers = JSON.parse(stored);
+      } catch (_) {}
+      if (currentUsers.length === 0) {
+        currentUsers = INITIAL_ADMIN_USERS;
+      }
+      const res = await syncAllAdminUsersToSupabase(currentUsers);
+      if (res.success) {
+        notify(`Sukses! ${res.count} akun panitia berhasil disinkronkan ke Supabase (tabel admin_users).`);
+        setStatusMessage(`Sinkronisasi user berhasil: ${res.count} akun panitia tersimpan di tabel 'admin_users'.`);
+      } else {
+        notify(`Gagal sinkronisasi user: ${res.error}`);
+        setStatusMessage(`Error user: ${res.error}`);
+      }
+    } catch (err: any) {
+      notify(`Terjadi kesalahan: ${err.message}`);
+    } finally {
+      setSyncingUsers(false);
+    }
+  };
+
+  const handleFetchUsersFromSupabase = async () => {
+    setFetchingUsers(true);
+    try {
+      const { data, error } = await fetchAdminUsersFromSupabase();
+      if (error) {
+        notify(`Gagal memuat user panitia: ${error}`);
+      } else if (data && data.length > 0) {
+        try {
+          localStorage.setItem('hsn2026_registered_users', JSON.stringify(data));
+        } catch (_) {}
+        notify(`Berhasil memuat ${data.length} akun panitia dari tabel 'admin_users' Supabase!`);
+      } else {
+        notify('Tabel admin_users di Supabase masih kosong.');
+      }
+    } catch (err: any) {
+      notify(`Kesalahan: ${err.message}`);
+    } finally {
+      setFetchingUsers(false);
+    }
+  };
+
+  const handleSyncParticipantsToSupabase = async () => {
+    if (!isConnected) {
+      notify('Harap hubungkan ke Supabase terlebih dahulu.');
+      return;
+    }
+    setSyncingParticipants(true);
+    try {
+      const listToSync = participants && participants.length > 0 
+        ? participants 
+        : (() => {
+            try {
+              const stored = localStorage.getItem('hsn2026_participants');
+              return stored ? JSON.parse(stored) : [];
+            } catch (_) { return []; }
+          })();
+
+      if (listToSync.length === 0) {
+        notify('Belum ada data pendaftar peserta untuk disinkronkan.');
+        return;
+      }
+
+      const res = await syncAllParticipantsToSupabase(listToSync);
+      if (res.success) {
+        notify(`Sukses! ${res.count} data pendaftar peserta berhasil disinkronkan ke tabel 'participants' Supabase.`);
+        setStatusMessage(`Sinkronisasi peserta berhasil: ${res.count} peserta tersimpan di database.`);
+      } else {
+        notify(`Gagal sinkronisasi peserta: ${res.error}`);
+      }
+    } catch (err: any) {
+      notify(`Terjadi kesalahan: ${err.message}`);
+    } finally {
+      setSyncingParticipants(false);
     }
   };
 
@@ -448,12 +597,15 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
             <span>{statusMessage}</span>
           </div>
           {tableStatus && (
-            <div className="flex items-center gap-2 text-[10px]">
+            <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
               <span className={`px-2 py-0.5 rounded ${tableStatus.competitions ? 'bg-emerald-500/30 text-emerald-200' : 'bg-rose-500/30 text-rose-200'}`}>
                 competitions: {tableStatus.competitions ? 'Siap' : 'Belum Ada'}
               </span>
               <span className={`px-2 py-0.5 rounded ${tableStatus.participants ? 'bg-emerald-500/30 text-emerald-200' : 'bg-rose-500/30 text-rose-200'}`}>
                 participants: {tableStatus.participants ? 'Siap' : 'Belum Ada'}
+              </span>
+              <span className={`px-2 py-0.5 rounded ${tableStatus.admin_users ? 'bg-emerald-500/30 text-emerald-200' : 'bg-rose-500/30 text-rose-200'}`}>
+                admin_users: {tableStatus.admin_users ? 'Siap' : 'Belum Ada'}
               </span>
             </div>
           )}
@@ -659,50 +811,110 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
             </div>
 
             <div className="space-y-3">
-              {/* Sync Card */}
-              <div className="p-4 rounded-xl bg-white/5 border border-white/10 hover:border-[#00D9F5]/30 transition-all">
+              {/* 1. Lomba Sync Card */}
+              <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 hover:border-[#00D9F5]/30 transition-all">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <h5 className="text-xs font-bold text-white flex items-center gap-1.5">
                       <UploadCloud className="w-4 h-4 text-[#00D9F5]" />
-                      <span>Sinkronkan Lomba Lokal ke Supabase</span>
+                      <span>Cabang Lomba ({competitions.length})</span>
                     </h5>
-                    <p className="text-[11px] text-[#DDE7E8]/70 mt-1">
-                      Mengunggah seluruh {competitions.length} cabang lomba (termasuk Juknis & hadiah) ke tabel <code className="text-[#F2C96D]">competitions</code>.
+                    <p className="text-[11px] text-[#DDE7E8]/70 mt-0.5">
+                      Tabel <code className="text-[#F2C96D]">competitions</code>: juknis, syarat, hadiah, dan biaya pendaftaran.
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={handleSyncToSupabase}
                     disabled={syncing}
-                    className="px-3.5 py-2 rounded-xl bg-[#00D9F5]/20 hover:bg-[#00D9F5]/30 border border-[#00D9F5]/40 text-[#00D9F5] hover:text-white text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all active:scale-95"
+                    className="px-3 py-1.5 rounded-xl bg-[#00D9F5]/20 hover:bg-[#00D9F5]/30 border border-[#00D9F5]/40 text-[#00D9F5] hover:text-white text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all active:scale-95"
                   >
                     <UploadCloud className={`w-3.5 h-3.5 ${syncing ? 'animate-bounce' : ''}`} />
-                    <span>{syncing ? 'Menyinkronkan...' : 'Sinkronkan'}</span>
+                    <span>{syncing ? 'Menyinkronkan...' : 'Kirim Lomba'}</span>
                   </button>
                 </div>
               </div>
 
-              {/* Fetch Latest Card */}
-              <div className="p-4 rounded-xl bg-white/5 border border-white/10 hover:border-emerald-500/30 transition-all">
+              {/* 2. User Panitia Sync Card */}
+              <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 hover:border-[#F2C96D]/30 transition-all">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h5 className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-[#F2C96D]" />
+                      <span>Akun Panitia & User CMS</span>
+                    </h5>
+                    <p className="text-[11px] text-[#DDE7E8]/70 mt-0.5">
+                      Tabel <code className="text-[#F2C96D]">admin_users</code>: login terpusat, role panitia, & hak akses juri.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleFetchUsersFromSupabase}
+                      disabled={fetchingUsers}
+                      className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-medium flex items-center gap-1 transition-all active:scale-95 disabled:opacity-50"
+                      title="Tarik data user panitia dari Supabase"
+                    >
+                      <RefreshCw className={`w-3 h-3 text-[#00D9F5] ${fetchingUsers ? 'animate-spin' : ''}`} />
+                      <span>{fetchingUsers ? '...' : 'Tarik'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSyncUsersToSupabase}
+                      disabled={syncingUsers}
+                      className="px-3 py-1.5 rounded-xl bg-[#F2C96D]/20 hover:bg-[#F2C96D]/30 border border-[#F2C96D]/40 text-[#F2C96D] hover:text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      <UploadCloud className={`w-3.5 h-3.5 ${syncingUsers ? 'animate-bounce' : ''}`} />
+                      <span>{syncingUsers ? 'Menyinkronkan...' : 'Kirim Users'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Peserta Terdaftar Sync Card */}
+              <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 hover:border-emerald-500/30 transition-all">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h5 className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <Table className="w-4 h-4 text-emerald-400" />
+                      <span>Pendaftar Peserta Terdaftar</span>
+                    </h5>
+                    <p className="text-[11px] text-[#DDE7E8]/70 mt-0.5">
+                      Tabel <code className="text-[#F2C96D]">participants</code>: formulir registrasi, kontak WA, & bukti bayar.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSyncParticipantsToSupabase}
+                    disabled={syncingParticipants}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 hover:text-white text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all active:scale-95"
+                  >
+                    <UploadCloud className={`w-3.5 h-3.5 ${syncingParticipants ? 'animate-bounce' : ''}`} />
+                    <span>{syncingParticipants ? 'Menyinkronkan...' : 'Kirim Peserta'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 4. Fetch All Latest Card */}
+              <div className="p-3.5 rounded-xl bg-gradient-to-r from-emerald-950/40 to-teal-950/40 border border-emerald-500/40 transition-all">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <h5 className="text-xs font-bold text-white flex items-center gap-1.5">
                       <RefreshCw className="w-4 h-4 text-emerald-400" />
-                      <span>Tarik Data Terbaru dari Supabase</span>
+                      <span>Tarik Semua Data Terbaru (Lomba, Peserta, Users)</span>
                     </h5>
-                    <p className="text-[11px] text-[#DDE7E8]/70 mt-1">
-                      Memperbarui tampilan website dan CMS dengan data langsung yang tersimpan di cloud database.
+                    <p className="text-[11px] text-[#DDE7E8]/70 mt-0.5">
+                      Mengambil pembaruan terkini dari cloud database ke seluruh modul CMS.
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={handleFetchFromSupabase}
                     disabled={fetching}
-                    className="px-3.5 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 hover:text-white text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all active:scale-95"
+                    className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:brightness-110 border border-emerald-400/50 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all active:scale-95"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${fetching ? 'animate-spin' : ''}`} />
-                    <span>{fetching ? 'Memuat...' : 'Tarik Data'}</span>
+                    <span>{fetching ? 'Memuat...' : 'Tarik Semua'}</span>
                   </button>
                 </div>
               </div>

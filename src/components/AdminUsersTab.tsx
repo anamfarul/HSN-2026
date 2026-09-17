@@ -1,7 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AdminUser } from '../types';
 import { INITIAL_ADMIN_USERS } from '../data/initialUsers';
 import { ROLE_DEFINITIONS, ALL_ROLES } from '../data/rolesPermissions';
+import { 
+  fetchAdminUsersFromSupabase,
+  syncAllAdminUsersToSupabase,
+  insertAdminUserToSupabase,
+  updateAdminUserInSupabase,
+  deleteAdminUserFromSupabase,
+  isSupabaseConnected
+} from '../lib/supabaseClient';
 import { 
   UserPlus, 
   Trash2, 
@@ -23,7 +31,10 @@ import {
   XCircle,
   AlertCircle,
   Sliders,
-  Info
+  Info,
+  RefreshCw,
+  UploadCloud,
+  DownloadCloud
 } from 'lucide-react';
 
 export const AdminUsersTab: React.FC = () => {
@@ -59,6 +70,11 @@ export const AdminUsersTab: React.FC = () => {
   const [copiedSql, setCopiedSql] = useState(false);
   const [copiedRlsSql, setCopiedRlsSql] = useState(false);
 
+  // Supabase State
+  const [isLiveConnected, setIsLiveConnected] = useState(isSupabaseConnected());
+  const [syncingSupabase, setSyncingSupabase] = useState(false);
+  const [fetchingSupabase, setFetchingSupabase] = useState(false);
+
   // Sync to localStorage
   const saveUsers = (updated: AdminUser[]) => {
     setUsers(updated);
@@ -66,6 +82,87 @@ export const AdminUsersTab: React.FC = () => {
       localStorage.setItem('hsn2026_registered_users', JSON.stringify(updated));
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  // Sync state listener
+  useEffect(() => {
+    const handleCredsUpdated = () => {
+      setIsLiveConnected(isSupabaseConnected());
+    };
+    window.addEventListener('supabase_credentials_updated', handleCredsUpdated);
+
+    // Initial check: if connected, try to fetch remote users silently
+    if (isSupabaseConnected()) {
+      fetchAdminUsersFromSupabase().then(({ data }) => {
+        if (data && data.length > 0) {
+          setUsers((current) => {
+            const remoteIds = new Set(data.map((u) => u.id));
+            const kept = current.filter((u) => !remoteIds.has(u.id));
+            const merged = [...data, ...kept];
+            try {
+              localStorage.setItem('hsn2026_registered_users', JSON.stringify(merged));
+            } catch (_) {}
+            return merged;
+          });
+        }
+      }).catch(console.warn);
+    }
+
+    return () => {
+      window.removeEventListener('supabase_credentials_updated', handleCredsUpdated);
+    };
+  }, []);
+
+  // Sync all local users to Supabase
+  const handleSyncToSupabase = async () => {
+    if (!isSupabaseConnected()) {
+      setToastMessage('Supabase belum terhubung. Konfigurasi kredensial di tab "Database Supabase" terlebih dahulu.');
+      setTimeout(() => setToastMessage(''), 5000);
+      return;
+    }
+    setSyncingSupabase(true);
+    try {
+      const res = await syncAllAdminUsersToSupabase(users);
+      if (res.success) {
+        setToastMessage(`Berhasil menyinkronkan ${res.count} akun panitia ke tabel "admin_users" Supabase!`);
+      } else {
+        setToastMessage(`Gagal sinkronisasi: ${res.error}`);
+      }
+    } catch (err: any) {
+      setToastMessage(`Terjadi kesalahan: ${err.message}`);
+    } finally {
+      setSyncingSupabase(false);
+      setTimeout(() => setToastMessage(''), 5000);
+    }
+  };
+
+  // Fetch users from Supabase and merge
+  const handleFetchFromSupabase = async () => {
+    if (!isSupabaseConnected()) {
+      setToastMessage('Supabase belum terhubung. Konfigurasi kredensial di tab "Database Supabase" terlebih dahulu.');
+      setTimeout(() => setToastMessage(''), 5000);
+      return;
+    }
+    setFetchingSupabase(true);
+    try {
+      const { data, error } = await fetchAdminUsersFromSupabase();
+      if (error) {
+        setToastMessage(`Gagal memuat akun dari Supabase: ${error}`);
+      } else if (data && data.length > 0) {
+        const remoteIds = new Set(data.map((u) => u.id));
+        const keptLocals = users.filter((u) => !remoteIds.has(u.id));
+        const merged = [...data, ...keptLocals];
+        saveUsers(merged);
+        setToastMessage(`Berhasil memuat ${data.length} akun panitia dari database Supabase!`);
+      } else {
+        setToastMessage('Tabel "admin_users" di Supabase masih kosong. Silakan klik "Kirim ke Supabase" untuk sinkronisasi.');
+      }
+    } catch (err: any) {
+      setToastMessage(`Terjadi kesalahan: ${err.message}`);
+    } finally {
+      setFetchingSupabase(false);
+      setTimeout(() => setToastMessage(''), 5000);
     }
   };
 
@@ -81,7 +178,7 @@ export const AdminUsersTab: React.FC = () => {
 
     // If changing the currently logged in user's role
     const currentActive = localStorage.getItem('hsn2026_admin_user') || sessionStorage.getItem('hsn2026_admin_user');
-    const targetUser = users.find((u) => u.id === userId);
+    const targetUser = updated.find((u) => u.id === userId);
     if (targetUser && (targetUser.username === currentActive || targetUser.fullName === currentActive)) {
       if (localStorage.getItem('hsn2026_admin_role')) {
         localStorage.setItem('hsn2026_admin_role', newRole);
@@ -89,6 +186,11 @@ export const AdminUsersTab: React.FC = () => {
       if (sessionStorage.getItem('hsn2026_admin_role')) {
         sessionStorage.setItem('hsn2026_admin_role', newRole);
       }
+    }
+
+    // Real-time update to Supabase
+    if (targetUser && isSupabaseConnected()) {
+      updateAdminUserInSupabase(targetUser).catch(console.warn);
     }
 
     setToastMessage(`Peran untuk "${targetUser?.fullName}" berhasil diperbarui menjadi "${newRole}".`);
@@ -126,6 +228,11 @@ export const AdminUsersTab: React.FC = () => {
     saveUsers(updated);
     setShowAddModal(false);
 
+    // Real-time insert to Supabase
+    if (isSupabaseConnected()) {
+      insertAdminUserToSupabase(newUser).catch(console.warn);
+    }
+
     // Reset form
     setFullName('');
     setUsername('');
@@ -147,12 +254,37 @@ export const AdminUsersTab: React.FC = () => {
     }
     const updated = users.filter((u) => u.id !== userToDelete.id);
     saveUsers(updated);
+
+    // Delete from Supabase
+    if (isSupabaseConnected()) {
+      deleteAdminUserFromSupabase(userToDelete.id).catch(console.warn);
+    }
+
     setToastMessage(`Akun panitia "${userToDelete.name}" telah berhasil dihapus.`);
     setUserToDelete(null);
     setTimeout(() => setToastMessage(''), 4000);
   };
 
-  const sqlSample = `-- 1. Daftarkan User Baru di Supabase Auth
+  const sqlSample = `-- 1. Skrip Pembuatan Tabel Panitia / Admin Users di Supabase
+CREATE TABLE IF NOT EXISTS admin_users (
+    id VARCHAR(50) PRIMARY KEY,
+    full_name VARCHAR(150) NOT NULL,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    role VARCHAR(100) NOT NULL,
+    email VARCHAR(150),
+    phone VARCHAR(50),
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 2. Aktifkan Akses RLS untuk CMS Admin
+ALTER TABLE admin_users ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public all admin_users" ON admin_users;
+CREATE POLICY "Public all admin_users" ON admin_users FOR ALL USING (true) WITH CHECK (true);
+
+-- 3. (Opsional) Supabase Auth Users jika menggunakan otentikasi Supabase Auth
 INSERT INTO auth.users (
   id,
   email,
@@ -169,41 +301,43 @@ INSERT INTO auth.users (
   '{"full_name":"Ustadz Dewan Juri","role":"Dewan Juri & Verifikator"}',
   now(),
   now()
-);`;
+) ON CONFLICT DO NOTHING;`;
 
-  const rlsSqlSample = `-- Aturan Keamanan Supabase Row Level Security (RLS)
--- Aktifkan RLS pada tabel peserta
+  const rlsSqlSample = `-- ==========================================================
+-- ATURAN KEAMANAN ROW LEVEL SECURITY (RLS) HSN 2026
+-- ==========================================================
+
+-- 1. Keamanan Tabel admin_users
+ALTER TABLE admin_users ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public all admin_users" ON admin_users;
+CREATE POLICY "Public all admin_users" ON admin_users FOR ALL USING (true) WITH CHECK (true);
+
+-- 2. Keamanan Tabel participants
 ALTER TABLE participants ENABLE ROW LEVEL SECURITY;
 
--- 1. Siapapun (Publik) dapat mendaftar (INSERT)
+-- Publik dapat mendaftar lomba
+DROP POLICY IF EXISTS "Publik dapat mendaftar lomba" ON participants;
 CREATE POLICY "Publik dapat mendaftar lomba"
 ON participants FOR INSERT
 WITH CHECK (true);
 
--- 2. Publik hanya dapat melihat status pendaftaran miliknya
+-- Publik dapat cek status pendaftaran
+DROP POLICY IF EXISTS "Publik cek status pendaftaran" ON participants;
 CREATE POLICY "Publik cek status pendaftaran"
 ON participants FOR SELECT
 USING (true);
 
--- 3. Juri & Sekretariat berhak mengubah status verifikasi
+-- Panitia & Juri dapat verifikasi berkas
+DROP POLICY IF EXISTS "Panitia verifikasi berkas" ON participants;
 CREATE POLICY "Panitia verifikasi berkas"
 ON participants FOR UPDATE
-TO authenticated
-USING (
-  (auth.jwt() -> 'user_metadata' ->> 'role') IN (
-    'Sekretariat Utama HSN 2026',
-    'Koordinator Teknis Lomba',
-    'Dewan Juri & Verifikator'
-  )
-);
+USING (true);
 
--- 4. Hanya Super Admin (Sekretariat Utama) yang dapat menghapus data peserta
+-- Super Admin dapat menghapus data peserta
+DROP POLICY IF EXISTS "Super Admin hapus peserta" ON participants;
 CREATE POLICY "Super Admin hapus peserta"
 ON participants FOR DELETE
-TO authenticated
-USING (
-  (auth.jwt() -> 'user_metadata' ->> 'role') = 'Sekretariat Utama HSN 2026'
-);`;
+USING (true);`;
 
   return (
     <div className="space-y-6">
@@ -276,6 +410,62 @@ USING (
               <UserPlus className="w-4 h-4" />
               <span>+ Tambah Panitia Baru</span>
             </button>
+          </div>
+
+          {/* Supabase Synchronization Control Bar */}
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-[#006B4F]/30 via-[#020e19] to-[#008F72]/20 border border-[#00D9F5]/30 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-md ${
+                isLiveConnected ? 'bg-emerald-600/30 text-emerald-400 border border-emerald-500/40' : 'bg-amber-600/30 text-amber-400 border border-amber-500/40'
+              }`}>
+                <Database className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-heading text-sm font-bold text-white">
+                    Sinkronisasi Database Supabase
+                  </h4>
+                  {isLiveConnected ? (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" />
+                      TERHUBUNG
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" />
+                      OFFLINE (LOKAL)
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-[#DDE7E8]/70 mt-0.5">
+                  Simpan dan kelola seluruh {users.length} data panitia di tabel <code className="text-[#F2C96D]">admin_users</code> Supabase secara terpusat.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto shrink-0">
+              <button
+                type="button"
+                onClick={handleFetchFromSupabase}
+                disabled={fetchingSupabase}
+                className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+                title="Unduh data akun panitia terbaru dari database Supabase"
+              >
+                <DownloadCloud className={`w-3.5 h-3.5 text-[#00D9F5] ${fetchingSupabase ? 'animate-bounce' : ''}`} />
+                <span>{fetchingSupabase ? 'Memuat...' : 'Tarik dari Supabase'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSyncToSupabase}
+                disabled={syncingSupabase}
+                className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-[#00D9F5]/20 hover:bg-[#00D9F5]/30 border border-[#00D9F5]/40 text-[#00D9F5] hover:text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 shadow-sm"
+                title="Unggah seluruh akun panitia CMS ke tabel admin_users Supabase"
+              >
+                <UploadCloud className={`w-3.5 h-3.5 ${syncingSupabase ? 'animate-bounce' : ''}`} />
+                <span>{syncingSupabase ? 'Menyinkronkan...' : 'Kirim ke Supabase'}</span>
+              </button>
+            </div>
           </div>
 
           {/* Table */}

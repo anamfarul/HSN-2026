@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Competition, CategoryGeneration } from '../types';
+import { Competition, CategoryGeneration, AdminUser } from '../types';
 import { INITIAL_COMPETITIONS } from '../data/initialData';
 
 // Helper to sanitize Supabase Project URL to prevent "TypeError: Failed to fetch"
@@ -192,7 +192,7 @@ export async function testSupabaseConnection(): Promise<{
   success: boolean; 
   message: string; 
   count?: number;
-  tables?: { competitions: boolean; participants: boolean };
+  tables?: { competitions: boolean; participants: boolean; admin_users?: boolean };
 }> {
   const client = getSupabaseClient();
   const { url } = getSupabaseCredentials();
@@ -201,7 +201,7 @@ export async function testSupabaseConnection(): Promise<{
     return {
       success: false,
       message: 'Kredensial Supabase (URL atau Anon Key) belum diisi di CMS Admin.',
-      tables: { competitions: false, participants: false }
+      tables: { competitions: false, participants: false, admin_users: false }
     };
   }
 
@@ -218,8 +218,14 @@ export async function testSupabaseConnection(): Promise<{
       .select('id, registration_number', { count: 'exact', head: false })
       .limit(1);
 
+    // 3. Tes tabel admin_users
+    const { error: userErr, count: userCount } = await client
+      .from('admin_users')
+      .select('id, username', { count: 'exact', head: false })
+      .limit(1);
+
     // Periksa apakah ada error autentikasi (Anon Key salah/kadaluarsa)
-    const allErrors = [compErr, partErr].filter(Boolean);
+    const allErrors = [compErr, partErr, userErr].filter(Boolean);
     const authError = allErrors.find((e: any) => {
       const msg = (e?.message || '') + (e?.details || '');
       return /invalid.*(key|jwt|apikey)|unauthorized|401|jws/i.test(msg);
@@ -229,7 +235,7 @@ export async function testSupabaseConnection(): Promise<{
       return {
         success: false,
         message: `Kunci Anon Key Supabase tidak valid (${authError.message}). Harap salin ulang "anon public key" dari Dashboard Supabase: Project Settings → API.`,
-        tables: { competitions: false, participants: false }
+        tables: { competitions: false, participants: false, admin_users: false }
       };
     }
 
@@ -243,45 +249,31 @@ export async function testSupabaseConnection(): Promise<{
       return {
         success: false,
         message: `Gagal menghubungi server database Supabase (${url}). Pastikan proyek Supabase dalam status Aktif (bukan Paused) dan URL API benar.`,
-        tables: { competitions: false, participants: false }
+        tables: { competitions: false, participants: false, admin_users: false }
       };
     }
 
     const hasCompTable = !compErr;
     const hasPartTable = !partErr;
+    const hasUserTable = !userErr;
 
-    if (!hasCompTable && !hasPartTable) {
+    if (!hasCompTable && !hasPartTable && !hasUserTable) {
       return {
         success: false,
-        message: 'Koneksi ke Supabase terhubung, namun tabel "competitions" & "participants" belum ada di database. Harap salin & jalankan skrip SQL di Supabase SQL Editor.',
-        tables: { competitions: false, participants: false }
-      };
-    }
-
-    if (!hasPartTable) {
-      return {
-        success: false,
-        message: `Tabel "participants" (pendaftaran) belum ada atau izin RLS belum diatur (${partErr?.message}). Jalankan skrip SQL skema untuk mengaktifkannya.`,
-        tables: { competitions: hasCompTable, participants: false }
-      };
-    }
-
-    if (!hasCompTable) {
-      return {
-        success: false,
-        message: `Tabel "competitions" belum ada (${compErr?.message}). Anda dapat menyinkronkan data lokal ke Supabase setelah menjalankan skrip SQL.`,
-        tables: { competitions: false, participants: hasPartTable }
+        message: 'Koneksi ke Supabase terhubung, namun tabel database belum ada. Harap salin & jalankan skrip SQL di Supabase SQL Editor.',
+        tables: { competitions: false, participants: false, admin_users: false }
       };
     }
 
     const totalComps = compCount ?? compData?.length ?? 0;
     const totalParts = partCount ?? 0;
+    const totalUsers = userCount ?? 0;
 
     return {
       success: true,
-      message: `Terhubung & Siap! Ditemukan ${totalComps} data lomba & ${totalParts} pendaftar di Supabase.`,
+      message: `Terhubung & Siap! Ditemukan ${totalComps} lomba, ${totalParts} peserta, dan ${totalUsers} user panitia di Supabase.`,
       count: totalComps,
-      tables: { competitions: hasCompTable, participants: hasPartTable }
+      tables: { competitions: hasCompTable, participants: hasPartTable, admin_users: hasUserTable }
     };
   } catch (err: any) {
     let friendly = err?.message || 'Kesalahan jaringan';
@@ -649,6 +641,71 @@ export async function fetchParticipantsFromSupabase(): Promise<{ data: any[] | n
   }
 }
 
+// Bulk sync all participants from local state to Supabase
+export async function syncAllParticipantsToSupabase(
+  participants: any[]
+): Promise<{ success: boolean; count: number; error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, count: 0, error: 'Supabase client belum dikonfigurasi.' };
+  }
+
+  if (!participants || participants.length === 0) {
+    return { success: true, count: 0, error: null };
+  }
+
+  try {
+    let rows = participants.map(mapParticipantToSupabase);
+    let attempts = 6;
+    let lastError: any = null;
+
+    while (attempts > 0) {
+      attempts--;
+      // Upsert by registration_number
+      const { error } = await client
+        .from('participants')
+        .upsert(rows, { onConflict: 'registration_number' });
+
+      if (!error) {
+        return { success: true, count: rows.length, error: null };
+      }
+
+      lastError = error;
+
+      // Check if column missing in schema cache
+      const match = error.message?.match(/Could not find the '([^']+)' column of 'participants'/i);
+      if (match && match[1]) {
+        const missingCol = match[1];
+        console.warn(`Supabase schema missing column '${missingCol}' in participants. Stripping and retrying...`);
+        rows = rows.map((r) => {
+          const clone = { ...r };
+          delete clone[missingCol];
+          return clone;
+        });
+        continue;
+      }
+
+      // Check foreign key constraint on competition_id
+      if (
+        error.code === '23503' ||
+        error.message?.toLowerCase().includes('foreign key') ||
+        error.message?.toLowerCase().includes('violates foreign key constraint') ||
+        error.message?.toLowerCase().includes('competition_id')
+      ) {
+        console.warn('Foreign key issue on competition_id, setting to null and retrying...');
+        rows = rows.map((r) => ({ ...r, competition_id: null }));
+        continue;
+      }
+
+      break;
+    }
+
+    return { success: false, count: 0, error: lastError?.message || 'Gagal sinkronisasi data peserta ke Supabase' };
+  } catch (err: any) {
+    return { success: false, count: 0, error: err.message || 'Gagal sinkronisasi data peserta ke Supabase' };
+  }
+}
+
 // Update participant verification status
 export async function updateParticipantStatusInSupabase(
   registrationNumberOrId: string,
@@ -675,6 +732,31 @@ export async function updateParticipantStatusInSupabase(
     return { success: true, error: null };
   } catch (err: any) {
     return { success: false, error: err.message || 'Gagal memperbarui status di Supabase' };
+  }
+}
+
+// Delete participant registration from Supabase
+export async function deleteParticipantFromSupabase(
+  registrationNumberOrId: string
+): Promise<{ success: boolean; error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, error: 'Supabase client belum dikonfigurasi.' };
+  }
+
+  try {
+    const { error } = await client
+      .from('participants')
+      .delete()
+      .or(`registration_number.eq.${registrationNumberOrId},id.eq.${registrationNumberOrId}`);
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, error: null };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Gagal menghapus data peserta dari Supabase' };
   }
 }
 
@@ -750,4 +832,168 @@ export async function insertContactMessageToSupabase(message: {
     return { success: false, error: err.message || 'Gagal menyimpan pesan kontak ke Supabase' };
   }
 }
+
+// -----------------------------------------------------------------------------
+// ADMIN USERS (PANITIA & CMS ACCESS) SYNCHRONIZATION
+// -----------------------------------------------------------------------------
+
+// Map database row to AdminUser interface
+export function mapSupabaseToAdminUser(row: any): AdminUser {
+  return {
+    id: row.id || `user-${Date.now()}`,
+    fullName: row.full_name || 'Panitia HSN 2026',
+    username: (row.username || '').toLowerCase().trim(),
+    password: row.password || undefined,
+    role: row.role || 'Sekretariat Utama HSN 2026',
+    email: row.email || '',
+    phone: row.phone || '',
+    createdAt: row.created_at ? new Date(row.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : '01 Oktober 2026',
+    isActive: row.is_active ?? true,
+  };
+}
+
+// Map AdminUser to Supabase admin_users table row
+export function mapAdminUserToSupabase(u: AdminUser): Record<string, any> {
+  return {
+    id: u.id,
+    full_name: (u.fullName || '').trim(),
+    username: (u.username || '').toLowerCase().trim(),
+    password: u.password || 'santri2026',
+    role: u.role || 'Sekretariat Utama HSN 2026',
+    email: u.email ? u.email.trim() : null,
+    phone: u.phone ? u.phone.trim() : null,
+    is_active: u.isActive ?? true,
+  };
+}
+
+// Fetch all admin users from Supabase admin_users table
+export async function fetchAdminUsersFromSupabase(): Promise<{ data: AdminUser[] | null; error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { data: null, error: 'Supabase client belum dikonfigurasi.' };
+  }
+
+  try {
+    const { data, error } = await client
+      .from('admin_users')
+      .select('*')
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    if (!data) return { data: [], error: null };
+
+    const parsed = data.map(mapSupabaseToAdminUser);
+    return { data: parsed, error: null };
+  } catch (err: any) {
+    return { data: null, error: err.message || 'Gagal memuat data user panitia dari Supabase' };
+  }
+}
+
+// Bulk sync all admin users from CMS to Supabase admin_users table
+export async function syncAllAdminUsersToSupabase(
+  users: AdminUser[]
+): Promise<{ success: boolean; count: number; error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, count: 0, error: 'Supabase client belum dikonfigurasi.' };
+  }
+
+  if (!users || users.length === 0) {
+    return { success: true, count: 0, error: null };
+  }
+
+  try {
+    let rows = users.map(mapAdminUserToSupabase);
+    let attempts = 4;
+    let lastError: any = null;
+
+    while (attempts > 0) {
+      attempts--;
+      const { error } = await client
+        .from('admin_users')
+        .upsert(rows, { onConflict: 'id' });
+
+      if (!error) {
+        return { success: true, count: rows.length, error: null };
+      }
+
+      lastError = error;
+
+      // Self healing if schema missing columns
+      const match = error.message?.match(/Could not find the '([^']+)' column of 'admin_users'/i);
+      if (match && match[1]) {
+        const missingCol = match[1];
+        console.warn(`Supabase schema missing column '${missingCol}' in admin_users. Stripping and retrying...`);
+        rows = rows.map((r) => {
+          const clone = { ...r };
+          delete clone[missingCol];
+          return clone;
+        });
+        continue;
+      }
+
+      break;
+    }
+
+    if (lastError?.code === '42P01' || lastError?.message?.toLowerCase().includes('does not exist')) {
+      return {
+        success: false,
+        count: 0,
+        error: 'Tabel "admin_users" belum dibuat di Supabase. Salin & jalankan skrip SQL di Tab Supabase.',
+      };
+    }
+
+    return { success: false, count: 0, error: lastError?.message || 'Gagal sinkronisasi data user panitia ke Supabase' };
+  } catch (err: any) {
+    return { success: false, count: 0, error: err.message || 'Gagal sinkronisasi data user panitia ke Supabase' };
+  }
+}
+
+// Insert single admin user to Supabase
+export async function insertAdminUserToSupabase(user: AdminUser): Promise<{ success: boolean; error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, error: 'Supabase client belum dikonfigurasi.' };
+
+  try {
+    const row = mapAdminUserToSupabase(user);
+    const { error } = await client.from('admin_users').upsert([row], { onConflict: 'id' });
+    if (error) return { success: false, error: error.message };
+    return { success: true, error: null };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Gagal menyimpan user panitia ke Supabase' };
+  }
+}
+
+// Update single admin user in Supabase
+export async function updateAdminUserInSupabase(user: AdminUser): Promise<{ success: boolean; error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, error: 'Supabase client belum dikonfigurasi.' };
+
+  try {
+    const row = mapAdminUserToSupabase(user);
+    const { error } = await client.from('admin_users').update(row).eq('id', user.id);
+    if (error) return { success: false, error: error.message };
+    return { success: true, error: null };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Gagal memperbarui user panitia di Supabase' };
+  }
+}
+
+// Delete admin user from Supabase
+export async function deleteAdminUserFromSupabase(id: string): Promise<{ success: boolean; error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, error: 'Supabase client belum dikonfigurasi.' };
+
+  try {
+    const { error } = await client.from('admin_users').delete().eq('id', id);
+    if (error) return { success: false, error: error.message };
+    return { success: true, error: null };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Gagal menghapus user panitia dari Supabase' };
+  }
+}
+
 
