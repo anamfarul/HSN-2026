@@ -892,17 +892,62 @@ export async function fetchAdminUsersFromSupabase(): Promise<{ data: AdminUser[]
   }
 }
 
+// Helper to detect if admin_users table does not exist in Supabase PostgREST schema cache
+export function isMissingAdminUsersTable(error: any): boolean {
+  if (!error) return false;
+  const msg = ((error.message || '') + ' ' + (error.details || '') + ' ' + (error.hint || '')).toLowerCase();
+  const code = (error.code || '').toString();
+  return (
+    code === '42P01' ||
+    code === 'PGRST200' ||
+    code === 'PGRST205' ||
+    msg.includes('schema cache') ||
+    msg.includes('could not find the table') ||
+    msg.includes('could not find the public.admin_users') ||
+    msg.includes('relation "public.admin_users" does not exist') ||
+    msg.includes('relation "admin_users" does not exist') ||
+    (msg.includes('admin_users') && msg.includes('does not exist'))
+  );
+}
+
+export const ADMIN_USERS_SETUP_SQL = `-- ==============================================================================
+-- SKRIP TABEL AKUN PANITIA (ADMIN_USERS): FESTIVAL HARI SANTRI 2026
+-- Salin dan jalankan skrip ini di Supabase Dashboard -> SQL Editor -> New Query -> Run
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS public.admin_users (
+    id VARCHAR(50) PRIMARY KEY,
+    full_name VARCHAR(150) NOT NULL,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    role VARCHAR(100) NOT NULL,
+    email VARCHAR(150),
+    phone VARCHAR(50),
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Kebijakan Row Level Security (RLS) untuk Akses Anon Key & CMS
+ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public all admin_users" ON public.admin_users;
+CREATE POLICY "Public all admin_users" ON public.admin_users FOR ALL USING (true) WITH CHECK (true);
+
+-- Muat ulang cache schema PostgREST Supabase agar tabel langsung terbaca
+NOTIFY pgrst, 'reload schema';
+`;
+
 // Bulk sync all admin users from CMS to Supabase admin_users table
 export async function syncAllAdminUsersToSupabase(
   users: AdminUser[]
-): Promise<{ success: boolean; count: number; error: string | null }> {
+): Promise<{ success: boolean; count: number; error: string | null; missingTable?: boolean }> {
   const client = getSupabaseClient();
   if (!client) {
-    return { success: false, count: 0, error: 'Supabase client belum dikonfigurasi.' };
+    return { success: false, count: 0, error: 'Supabase client belum dikonfigurasi.', missingTable: false };
   }
 
   if (!users || users.length === 0) {
-    return { success: true, count: 0, error: null };
+    return { success: true, count: 0, error: null, missingTable: false };
   }
 
   try {
@@ -917,10 +962,19 @@ export async function syncAllAdminUsersToSupabase(
         .upsert(rows, { onConflict: 'id' });
 
       if (!error) {
-        return { success: true, count: rows.length, error: null };
+        return { success: true, count: rows.length, error: null, missingTable: false };
       }
 
       lastError = error;
+
+      if (isMissingAdminUsersTable(error)) {
+        return {
+          success: false,
+          count: 0,
+          missingTable: true,
+          error: 'Tabel "admin_users" belum dibuat di database Supabase Anda. Harap buat tabel ini melalui Supabase SQL Editor.',
+        };
+      }
 
       // Self healing if schema missing columns
       const match = error.message?.match(/Could not find the '([^']+)' column of 'admin_users'/i);
@@ -938,61 +992,88 @@ export async function syncAllAdminUsersToSupabase(
       break;
     }
 
-    if (lastError?.code === '42P01' || lastError?.message?.toLowerCase().includes('does not exist')) {
+    if (isMissingAdminUsersTable(lastError)) {
       return {
         success: false,
         count: 0,
-        error: 'Tabel "admin_users" belum dibuat di Supabase. Salin & jalankan skrip SQL di Tab Supabase.',
+        missingTable: true,
+        error: 'Tabel "admin_users" belum dibuat di database Supabase Anda. Harap buat tabel ini melalui Supabase SQL Editor.',
       };
     }
 
-    return { success: false, count: 0, error: lastError?.message || 'Gagal sinkronisasi data user panitia ke Supabase' };
+    return { success: false, count: 0, error: lastError?.message || 'Gagal sinkronisasi data user panitia ke Supabase', missingTable: false };
   } catch (err: any) {
-    return { success: false, count: 0, error: err.message || 'Gagal sinkronisasi data user panitia ke Supabase' };
+    const missing = isMissingAdminUsersTable(err);
+    return { 
+      success: false, 
+      count: 0, 
+      missingTable: missing,
+      error: missing 
+        ? 'Tabel "admin_users" belum dibuat di database Supabase Anda. Harap buat tabel ini melalui Supabase SQL Editor.' 
+        : (err.message || 'Gagal sinkronisasi data user panitia ke Supabase') 
+    };
   }
 }
 
 // Insert single admin user to Supabase
-export async function insertAdminUserToSupabase(user: AdminUser): Promise<{ success: boolean; error: string | null }> {
+export async function insertAdminUserToSupabase(user: AdminUser): Promise<{ success: boolean; error: string | null; missingTable?: boolean }> {
   const client = getSupabaseClient();
-  if (!client) return { success: false, error: 'Supabase client belum dikonfigurasi.' };
+  if (!client) return { success: false, error: 'Supabase client belum dikonfigurasi.', missingTable: false };
 
   try {
     const row = mapAdminUserToSupabase(user);
     const { error } = await client.from('admin_users').upsert([row], { onConflict: 'id' });
-    if (error) return { success: false, error: error.message };
-    return { success: true, error: null };
+    if (error) {
+      if (isMissingAdminUsersTable(error)) {
+        return { success: false, error: 'Tabel "admin_users" belum ada di Supabase.', missingTable: true };
+      }
+      return { success: false, error: error.message, missingTable: false };
+    }
+    return { success: true, error: null, missingTable: false };
   } catch (err: any) {
-    return { success: false, error: err.message || 'Gagal menyimpan user panitia ke Supabase' };
+    const missing = isMissingAdminUsersTable(err);
+    return { success: false, error: err.message || 'Gagal menyimpan user panitia ke Supabase', missingTable: missing };
   }
 }
 
 // Update single admin user in Supabase
-export async function updateAdminUserInSupabase(user: AdminUser): Promise<{ success: boolean; error: string | null }> {
+export async function updateAdminUserInSupabase(user: AdminUser): Promise<{ success: boolean; error: string | null; missingTable?: boolean }> {
   const client = getSupabaseClient();
-  if (!client) return { success: false, error: 'Supabase client belum dikonfigurasi.' };
+  if (!client) return { success: false, error: 'Supabase client belum dikonfigurasi.', missingTable: false };
 
   try {
     const row = mapAdminUserToSupabase(user);
     const { error } = await client.from('admin_users').update(row).eq('id', user.id);
-    if (error) return { success: false, error: error.message };
-    return { success: true, error: null };
+    if (error) {
+      if (isMissingAdminUsersTable(error)) {
+        return { success: false, error: 'Tabel "admin_users" belum ada di Supabase.', missingTable: true };
+      }
+      return { success: false, error: error.message, missingTable: false };
+    }
+    return { success: true, error: null, missingTable: false };
   } catch (err: any) {
-    return { success: false, error: err.message || 'Gagal memperbarui user panitia di Supabase' };
+    const missing = isMissingAdminUsersTable(err);
+    return { success: false, error: err.message || 'Gagal memperbarui user panitia di Supabase', missingTable: missing };
   }
 }
 
 // Delete admin user from Supabase
-export async function deleteAdminUserFromSupabase(id: string): Promise<{ success: boolean; error: string | null }> {
+export async function deleteAdminUserFromSupabase(id: string): Promise<{ success: boolean; error: string | null; missingTable?: boolean }> {
   const client = getSupabaseClient();
-  if (!client) return { success: false, error: 'Supabase client belum dikonfigurasi.' };
+  if (!client) return { success: false, error: 'Supabase client belum dikonfigurasi.', missingTable: false };
 
   try {
     const { error } = await client.from('admin_users').delete().eq('id', id);
-    if (error) return { success: false, error: error.message };
-    return { success: true, error: null };
+    if (error) {
+      if (isMissingAdminUsersTable(error)) {
+        return { success: false, error: 'Tabel "admin_users" belum ada di Supabase.', missingTable: true };
+      }
+      return { success: false, error: error.message, missingTable: false };
+    }
+    return { success: true, error: null, missingTable: false };
   } catch (err: any) {
-    return { success: false, error: err.message || 'Gagal menghapus user panitia dari Supabase' };
+    const missing = isMissingAdminUsersTable(err);
+    return { success: false, error: err.message || 'Gagal menghapus user panitia dari Supabase', missingTable: missing };
   }
 }
 

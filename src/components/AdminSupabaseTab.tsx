@@ -34,7 +34,8 @@ import {
   isSupabaseConnected,
   sanitizeSupabaseUrl,
   sanitizeSupabaseKey,
-  pingSupabaseEndpoint
+  pingSupabaseEndpoint,
+  ADMIN_USERS_SETUP_SQL
 } from '../lib/supabaseClient';
 import { AdminUser, Competition, ParticipantRegistration } from '../types';
 import { INITIAL_ADMIN_USERS } from '../data/initialUsers';
@@ -262,6 +263,8 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [tableStatus, setTableStatus] = useState<{ competitions: boolean; participants: boolean; admin_users?: boolean } | null>(null);
   const [copiedSql, setCopiedSql] = useState(false);
+  const [copiedAdminUsersSql, setCopiedAdminUsersSql] = useState(false);
+  const [showAdminUsersSqlModal, setShowAdminUsersSqlModal] = useState(false);
   const [showSqlViewer, setShowSqlViewer] = useState(false);
   const [pingTesting, setPingTesting] = useState(false);
   const [pingResult, setPingResult] = useState<string | null>(null);
@@ -467,12 +470,20 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
       if (res.success) {
         notify(`Sukses! ${res.count} akun panitia berhasil disinkronkan ke Supabase (tabel admin_users).`);
         setStatusMessage(`Sinkronisasi user berhasil: ${res.count} akun panitia tersimpan di tabel 'admin_users'.`);
+        setTableStatus((prev) => prev ? { ...prev, admin_users: true } : { competitions: true, participants: true, admin_users: true });
       } else {
-        notify(`Gagal sinkronisasi user: ${res.error}`);
+        notify(res.error || 'Gagal sinkronisasi data user');
         setStatusMessage(`Error user: ${res.error}`);
+        if (res.missingTable || res.error?.toLowerCase().includes('admin_users') || res.error?.toLowerCase().includes('schema cache')) {
+          setTableStatus((prev) => prev ? { ...prev, admin_users: false } : { competitions: true, participants: true, admin_users: false });
+          setShowAdminUsersSqlModal(true);
+        }
       }
     } catch (err: any) {
       notify(`Terjadi kesalahan: ${err.message}`);
+      if (err.message?.toLowerCase().includes('admin_users') || err.message?.toLowerCase().includes('schema cache')) {
+        setShowAdminUsersSqlModal(true);
+      }
     } finally {
       setSyncingUsers(false);
     }
@@ -484,16 +495,24 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
       const { data, error } = await fetchAdminUsersFromSupabase();
       if (error) {
         notify(`Gagal memuat user panitia: ${error}`);
+        if (error.toLowerCase().includes('admin_users') || error.toLowerCase().includes('schema cache')) {
+          setTableStatus((prev) => prev ? { ...prev, admin_users: false } : { competitions: true, participants: true, admin_users: false });
+          setShowAdminUsersSqlModal(true);
+        }
       } else if (data && data.length > 0) {
         try {
           localStorage.setItem('hsn2026_registered_users', JSON.stringify(data));
         } catch (_) {}
         notify(`Berhasil memuat ${data.length} akun panitia dari tabel 'admin_users' Supabase!`);
+        setTableStatus((prev) => prev ? { ...prev, admin_users: true } : { competitions: true, participants: true, admin_users: true });
       } else {
         notify('Tabel admin_users di Supabase masih kosong.');
       }
     } catch (err: any) {
       notify(`Kesalahan: ${err.message}`);
+      if (err.message?.toLowerCase().includes('admin_users') || err.message?.toLowerCase().includes('schema cache')) {
+        setShowAdminUsersSqlModal(true);
+      }
     } finally {
       setFetchingUsers(false);
     }
@@ -842,12 +861,26 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                     <h5 className="text-xs font-bold text-white flex items-center gap-1.5">
                       <ShieldCheck className="w-4 h-4 text-[#F2C96D]" />
                       <span>Akun Panitia & User CMS</span>
+                      {tableStatus && tableStatus.admin_users === false && (
+                        <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-amber-500/25 text-amber-300 border border-amber-500/40">
+                          Tabel Belum Dibuat
+                        </span>
+                      )}
                     </h5>
                     <p className="text-[11px] text-[#DDE7E8]/70 mt-0.5">
                       Tabel <code className="text-[#F2C96D]">admin_users</code>: login terpusat, role panitia, & hak akses juri.
                     </p>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setShowAdminUsersSqlModal(true)}
+                      className="px-2.5 py-1.5 rounded-xl bg-[#F2C96D]/15 hover:bg-[#F2C96D]/30 border border-[#F2C96D]/40 text-[#F2C96D] text-xs font-bold flex items-center gap-1 transition-all active:scale-95"
+                      title="Lihat & Salin Skrip SQL Pembuatan Tabel admin_users"
+                    >
+                      <FileCode className="w-3 h-3" />
+                      <span>SQL Tabel</span>
+                    </button>
                     <button
                       type="button"
                       onClick={handleFetchUsersFromSupabase}
@@ -869,6 +902,22 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                     </button>
                   </div>
                 </div>
+
+                {tableStatus && tableStatus.admin_users === false && (
+                  <div className="mt-2.5 p-2.5 rounded-lg bg-amber-500/15 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-amber-200">
+                    <span className="flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>Tabel <code>admin_users</code> belum ada di database Supabase Anda. Jalankan skrip SQL untuk mengaktifkan sinkronisasi.</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowAdminUsersSqlModal(true)}
+                      className="px-2.5 py-1 rounded bg-[#F2C96D] hover:bg-[#ffe196] text-[#031525] font-black text-[10px] shrink-0 uppercase tracking-wider self-start sm:self-auto transition-colors"
+                    >
+                      Setup Tabel SQL
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* 3. Peserta Terdaftar Sync Card */}
@@ -955,6 +1004,111 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
           </div>
         </div>
       </div>
+
+      {/* MODAL BANTUAN SETUP TABEL ADMIN_USERS SUPABASE */}
+      {showAdminUsersSqlModal && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-2xl rounded-3xl bg-[#031525] border-2 border-[#F2C96D]/70 p-6 sm:p-7 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-[#F2C96D]/20 border border-[#F2C96D]/40 text-[#F2C96D] flex items-center justify-center shrink-0">
+                  <Database className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-heading text-lg font-bold text-white">
+                      Setup Tabel admin_users di Supabase
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                      Wajib 1 Kali Saja
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#DDE7E8]/80 mt-0.5">
+                    Penyebab kegagalan: Tabel <code className="text-[#F2C96D]">public.admin_users</code> belum dibuat di schema database Supabase Anda.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAdminUsersSqlModal(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm font-bold transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Step by step guide */}
+            <div className="p-4 rounded-2xl bg-[#006B4F]/20 border border-[#006B4F]/40 space-y-2">
+              <h4 className="text-xs font-bold text-[#F2C96D] uppercase tracking-wider flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-[#00D9F5]" />
+                <span>3 Langkah Cepat Mengaktifkan:</span>
+              </h4>
+              <ol className="text-xs text-[#DDE7E8]/90 space-y-1.5 list-decimal list-inside pl-1">
+                <li>
+                  Klik tombol <strong>"Salin Skrip SQL admin_users"</strong> di bawah.
+                </li>
+                <li>
+                  Buka <strong>Supabase Dashboard → SQL Editor → New query</strong>, lalu <strong>Paste (Ctrl+V)</strong>.
+                </li>
+                <li>
+                  Klik tombol <strong>"Run"</strong> (atau tekan Ctrl+Enter) di Supabase.
+                </li>
+                <li>
+                  Setelah sukses di Supabase, kembali ke sini lalu klik tombol <strong>"Kirim Ulang Users"</strong>!
+                </li>
+              </ol>
+            </div>
+
+            {/* SQL Code Box */}
+            <div className="relative rounded-2xl bg-[#010b14] border border-white/15 p-3.5 max-h-56 overflow-y-auto">
+              <pre className="text-[11px] font-mono text-emerald-300 whitespace-pre-wrap leading-relaxed">
+                {ADMIN_USERS_SETUP_SQL}
+              </pre>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+              <a
+                href="https://supabase.com/dashboard"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all"
+              >
+                <span>Buka Supabase SQL Editor</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(ADMIN_USERS_SETUP_SQL);
+                    setCopiedAdminUsersSql(true);
+                    notify('Skrip SQL admin_users berhasil disalin! Jalankan di SQL Editor Supabase.');
+                    setTimeout(() => setCopiedAdminUsersSql(false), 3000);
+                  }}
+                  className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-[#F2C96D]/20 hover:bg-[#F2C96D]/30 border border-[#F2C96D]/50 text-[#F2C96D] text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-95"
+                >
+                  {copiedAdminUsersSql ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                  <span>{copiedAdminUsersSql ? 'Tersalin!' : 'Salin Skrip SQL'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAdminUsersSqlModal(false);
+                    handleSyncUsersToSupabase();
+                  }}
+                  className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:brightness-110 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md active:scale-95"
+                >
+                  <UploadCloud className="w-4 h-4" />
+                  <span>Kirim Ulang Users</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Local Toast Alert */}
       {internalToast && (
