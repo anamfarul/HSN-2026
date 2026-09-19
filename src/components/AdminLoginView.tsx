@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { INITIAL_ADMIN_USERS } from '../data/initialUsers';
+import { getRegisteredAdminUsers, isUserDeleted } from '../data/initialUsers';
 import { AdminUser } from '../types';
 import { 
   ShieldCheck, 
@@ -53,38 +53,39 @@ export const AdminLoginView: React.FC<AdminLoginViewProps> = ({
       const cleanUser = username.trim().toLowerCase();
       const cleanPass = password.trim();
 
-      // Load custom registered users if any
-      let allUsers: AdminUser[] = [...INITIAL_ADMIN_USERS];
-      try {
-        const stored = localStorage.getItem('hsn2026_registered_users');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed)) {
-            allUsers = [...parsed, ...allUsers];
-          }
-        }
-      } catch (err) {
-        console.error('Failed to parse registered users', err);
+      // Cek apakah akun ini telah dihapus oleh administrator
+      if (isUserDeleted(undefined, cleanUser)) {
+        setIsLoading(false);
+        setErrorMessage('Akun panitia ini telah dihapus oleh administrator dan tidak lagi memiliki akses.');
+        return;
       }
 
-      // Check against user database
+      // Ambil daftar akun terdaftar yang sah (bebas dari akun terhapus)
+      const allUsers: AdminUser[] = getRegisteredAdminUsers();
+
+      // Cek kecocokan kredensial
       const matchedUser = allUsers.find(
         (u) => 
-          (u.username.toLowerCase() === cleanUser || u.email.toLowerCase() === cleanUser) &&
+          (u.username.toLowerCase() === cleanUser || (u.email && u.email.toLowerCase() === cleanUser)) &&
           (u.password === cleanPass || (!u.password && cleanPass === 'santri2026'))
       );
 
-      // Fallback accepted demo credentials
-      const isDemoMatch = 
-        (cleanUser === 'admin' && cleanPass === 'santri2026') ||
-        (cleanUser === 'panitia' && cleanPass === 'poncokusumo2026') ||
-        (cleanUser === 'sekretariat' && cleanPass === 'hsn2026') ||
-        (cleanUser === 'admin@hsnponcokusumo.id' && cleanPass === 'santri2026') ||
-        (cleanUser === 'admin' && cleanPass === 'admin123');
+      // Cek jika akun berstatus non-aktif
+      if (matchedUser && matchedUser.isActive === false) {
+        setIsLoading(false);
+        setErrorMessage('Akun panitia ini berstatus non-aktif. Silakan hubungi Sekretariat Utama.');
+        return;
+      }
 
-      const isValid = !!matchedUser || isDemoMatch;
-      const activeRole = matchedUser ? matchedUser.role : role;
-      const activeDisplayName = matchedUser ? matchedUser.fullName : cleanUser;
+      // Master failsafe demo credentials (HANYA untuk super admin utama 'admin' dan jika belum dihapus)
+      const isMasterAdminMatch = 
+        !isUserDeleted(undefined, 'admin') &&
+        ((cleanUser === 'admin' || cleanUser === 'admin@hsnponcokusumo.id') &&
+         (cleanPass === 'santri2026' || cleanPass === 'admin123'));
+
+      const isValid = !!matchedUser || isMasterAdminMatch;
+      const activeRole = matchedUser ? matchedUser.role : (isMasterAdminMatch ? 'Sekretariat Utama HSN 2026' : role);
+      const activeDisplayName = matchedUser ? matchedUser.fullName : (isMasterAdminMatch ? 'Gus Ahmad Al-Fatih' : cleanUser);
 
       if (isValid) {
         setIsLoading(false);

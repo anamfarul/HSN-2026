@@ -1,6 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Competition, CategoryGeneration, AdminUser } from '../types';
 import { INITIAL_COMPETITIONS } from '../data/initialData';
+import { isUserDeleted } from '../data/initialUsers';
 
 // Helper to sanitize Supabase Project URL to prevent "TypeError: Failed to fetch"
 export function sanitizeSupabaseUrl(rawUrl: string): string {
@@ -886,7 +887,19 @@ export async function fetchAdminUsersFromSupabase(): Promise<{ data: AdminUser[]
     if (!data) return { data: [], error: null };
 
     const parsed = data.map(mapSupabaseToAdminUser);
-    return { data: parsed, error: null };
+    const valid = parsed.filter((u) => !isUserDeleted(u.id, u.username));
+
+    // Bersihkan data dari Supabase jika ada akun yang telah dihapus di lokal
+    parsed.forEach((u) => {
+      if (isUserDeleted(u.id, u.username)) {
+        const query = u.username 
+          ? client.from('admin_users').delete().or(`id.eq.${u.id},username.eq.${u.username}`)
+          : client.from('admin_users').delete().eq('id', u.id);
+        query.then(() => {}, (err: any) => console.warn(err));
+      }
+    });
+
+    return { data: valid, error: null };
   } catch (err: any) {
     return { data: null, error: err.message || 'Gagal memuat data user panitia dari Supabase' };
   }
@@ -1057,13 +1070,22 @@ export async function updateAdminUserInSupabase(user: AdminUser): Promise<{ succ
   }
 }
 
-// Delete admin user from Supabase
-export async function deleteAdminUserFromSupabase(id: string): Promise<{ success: boolean; error: string | null; missingTable?: boolean }> {
+// Delete admin user from Supabase (by ID and/or username)
+export async function deleteAdminUserFromSupabase(
+  id: string,
+  username?: string
+): Promise<{ success: boolean; error: string | null; missingTable?: boolean }> {
   const client = getSupabaseClient();
   if (!client) return { success: false, error: 'Supabase client belum dikonfigurasi.', missingTable: false };
 
   try {
-    const { error } = await client.from('admin_users').delete().eq('id', id);
+    let query = client.from('admin_users').delete();
+    if (username && username.trim()) {
+      query = query.or(`id.eq.${id},username.eq.${username.trim()}`);
+    } else {
+      query = query.eq('id', id);
+    }
+    const { error } = await query;
     if (error) {
       if (isMissingAdminUsersTable(error)) {
         return { success: false, error: 'Tabel "admin_users" belum ada di Supabase.', missingTable: true };

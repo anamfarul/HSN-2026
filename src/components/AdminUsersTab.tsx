@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { AdminUser } from '../types';
-import { INITIAL_ADMIN_USERS } from '../data/initialUsers';
+import { 
+  getRegisteredAdminUsers, 
+  saveRegisteredAdminUsers, 
+  deleteAdminUserLocal, 
+  removeDeletedUserIdentifier, 
+  isUserDeleted 
+} from '../data/initialUsers';
 import { ROLE_DEFINITIONS, ALL_ROLES } from '../data/rolesPermissions';
 import { 
   fetchAdminUsersFromSupabase,
@@ -43,24 +49,11 @@ export const AdminUsersTab: React.FC = () => {
   const [subTab, setSubTab] = useState<'users' | 'matrix' | 'rls'>('users');
 
   const [users, setUsers] = useState<AdminUser[]>(() => {
-    try {
-      const stored = localStorage.getItem('hsn2026_registered_users');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const ids = new Set(parsed.map((u: AdminUser) => u.id));
-          const initialsToAdd = INITIAL_ADMIN_USERS.filter((u) => !ids.has(u.id));
-          return [...parsed, ...initialsToAdd];
-        }
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    return INITIAL_ADMIN_USERS;
+    return getRegisteredAdminUsers();
   });
 
   const [showAddModal, setShowAddModal] = useState(false);
-  const [userToDelete, setUserToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [userToDelete, setUserToDelete] = useState<{ id: string; name: string; username?: string } | null>(null);
   const [formError, setFormError] = useState('');
   const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
@@ -82,11 +75,7 @@ export const AdminUsersTab: React.FC = () => {
   // Sync to localStorage
   const saveUsers = (updated: AdminUser[]) => {
     setUsers(updated);
-    try {
-      localStorage.setItem('hsn2026_registered_users', JSON.stringify(updated));
-    } catch (e) {
-      console.error(e);
-    }
+    saveRegisteredAdminUsers(updated);
   };
 
   // Sync state listener
@@ -101,12 +90,11 @@ export const AdminUsersTab: React.FC = () => {
       fetchAdminUsersFromSupabase().then(({ data, error }) => {
         if (data && data.length > 0) {
           setUsers((current) => {
-            const remoteIds = new Set(data.map((u) => u.id));
-            const kept = current.filter((u) => !remoteIds.has(u.id));
-            const merged = [...data, ...kept];
-            try {
-              localStorage.setItem('hsn2026_registered_users', JSON.stringify(merged));
-            } catch (_) {}
+            const validRemote = data.filter((u) => !isUserDeleted(u.id, u.username));
+            const remoteIds = new Set(validRemote.map((u) => u.id));
+            const kept = current.filter((u) => !remoteIds.has(u.id) && !isUserDeleted(u.id, u.username));
+            const merged = [...validRemote, ...kept];
+            saveRegisteredAdminUsers(merged);
             return merged;
           });
         }
@@ -234,6 +222,9 @@ export const AdminUsersTab: React.FC = () => {
       isActive: true,
     };
 
+    removeDeletedUserIdentifier(newUser.username);
+    removeDeletedUserIdentifier(newUser.id);
+
     const updated = [newUser, ...users];
     saveUsers(updated);
     setShowAddModal(false);
@@ -256,21 +247,26 @@ export const AdminUsersTab: React.FC = () => {
 
   const confirmDeleteUser = () => {
     if (!userToDelete) return;
-    if (userToDelete.id === 'user-1') {
+    if (userToDelete.id === 'user-1' || (userToDelete.username && userToDelete.username.toLowerCase() === 'admin')) {
       setToastMessage('Akun Super Admin sistem utama tidak dapat dihapus demi keamanan sistem.');
       setUserToDelete(null);
       setTimeout(() => setToastMessage(''), 4000);
       return;
     }
-    const updated = users.filter((u) => u.id !== userToDelete.id);
-    saveUsers(updated);
 
-    // Delete from Supabase
+    const targetUser = users.find((u) => u.id === userToDelete.id);
+    const targetUsername = userToDelete.username || targetUser?.username;
+
+    // Hapus dari data lokal dan tandai secara permanen di daftar blacklist akun terhapus
+    const updated = deleteAdminUserLocal(userToDelete.id, targetUsername);
+    setUsers(updated);
+
+    // Hapus dari Supabase secara permanen
     if (isSupabaseConnected()) {
-      deleteAdminUserFromSupabase(userToDelete.id).catch(console.warn);
+      deleteAdminUserFromSupabase(userToDelete.id, targetUsername).catch(console.warn);
     }
 
-    setToastMessage(`Akun panitia "${userToDelete.name}" telah berhasil dihapus.`);
+    setToastMessage(`Akun panitia "${userToDelete.name}" telah berhasil dihapus secara permanen.`);
     setUserToDelete(null);
     setTimeout(() => setToastMessage(''), 4000);
   };
@@ -559,7 +555,7 @@ USING (true);`;
                         <td className="py-3.5 px-4 text-right">
                           {!isSuper ? (
                             <button
-                              onClick={() => setUserToDelete({ id: u.id, name: u.fullName })}
+                              onClick={() => setUserToDelete({ id: u.id, name: u.fullName, username: u.username })}
                               className="p-1.5 rounded-lg text-rose-400 hover:text-white hover:bg-rose-500/20 transition-colors"
                               title="Hapus Akun Panitia"
                               aria-label="Hapus Akun Panitia"

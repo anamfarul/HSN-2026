@@ -38,7 +38,11 @@ import {
   ADMIN_USERS_SETUP_SQL
 } from '../lib/supabaseClient';
 import { AdminUser, Competition, ParticipantRegistration } from '../types';
-import { INITIAL_ADMIN_USERS } from '../data/initialUsers';
+import { 
+  getRegisteredAdminUsers, 
+  saveRegisteredAdminUsers, 
+  isUserDeleted 
+} from '../data/initialUsers';
 
 export const FIX_COLUMNS_MIGRATION_SQL = `-- ==============================================================================
 -- SKRIP PERBAIKAN SCHEMA CACHE & TABEL SUPABASE: FESTIVAL HARI SANTRI 2026
@@ -434,8 +438,9 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
       const { data: remoteUsers } = await fetchAdminUsersFromSupabase();
       if (remoteUsers && remoteUsers.length > 0) {
         try {
-          localStorage.setItem('hsn2026_registered_users', JSON.stringify(remoteUsers));
-          msgParts.push(`${remoteUsers.length} user panitia`);
+          const validUsers = remoteUsers.filter((u) => !isUserDeleted(u.id, u.username));
+          saveRegisteredAdminUsers(validUsers);
+          msgParts.push(`${validUsers.length} user panitia`);
         } catch (_) {}
       }
 
@@ -458,14 +463,7 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
     }
     setSyncingUsers(true);
     try {
-      let currentUsers: AdminUser[] = [];
-      try {
-        const stored = localStorage.getItem('hsn2026_registered_users');
-        if (stored) currentUsers = JSON.parse(stored);
-      } catch (_) {}
-      if (currentUsers.length === 0) {
-        currentUsers = INITIAL_ADMIN_USERS;
-      }
+      const currentUsers = getRegisteredAdminUsers();
       const res = await syncAllAdminUsersToSupabase(currentUsers);
       if (res.success) {
         notify(`Sukses! ${res.count} akun panitia berhasil disinkronkan ke Supabase (tabel admin_users).`);
@@ -500,10 +498,9 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
           setShowAdminUsersSqlModal(true);
         }
       } else if (data && data.length > 0) {
-        try {
-          localStorage.setItem('hsn2026_registered_users', JSON.stringify(data));
-        } catch (_) {}
-        notify(`Berhasil memuat ${data.length} akun panitia dari tabel 'admin_users' Supabase!`);
+        const validUsers = data.filter((u) => !isUserDeleted(u.id, u.username));
+        saveRegisteredAdminUsers(validUsers);
+        notify(`Berhasil memuat ${validUsers.length} akun panitia dari tabel 'admin_users' Supabase!`);
         setTableStatus((prev) => prev ? { ...prev, admin_users: true } : { competitions: true, participants: true, admin_users: true });
       } else {
         notify('Tabel admin_users di Supabase masih kosong.');
