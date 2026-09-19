@@ -83,7 +83,7 @@ ALTER TABLE IF EXISTS public.participants
   REFERENCES public.competitions(id) 
   ON DELETE CASCADE;
 
--- 4. UPDATE & FLEKSIBILITAS KATEGORI LOMBA (PAUD/RA/TK & PAGAR NUSA)
+-- 4. UPDATE & FLEKSIBILITAS KATEGORI LOMBA (PAUD/RA/TK, PAGAR NUSA & GURU)
 -- Menjadikan tipe kolom category VARCHAR(100) fleksibel tanpa batasan ENUM
 ALTER TABLE IF EXISTS public.competitions 
   ALTER COLUMN category TYPE VARCHAR(100) USING category::text;
@@ -106,6 +106,7 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'category_generation_enum') THEN
     ALTER TYPE category_generation_enum ADD VALUE IF NOT EXISTS 'PAUD/RA/TK';
     ALTER TYPE category_generation_enum ADD VALUE IF NOT EXISTS 'PAGAR NUSA';
+    ALTER TYPE category_generation_enum ADD VALUE IF NOT EXISTS 'GURU';
     ALTER TYPE category_generation_enum ADD VALUE IF NOT EXISTS 'UMUM';
   END IF;
 EXCEPTION WHEN OTHERS THEN NULL;
@@ -452,7 +453,7 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
   const handleCopyCategorySql = () => {
     navigator.clipboard.writeText(FIX_CATEGORY_ENUM_SQL);
     setCopiedCategorySql(true);
-    notify('Skrip SQL perbaikan kategori PAUD/RA/TK & PAGAR NUSA disalin! Jalankan di SQL Editor Supabase.');
+    notify('Skrip SQL perbaikan kategori PAUD/RA/TK, PAGAR NUSA & GURU disalin! Jalankan di SQL Editor Supabase.');
     setTimeout(() => setCopiedCategorySql(false), 4000);
   };
 
@@ -938,11 +939,11 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                   </div>
                 </div>
 
-                {/* Banner edukasi kategori baru PAUD/RA/TK & PAGAR NUSA */}
+                {/* Banner edukasi kategori baru PAUD/RA/TK, PAGAR NUSA & GURU */}
                 <div className="mt-2.5 p-2.5 rounded-lg bg-amber-950/30 border border-amber-500/30 flex items-center justify-between gap-2 text-[11px] text-amber-200">
                   <span className="flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    <span>Kategori <strong>PAUD/RA/TK</strong> atau <strong>PAGAR NUSA</strong> gagal terkirim? Buka solusi migrasi database Supabase.</span>
+                    <span>Kategori <strong>PAUD/RA/TK</strong>, <strong>PAGAR NUSA</strong>, atau <strong>GURU</strong> ditolak Supabase? Buka solusi migrasi database.</span>
                   </span>
                   <button
                     type="button"
@@ -1354,7 +1355,7 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="font-heading font-bold text-white text-base">
-                      Perbaikan Kategori Baru (PAUD/RA/TK & PAGAR NUSA)
+                      Perbaikan Kategori Baru (PAUD/RA/TK, PAGAR NUSA & GURU)
                     </h3>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
                       Supabase SQL
@@ -1381,7 +1382,7 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                 <span>Proteksi Otomatis Website Sudah Aktif:</span>
               </div>
               <p className="text-[11px] leading-relaxed text-emerald-200/90">
-                Sistem CMS kini telah dilengkapi penyesuaian otomatis (fallback compatibility) sehingga pengiriman data lomba tetap berhasil. Namun, agar database Supabase Anda menyimpan nama <strong>PAUD/RA/TK</strong> dan <strong>PAGAR NUSA</strong> secara asli tanpa batas enum, sangat disarankan menjalankan skrip SQL berikut.
+                Sistem CMS kini telah dilengkapi penyesuaian otomatis (fallback compatibility) sehingga pengiriman data lomba tetap berhasil. Namun, agar database Supabase Anda menyimpan nama <strong>PAUD/RA/TK</strong>, <strong>PAGAR NUSA</strong>, dan <strong>GURU</strong> secara asli tanpa batas enum, sangat disarankan menjalankan skrip SQL berikut.
               </p>
             </div>
 

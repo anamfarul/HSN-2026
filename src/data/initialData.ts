@@ -177,6 +177,19 @@ export const GENERATION_PROGRAMS: GenerationProgram[] = [
     iconName: 'Shield',
     accentColor: '#10B981',
   },
+  {
+    id: 'gen-9',
+    cardNumber: 'CARD 09',
+    title: 'ASATIDZ & GURU INOVATIF NAHDLIYIN',
+    category: 'GURU',
+    badge: 'Pendidik Peradaban Santri',
+    programs: ['Lomba Karya Inovasi Media Pembelajaran', 'Olimpiade Penguasaan Kitab Kuning Asatidz', 'Karya Tulis Best Practice Pendidikan Santri'],
+    description: 'Apresiasi dan ruang unjuk kompetensi pedagogik, literasi keilmuan pesantren, dan kreativitas media belajar bagi asatidz dan pendidik.',
+    objective: 'Meningkatkan kompetensi pedagogik transformatif dan literasi riset pendidikan santri di era digital.',
+    participantTarget: 'Guru RA/MI/MTs/MA/SMK, LP Ma\'arif NU & Asatidz Pondok Pesantren',
+    iconName: 'GraduationCap',
+    accentColor: '#00D9F5',
+  },
 ];
 
 export const SIGNATURE_PROGRAMS: SignatureProgram[] = [
@@ -458,6 +471,31 @@ export const INITIAL_COMPETITIONS: Competition[] = [
     location: 'Gelanggang Olahraga Pesantren Poncokusumo',
     contactPerson: '0812-3456-7890 (Koordinator Pagar Nusa)',
     iconName: 'Shield',
+  },
+  {
+    id: 'comp-10',
+    code: 'LMB-GRU-01',
+    title: 'Lomba Inovasi Media Pembelajaran Kreatif Guru & Asatidz',
+    category: 'GURU',
+    targetAudience: 'Guru Madrasah/Sekolah Islam & Asatidz Pesantren',
+    description: 'Ajang kreasi media dan model pembelajaran digital/interaktif yang inovatif, aplikatif, dan kontekstual untuk santri.',
+    rules: [
+      'Peserta merupakan pendidik aktif di lingkungan madrasah, sekolah, atau pesantren',
+      'Karya media pembelajaran merupakan karya orisinal dan belum pernah menjuarai lomba serupa',
+      'Format karya berupa media digital interaktif, video pembelajaran, atau alat peraga edukatif',
+      'Menyerahkan modul ajar/RPP singkat dan link/demonstrasi media pembelajaran saat pendaftaran',
+    ],
+    prizes: {
+      first: 'Piala Bergilir LP Ma\'arif + Piagam Penghargaan + Uang Pembinaan',
+      second: 'Trofi Juara II + Piagam Penghargaan + Uang Pembinaan',
+      third: 'Trofi Juara III + Piagam Penghargaan + Uang Pembinaan',
+    },
+    registrationFee: 'Gratis',
+    deadline: '10 Oktober 2026',
+    technicalMeeting: '12 Oktober 2026',
+    location: 'Aula LP Ma\'arif NU Poncokusumo',
+    contactPerson: '0813-9876-5432 (Koordinator Lomba Guru)',
+    iconName: 'GraduationCap',
   },
 ];
 

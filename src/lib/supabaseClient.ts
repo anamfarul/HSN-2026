@@ -160,6 +160,8 @@ export function mapSupabaseToCompetition(row: any): Competition {
     category = 'PAUD/RA/TK';
   } else if (row.code?.startsWith('LMB-PN')) {
     category = 'PAGAR NUSA';
+  } else if (row.code?.startsWith('LMB-GRU') || row.code?.includes('GURU')) {
+    category = 'GURU';
   } else if (!category) {
     category = 'SMP/MTs';
   }
@@ -409,6 +411,10 @@ export async function insertCompetitionToSupabase(comp: Competition): Promise<{ 
           console.warn('Supabase menolak enum PAGAR NUSA, otomatis fallback ke UMUM untuk kompatibilitas database...');
           row.category = 'UMUM';
           continue;
+        } else if (row.category === 'GURU') {
+          console.warn('Supabase menolak enum GURU, otomatis fallback ke UMUM untuk kompatibilitas database...');
+          row.category = 'UMUM';
+          continue;
         }
       }
 
@@ -463,6 +469,10 @@ export async function updateCompetitionInSupabase(comp: Competition): Promise<{ 
           continue;
         } else if (row.category === 'PAGAR NUSA') {
           console.warn('Supabase menolak enum PAGAR NUSA saat update, otomatis fallback ke UMUM...');
+          row.category = 'UMUM';
+          continue;
+        } else if (row.category === 'GURU') {
+          console.warn('Supabase menolak enum GURU saat update, otomatis fallback ke UMUM...');
           row.category = 'UMUM';
           continue;
         }
@@ -565,11 +575,11 @@ export async function syncAllCompetitionsToSupabase(competitions: Competition[])
       // 1. Cek jika database Supabase belum mendukung enum baru ('PAUD/RA/TK' atau 'PAGAR NUSA')
       if (!fallbackCategoryApplied && isCategoryEnumError(error)) {
         fallbackCategoryApplied = true;
-        console.warn('Supabase menolak enum kategori pada sync. Mengonversi PAUD/RA/TK -> PAUD/TK dan PAGAR NUSA -> UMUM untuk database lama...');
+        console.warn('Supabase menolak enum kategori pada sync. Mengonversi PAUD/RA/TK -> PAUD/TK dan PAGAR NUSA/GURU -> UMUM untuk database lama...');
         rows = rows.map((r) => {
           let cat = r.category;
           if (cat === 'PAUD/RA/TK') cat = 'PAUD/TK';
-          else if (cat === 'PAGAR NUSA') cat = 'UMUM';
+          else if (cat === 'PAGAR NUSA' || cat === 'GURU') cat = 'UMUM';
           return { ...r, category: cat };
         });
         continue;
@@ -689,6 +699,10 @@ export async function insertParticipantToSupabase(participant: any): Promise<{ s
           console.warn('Supabase peserta menolak enum PAGAR NUSA, fallback ke UMUM...');
           row.category = 'UMUM';
           continue;
+        } else if (row.category === 'GURU') {
+          console.warn('Supabase peserta menolak enum GURU, fallback ke UMUM...');
+          row.category = 'UMUM';
+          continue;
         }
       }
 
@@ -806,7 +820,7 @@ export async function syncAllParticipantsToSupabase(
         rows = rows.map((r) => {
           let cat = r.category;
           if (cat === 'PAUD/RA/TK') cat = 'PAUD/TK';
-          else if (cat === 'PAGAR NUSA') cat = 'UMUM';
+          else if (cat === 'PAGAR NUSA' || cat === 'GURU') cat = 'UMUM';
           return { ...r, category: cat };
         });
         continue;
@@ -1141,6 +1155,7 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'category_generation_enum') THEN
     ALTER TYPE category_generation_enum ADD VALUE IF NOT EXISTS 'PAUD/RA/TK';
     ALTER TYPE category_generation_enum ADD VALUE IF NOT EXISTS 'PAGAR NUSA';
+    ALTER TYPE category_generation_enum ADD VALUE IF NOT EXISTS 'GURU';
     ALTER TYPE category_generation_enum ADD VALUE IF NOT EXISTS 'UMUM';
   END IF;
 EXCEPTION WHEN OTHERS THEN NULL;

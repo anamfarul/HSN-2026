@@ -41,6 +41,7 @@ export const CompetitionsSection: React.FC<CompetitionsSectionProps> = ({
     'FATAYAT',
     'MUSLIMAT',
     'PAGAR NUSA',
+    'GURU',
     'UMUM',
   ];
 

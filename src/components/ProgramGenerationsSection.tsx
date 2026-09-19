@@ -14,7 +14,8 @@ import {
   X,
   Sparkles,
   Calendar,
-  Shield
+  Shield,
+  GraduationCap
 } from 'lucide-react';
 
 interface ProgramGenerationsSectionProps {
@@ -42,6 +43,8 @@ export const ProgramGenerationsSection: React.FC<ProgramGenerationsSectionProps>
         return <ShoppingBag className="w-6 h-6" />;
       case 'Shield':
         return <Shield className="w-6 h-6" />;
+      case 'GraduationCap':
+        return <GraduationCap className="w-6 h-6" />;
       case 'Users':
       default:
         return <Users className="w-6 h-6" />;

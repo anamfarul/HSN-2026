@@ -7,6 +7,7 @@ export type CategoryGeneration =
   | 'FATAYAT'
   | 'MUSLIMAT'
   | 'PAGAR NUSA'
+  | 'GURU'
   | 'UMUM'
   | (string & {});
 
