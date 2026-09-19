@@ -427,19 +427,50 @@ export async function updateCompetitionInSupabase(comp: Competition): Promise<{ 
   }
 }
 
-// Delete competition
-export async function deleteCompetitionFromSupabase(id: string): Promise<{ success: boolean; error: string | null }> {
+// Delete competition with cascade support for referenced participants
+export async function deleteCompetitionFromSupabase(id: string): Promise<{ success: boolean; error: string | null; isForeignKeyError?: boolean }> {
   const client = getSupabaseClient();
   if (!client) {
     return { success: false, error: 'Supabase client belum dikonfigurasi.' };
   }
 
   try {
+    // 1. Hapus pendaftar/peserta yang terdaftar pada cabang lomba ini terlebih dahulu di Supabase
+    //    Hal ini menjamin penghapusan tidak terblokir oleh constraint foreign key 'participants_competition_id_fkey'
+    try {
+      await client.from('participants').delete().eq('competition_id', id);
+    } catch (partErr) {
+      console.warn('Peringatan: Gagal menghapus relasi peserta di Supabase sebelum hapus lomba:', partErr);
+    }
+
+    // 2. Hapus cabang lomba dari tabel competitions
     const { error } = await client.from('competitions').delete().eq('id', id);
 
     if (error) {
-      return { success: false, error: error.message };
+      const isFk = 
+        error.message?.toLowerCase().includes('foreign key') || 
+        error.message?.toLowerCase().includes('participants_competition_id_fkey') ||
+        error.message?.toLowerCase().includes('referenced by a foreign key');
+
+      // Jika masih terkendala foreign key (misalnya ada pendaftar baru masuk atau nama kolom lain),
+      // coba lepaskan referensi kolom competition_id menjadi NULL lalu ulangi delete
+      if (isFk) {
+        try {
+          await client.from('participants').update({ competition_id: null }).eq('competition_id', id);
+          const retry = await client.from('competitions').delete().eq('id', id);
+          if (!retry.error) {
+            return { success: true, error: null };
+          }
+        } catch (_) {}
+      }
+
+      return { 
+        success: false, 
+        error: error.message,
+        isForeignKeyError: isFk
+      };
     }
+
     return { success: true, error: null };
   } catch (err: any) {
     return { success: false, error: err.message || 'Gagal menghapus lomba dari Supabase' };
@@ -947,6 +978,29 @@ DROP POLICY IF EXISTS "Public all admin_users" ON public.admin_users;
 CREATE POLICY "Public all admin_users" ON public.admin_users FOR ALL USING (true) WITH CHECK (true);
 
 -- Muat ulang cache schema PostgREST Supabase agar tabel langsung terbaca
+NOTIFY pgrst, 'reload schema';
+`;
+
+export const FIX_FOREIGN_KEY_CASCADE_SQL = `-- ==============================================================================
+-- SKRIP PERBAIKAN FOREIGN KEY CASCADE: TABEL COMPETITIONS & PARTICIPANTS
+-- Mengatasi error: "referenced by a foreign key constraint from table 'participants'"
+-- Jalankan di Supabase Dashboard -> SQL Editor -> New query -> Run
+-- ==============================================================================
+
+-- 1. Hapus constraint Foreign Key lama pada tabel participants (yang memblokir delete lomba)
+ALTER TABLE IF EXISTS public.participants 
+  DROP CONSTRAINT IF EXISTS participants_competition_id_fkey;
+
+-- 2. Pasang kembali constraint dengan aturan ON DELETE CASCADE
+-- (Saat cabang lomba dihapus di Supabase Table Editor maupun Website,
+--  data pendaftar terkait otomatis terhapus tanpa penolakan foreign key)
+ALTER TABLE IF EXISTS public.participants 
+  ADD CONSTRAINT participants_competition_id_fkey 
+  FOREIGN KEY (competition_id) 
+  REFERENCES public.competitions(id) 
+  ON DELETE CASCADE;
+
+-- 3. Muat ulang cache schema PostgREST Supabase
 NOTIFY pgrst, 'reload schema';
 `;
 

@@ -35,6 +35,27 @@ import {
 } from './lib/supabaseClient';
 import { Sparkles, MessageCircle, Shield } from 'lucide-react';
 
+const DELETED_COMPETITIONS_KEY = 'hsn2026_deleted_competitions_v1';
+
+const getDeletedCompIds = (): string[] => {
+  try {
+    const raw = localStorage.getItem(DELETED_COMPETITIONS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+const markCompetitionDeleted = (id: string) => {
+  try {
+    const deleted = getDeletedCompIds();
+    if (!deleted.includes(id)) {
+      deleted.push(id);
+      localStorage.setItem(DELETED_COMPETITIONS_KEY, JSON.stringify(deleted));
+    }
+  } catch {}
+};
+
 export default function App() {
   // Modal states
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
@@ -45,7 +66,10 @@ export default function App() {
   const [registerCompetition, setRegisterCompetition] = useState<Competition | null>(null);
 
   // App data state (allowing real-time interaction in CMS)
-  const [competitions, setCompetitions] = useState<Competition[]>(COMPETITIONS);
+  const [competitions, setCompetitions] = useState<Competition[]>(() => {
+    const deleted = getDeletedCompIds();
+    return COMPETITIONS.filter((c) => !deleted.includes(c.id));
+  });
   const [participants, setParticipants] = useState<ParticipantRegistration[]>(SAMPLE_PARTICIPANTS);
   const [isSupabaseLive, setIsSupabaseLive] = useState(false);
   const [supabaseLoading, setSupabaseLoading] = useState(false);
@@ -61,7 +85,8 @@ export default function App() {
       try {
         const { data: remoteComps, error: compErr } = await fetchCompetitionsFromSupabase();
         if (isMounted && remoteComps && remoteComps.length > 0) {
-          setCompetitions(remoteComps);
+          const deleted = getDeletedCompIds();
+          setCompetitions(remoteComps.filter((c) => !deleted.includes(c.id)));
           setIsSupabaseLive(true);
         }
 
@@ -132,15 +157,29 @@ export default function App() {
   };
 
   const handleAddCompetition = (newComp: Competition) => {
+    try {
+      const deleted = getDeletedCompIds();
+      if (deleted.includes(newComp.id)) {
+        const nextDeleted = deleted.filter((id) => id !== newComp.id);
+        localStorage.setItem(DELETED_COMPETITIONS_KEY, JSON.stringify(nextDeleted));
+      }
+    } catch {}
     setCompetitions((prev) => [newComp, ...prev]);
     insertCompetitionToSupabase(newComp).then((res) => {
       if (res.success) setIsSupabaseLive(true);
     }).catch(console.warn);
   };
 
-  const handleDeleteCompetition = (id: string) => {
+  const handleDeleteCompetition = async (id: string) => {
+    markCompetitionDeleted(id);
     setCompetitions((prev) => prev.filter((c) => c.id !== id));
-    deleteCompetitionFromSupabase(id).catch(console.warn);
+    // Bersihkan peserta yang terdaftar pada lomba ini di state lokal
+    setParticipants((prev) => prev.filter((p) => p.competitionId !== id));
+    try {
+      await deleteCompetitionFromSupabase(id);
+    } catch (err) {
+      console.warn('Gagal menghapus lomba dari Supabase:', err);
+    }
   };
 
   const handleUpdateCompetition = (updatedComp: Competition) => {

@@ -19,7 +19,8 @@ import {
   ChevronUp,
   HelpCircle,
   Wifi,
-  Info
+  Info,
+  Trash2
 } from 'lucide-react';
 import { 
   getSupabaseCredentials, 
@@ -35,7 +36,8 @@ import {
   sanitizeSupabaseUrl,
   sanitizeSupabaseKey,
   pingSupabaseEndpoint,
-  ADMIN_USERS_SETUP_SQL
+  ADMIN_USERS_SETUP_SQL,
+  FIX_FOREIGN_KEY_CASCADE_SQL
 } from '../lib/supabaseClient';
 import { AdminUser, Competition, ParticipantRegistration } from '../types';
 import { 
@@ -69,7 +71,18 @@ ALTER TABLE IF EXISTS public.participants
   ADD COLUMN IF NOT EXISTS payment_proof_name VARCHAR(255),
   ADD COLUMN IF NOT EXISTS notes TEXT;
 
--- 3. Pastikan tabel admin_users tersedia
+-- 3. PERBAIKAN FOREIGN KEY CASCADE: Mencegah error 'referenced by a foreign key constraint from table participants'
+-- Memungkinkan penghapusan lomba langsung di Supabase Table Editor maupun via Website CMS
+ALTER TABLE IF EXISTS public.participants 
+  DROP CONSTRAINT IF EXISTS participants_competition_id_fkey;
+
+ALTER TABLE IF EXISTS public.participants 
+  ADD CONSTRAINT participants_competition_id_fkey 
+  FOREIGN KEY (competition_id) 
+  REFERENCES public.competitions(id) 
+  ON DELETE CASCADE;
+
+-- 4. Pastikan tabel admin_users tersedia
 CREATE TABLE IF NOT EXISTS public.admin_users (
     id VARCHAR(50) PRIMARY KEY,
     full_name VARCHAR(150) NOT NULL,
@@ -87,7 +100,7 @@ ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public all admin_users" ON public.admin_users;
 CREATE POLICY "Public all admin_users" ON public.admin_users FOR ALL USING (true) WITH CHECK (true);
 
--- 4. Reload cache schema PostgREST Supabase agar langsung aktif
+-- 5. Reload cache schema PostgREST Supabase agar langsung aktif
 NOTIFY pgrst, 'reload schema';
 `;
 
@@ -116,6 +129,17 @@ ALTER TABLE IF EXISTS public.participants
   ADD COLUMN IF NOT EXISTS payment_proof_url TEXT,
   ADD COLUMN IF NOT EXISTS payment_proof_name VARCHAR(255),
   ADD COLUMN IF NOT EXISTS notes TEXT;
+
+-- Pastikan relasi Foreign Key antara participants dan competitions mendukung ON DELETE CASCADE
+-- (Sehingga penghapusan lomba di tabel Supabase maupun website otomatis menghapus data pendaftar terkait tanpa error)
+ALTER TABLE IF EXISTS public.participants 
+  DROP CONSTRAINT IF EXISTS participants_competition_id_fkey;
+
+ALTER TABLE IF EXISTS public.participants 
+  ADD CONSTRAINT participants_competition_id_fkey 
+  FOREIGN KEY (competition_id) 
+  REFERENCES public.competitions(id) 
+  ON DELETE CASCADE;
 
 NOTIFY pgrst, 'reload schema';
 
@@ -171,7 +195,7 @@ CREATE TABLE IF NOT EXISTS participants (
     whatsapp VARCHAR(25) NOT NULL,
     email VARCHAR(100),
     address TEXT NOT NULL,
-    competition_id VARCHAR(50),
+    competition_id VARCHAR(50) REFERENCES competitions(id) ON DELETE CASCADE,
     competition_title VARCHAR(150) NOT NULL,
     document_url TEXT,
     document_name VARCHAR(255),
@@ -268,7 +292,9 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
   const [tableStatus, setTableStatus] = useState<{ competitions: boolean; participants: boolean; admin_users?: boolean } | null>(null);
   const [copiedSql, setCopiedSql] = useState(false);
   const [copiedAdminUsersSql, setCopiedAdminUsersSql] = useState(false);
+  const [copiedCascadeSql, setCopiedCascadeSql] = useState(false);
   const [showAdminUsersSqlModal, setShowAdminUsersSqlModal] = useState(false);
+  const [showCascadeSqlModal, setShowCascadeSqlModal] = useState(false);
   const [showSqlViewer, setShowSqlViewer] = useState(false);
   const [pingTesting, setPingTesting] = useState(false);
   const [pingResult, setPingResult] = useState<string | null>(null);
@@ -386,6 +412,13 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
   const handleCopyMigrationSql = () => {
     navigator.clipboard.writeText(FIX_COLUMNS_MIGRATION_SQL);
     notify('Skrip SQL perbaikan kolom Supabase disalin! Jalankan di Supabase SQL Editor untuk menambah kolom yang kurang.');
+  };
+
+  const handleCopyCascadeSql = () => {
+    navigator.clipboard.writeText(FIX_FOREIGN_KEY_CASCADE_SQL);
+    setCopiedCascadeSql(true);
+    notify('Skrip SQL CASCADE Hapus Lomba berhasil disalin! Jalankan di SQL Editor Supabase untuk mengatasi error foreign key.');
+    setTimeout(() => setCopiedCascadeSql(false), 4000);
   };
 
   const handleSyncToSupabase = async () => {
@@ -829,7 +862,7 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
             <div className="space-y-3">
               {/* 1. Lomba Sync Card */}
               <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 hover:border-[#00D9F5]/30 transition-all">
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                   <div>
                     <h5 className="text-xs font-bold text-white flex items-center gap-1.5">
                       <UploadCloud className="w-4 h-4 text-[#00D9F5]" />
@@ -839,14 +872,40 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                       Tabel <code className="text-[#F2C96D]">competitions</code>: juknis, syarat, hadiah, dan biaya pendaftaran.
                     </p>
                   </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setShowCascadeSqlModal(true)}
+                      className="px-2.5 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 hover:text-white text-xs font-bold flex items-center gap-1 transition-all active:scale-95"
+                      title="Perbaiki error foreign key saat menghapus lomba di database Supabase"
+                    >
+                      <Trash2 className="w-3 h-3 text-rose-400" />
+                      <span>Fix Hapus (CASCADE)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSyncToSupabase}
+                      disabled={syncing}
+                      className="px-3 py-1.5 rounded-xl bg-[#00D9F5]/20 hover:bg-[#00D9F5]/30 border border-[#00D9F5]/40 text-[#00D9F5] hover:text-white text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      <UploadCloud className={`w-3.5 h-3.5 ${syncing ? 'animate-bounce' : ''}`} />
+                      <span>{syncing ? 'Menyinkronkan...' : 'Kirim Lomba'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Banner edukasi penanganan error foreign key */}
+                <div className="mt-2.5 p-2 rounded-lg bg-rose-950/40 border border-rose-500/30 flex items-center justify-between gap-2 text-[11px] text-rose-200">
+                  <span className="flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                    <span>Lomba tidak bisa dihapus di tabel Supabase? Aktifkan <strong>ON DELETE CASCADE</strong> agar referensi peserta terhapus otomatis.</span>
+                  </span>
                   <button
                     type="button"
-                    onClick={handleSyncToSupabase}
-                    disabled={syncing}
-                    className="px-3 py-1.5 rounded-xl bg-[#00D9F5]/20 hover:bg-[#00D9F5]/30 border border-[#00D9F5]/40 text-[#00D9F5] hover:text-white text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all active:scale-95"
+                    onClick={() => setShowCascadeSqlModal(true)}
+                    className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] shrink-0 uppercase tracking-wider transition-colors"
                   >
-                    <UploadCloud className={`w-3.5 h-3.5 ${syncing ? 'animate-bounce' : ''}`} />
-                    <span>{syncing ? 'Menyinkronkan...' : 'Kirim Lomba'}</span>
+                    Buka Solusi
                   </button>
                 </div>
               </div>
@@ -978,7 +1037,16 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                 Sistem kini otomatis menyesuaikan kolom. Jika ingin memperbarui tabel database Supabase secara manual, salin skrip di bawah.
               </p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowCascadeSqlModal(true)}
+                title="Perbaiki Foreign Key constraint agar penghapusan lomba di Supabase Table Editor maupun Website tidak error"
+                className="px-2.5 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 hover:text-white text-[11px] font-bold flex items-center gap-1 transition-colors"
+              >
+                <Trash2 className="w-3 h-3 text-rose-400" />
+                <span>Fix Hapus (CASCADE)</span>
+              </button>
               <button
                 type="button"
                 onClick={handleCopyMigrationSql}
@@ -1100,6 +1168,113 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                 >
                   <UploadCloud className="w-4 h-4" />
                   <span>Kirim Ulang Users</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL BANTUAN FIX FOREIGN KEY CASCADE SUPABASE */}
+      {showCascadeSqlModal && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-2xl rounded-3xl bg-[#031525] border-2 border-rose-500/70 p-6 sm:p-7 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500/40 text-rose-400 flex items-center justify-center shrink-0 shadow-lg shadow-rose-500/20">
+                  <Trash2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-heading text-lg font-bold text-white">
+                      Solusi Error Hapus Lomba di Supabase
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                      ON DELETE CASCADE
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#DDE7E8]/80 mt-0.5">
+                    Mengatasi error: <code className="text-rose-300">is currently referenced by a foreign key constraint from the table 'participants'</code>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCascadeSqlModal(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm font-bold transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Error explanation banner */}
+            <div className="p-3.5 rounded-2xl bg-rose-950/40 border border-rose-500/40 space-y-2 text-xs text-rose-200">
+              <div className="flex items-center gap-2 font-bold text-white">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>Penyebab Error Pada Screenshot Supabase:</span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-rose-200/90">
+                Tabel <code className="font-mono text-white bg-black/40 px-1 py-0.5 rounded">participants</code> memiliki relasi Foreign Key (<code className="font-mono text-white bg-black/40 px-1 py-0.5 rounded">participants_competition_id_fkey</code>) ke tabel <code className="font-mono text-white bg-black/40 px-1 py-0.5 rounded">competitions</code>. Karena belum diatur ke <strong className="text-emerald-300">ON DELETE CASCADE</strong>, database menolak menghapus lomba selama masih ada data peserta terdaftar pada lomba tersebut.
+              </p>
+            </div>
+
+            {/* Step by step guide */}
+            <div className="p-4 rounded-2xl bg-[#006B4F]/20 border border-[#006B4F]/40 space-y-2">
+              <h4 className="text-xs font-bold text-[#F2C96D] uppercase tracking-wider flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-[#00D9F5]" />
+                <span>Cara Memperbaiki Agar Lomba Bisa Dihapus Bebas:</span>
+              </h4>
+              <ol className="text-xs text-[#DDE7E8]/90 space-y-1.5 list-decimal list-inside pl-1">
+                <li>
+                  Klik tombol <strong>"Salin Skrip SQL CASCADE"</strong> di bawah ini.
+                </li>
+                <li>
+                  Buka <strong>Supabase Dashboard → SQL Editor → New query</strong>, lalu tekan <strong>Paste (Ctrl+V)</strong>.
+                </li>
+                <li>
+                  Klik tombol hijau <strong>"Run"</strong> (atau tekan Ctrl+Enter). Selesai!
+                </li>
+              </ol>
+              <p className="text-[11px] text-emerald-300/90 pt-1 italic">
+                * Setelah skrip ini dijalankan, Anda dapat menghapus lomba langsung dari Table Editor Supabase maupun melalui Website CMS tanpa kendala.
+              </p>
+            </div>
+
+            {/* SQL Code Box */}
+            <div className="relative rounded-2xl bg-[#010b14] border border-white/15 p-3.5 max-h-48 overflow-y-auto">
+              <pre className="text-[11px] font-mono text-emerald-300 whitespace-pre-wrap leading-relaxed">
+                {FIX_FOREIGN_KEY_CASCADE_SQL}
+              </pre>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+              <a
+                href="https://supabase.com/dashboard"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all"
+              >
+                <span>Buka Supabase SQL Editor</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={handleCopyCascadeSql}
+                  className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/50 text-rose-300 hover:text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-95"
+                >
+                  {copiedCascadeSql ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                  <span>{copiedCascadeSql ? 'SQL Tersalin!' : 'Salin Skrip SQL CASCADE'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowCascadeSqlModal(false)}
+                  className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition-all"
+                >
+                  Tutup
                 </button>
               </div>
             </div>
