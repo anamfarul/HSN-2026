@@ -31,16 +31,24 @@ export const CompetitionsSection: React.FC<CompetitionsSectionProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [activeDetailModal, setActiveDetailModal] = useState<Competition | null>(null);
 
-  const categories = [
+  const defaultCategories = [
     'SEMUA',
-    'PAUD/TK',
+    'PAUD/RA/TK',
     'SD/MI',
     'SMP/MTs',
     'SMA/MA/SMK',
     'IPNU/IPPNU',
     'FATAYAT',
     'MUSLIMAT',
+    'PAGAR NUSA',
+    'UMUM',
   ];
+
+  // Tambahkan kategori custom jika ada lomba baru dengan kategori tambahan
+  const extraCategories = [...new Set<string>(competitions.map((c) => String(c.category)))].filter(
+    (c) => Boolean(c) && !defaultCategories.includes(c)
+  );
+  const categories = [...defaultCategories, ...extraCategories];
 
   const filteredCompetitions = competitions.filter((comp) => {
     const matchesCategory =

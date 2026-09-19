@@ -361,6 +361,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   // Helper untuk generate kode lomba otomatis sesuai kategori dan nomor urut
   const getNextCompCode = (category: string) => {
     const prefixMap: Record<string, string> = {
+      'PAUD/RA/TK': 'LMB-PAUD',
       'PAUD/TK': 'LMB-PAUD',
       'SD/MI': 'LMB-SD',
       'SMP/MTs': 'LMB-SMP',
@@ -368,6 +369,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       'IPNU/IPPNU': 'LMB-IPNU',
       'FATAYAT': 'LMB-FTY',
       'MUSLIMAT': 'LMB-MSL',
+      'PAGAR NUSA': 'LMB-PN',
+      'UMUM': 'LMB-UMUM',
     };
     const prefix = prefixMap[category] || 'LMB';
     const matching = competitions.filter((c) => c.code.startsWith(prefix));
@@ -691,13 +694,15 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                     className="px-3 py-1.5 rounded-xl text-xs bg-[#020e19] border border-white/20 text-white focus:outline-none"
                   >
                     <option value="ALL">Semua Kategori</option>
-                    <option value="PAUD/TK">PAUD/TK</option>
+                    <option value="PAUD/RA/TK">PAUD/RA/TK</option>
                     <option value="SD/MI">SD/MI</option>
                     <option value="SMP/MTs">SMP/MTs</option>
                     <option value="SMA/MA/SMK">SMA/MA/SMK</option>
                     <option value="IPNU/IPPNU">IPNU/IPPNU</option>
                     <option value="FATAYAT">FATAYAT</option>
                     <option value="MUSLIMAT">MUSLIMAT</option>
+                    <option value="PAGAR NUSA">PAGAR NUSA</option>
+                    <option value="UMUM">UMUM</option>
                   </select>
 
                   <select
@@ -929,13 +934,15 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 <div className="flex flex-wrap items-center gap-1.5">
                   {[
                     'SEMUA',
-                    'PAUD/TK',
+                    'PAUD/RA/TK',
                     'SD/MI',
                     'SMP/MTs',
                     'SMA/MA/SMK',
                     'IPNU/IPPNU',
                     'FATAYAT',
                     'MUSLIMAT',
+                    'PAGAR NUSA',
+                    'UMUM',
                   ].map((cat) => {
                     const count =
                       cat === 'SEMUA'
@@ -1426,13 +1433,15 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                       className="px-3 py-1.5 rounded-xl bg-[#020e19] border border-white/20 text-xs text-[#00D9F5] font-semibold focus:outline-none focus:border-[#00D9F5]"
                     >
                       <option value="ALL">Semua Kategori</option>
-                      <option value="PAUD/TK">PAUD/TK</option>
+                      <option value="PAUD/RA/TK">PAUD/RA/TK</option>
                       <option value="SD/MI">SD/MI</option>
                       <option value="SMP/MTs">SMP/MTs</option>
                       <option value="SMA/MA/SMK">SMA/MA/SMK</option>
                       <option value="IPNU/IPPNU">IPNU/IPPNU</option>
                       <option value="FATAYAT">FATAYAT</option>
                       <option value="MUSLIMAT">MUSLIMAT</option>
+                      <option value="PAGAR NUSA">PAGAR NUSA</option>
+                      <option value="UMUM">UMUM</option>
                     </select>
                   </div>
                 </div>
@@ -1563,8 +1572,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   <span>Distribusi Peserta Berdasarkan Kategori Generasi:</span>
                 </h4>
                 <div className="space-y-3 text-xs">
-                  {['PAUD/TK', 'SD/MI', 'SMP/MTs', 'SMA/MA/SMK', 'IPNU/IPPNU', 'FATAYAT', 'MUSLIMAT'].map((c) => {
-                    const count = participants.filter((p) => p.category === c).length;
+                  {['PAUD/RA/TK', 'SD/MI', 'SMP/MTs', 'SMA/MA/SMK', 'IPNU/IPPNU', 'FATAYAT', 'MUSLIMAT', 'PAGAR NUSA', 'UMUM'].map((c) => {
+                    const count = participants.filter((p) => p.category === c || (c === 'PAUD/RA/TK' && p.category === 'PAUD/TK')).length;
                     const percent = participants.length > 0 ? Math.round((count / participants.length) * 100) : 0;
                     return (
                       <div key={c}>
@@ -1708,13 +1717,15 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                     onChange={(e) => setNewCompCategory(e.target.value as any)}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-xs font-bold text-[#00D9F5] focus:outline-none focus:border-[#00D9F5] transition-all cursor-pointer"
                   >
-                    <option value="PAUD/TK">PAUD/TK</option>
+                    <option value="PAUD/RA/TK">PAUD/RA/TK</option>
                     <option value="SD/MI">SD/MI</option>
                     <option value="SMP/MTs">SMP/MTs</option>
                     <option value="SMA/MA/SMK">SMA/MA/SMK</option>
                     <option value="IPNU/IPPNU">IPNU/IPPNU</option>
                     <option value="FATAYAT">FATAYAT</option>
                     <option value="MUSLIMAT">MUSLIMAT</option>
+                    <option value="PAGAR NUSA">PAGAR NUSA</option>
+                    <option value="UMUM">UMUM</option>
                   </select>
                 </div>
 
@@ -2323,13 +2334,15 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                         onChange={(e) => setEditCompCategory(e.target.value as any)}
                         className="w-full px-3.5 py-2.5 rounded-xl bg-[#031525] border border-white/20 text-xs font-bold text-[#00D9F5] focus:outline-none focus:border-[#00D9F5] transition-all cursor-pointer"
                       >
-                        <option value="PAUD/TK">PAUD/TK</option>
+                        <option value="PAUD/RA/TK">PAUD/RA/TK</option>
                         <option value="SD/MI">SD/MI</option>
                         <option value="SMP/MTs">SMP/MTs</option>
                         <option value="SMA/MA/SMK">SMA/MA/SMK</option>
                         <option value="IPNU/IPPNU">IPNU/IPPNU</option>
                         <option value="FATAYAT">FATAYAT</option>
                         <option value="MUSLIMAT">MUSLIMAT</option>
+                        <option value="PAGAR NUSA">PAGAR NUSA</option>
+                        <option value="UMUM">UMUM</option>
                       </select>
                     </div>
 

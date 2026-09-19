@@ -82,7 +82,35 @@ ALTER TABLE IF EXISTS public.participants
   REFERENCES public.competitions(id) 
   ON DELETE CASCADE;
 
--- 4. Pastikan tabel admin_users tersedia
+-- 4. UPDATE & FLEKSIBILITAS KATEGORI LOMBA (PAUD/RA/TK & PAGAR NUSA)
+-- Menjadikan tipe kolom category VARCHAR(100) fleksibel tanpa batasan ENUM
+ALTER TABLE IF EXISTS public.competitions 
+  ALTER COLUMN category TYPE VARCHAR(100) USING category::text;
+
+ALTER TABLE IF EXISTS public.participants 
+  ALTER COLUMN category TYPE VARCHAR(100) USING category::text;
+
+-- Update otomatis data kategori lama 'PAUD/TK' menjadi 'PAUD/RA/TK'
+UPDATE public.competitions 
+  SET category = 'PAUD/RA/TK' 
+  WHERE category = 'PAUD/TK';
+
+UPDATE public.participants 
+  SET category = 'PAUD/RA/TK' 
+  WHERE category = 'PAUD/TK';
+
+-- Jika tipe enum lama masih dipakai oleh objek lain, tambahkan nilai secara aman
+DO $$ 
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'category_generation_enum') THEN
+    ALTER TYPE category_generation_enum ADD VALUE IF NOT EXISTS 'PAUD/RA/TK';
+    ALTER TYPE category_generation_enum ADD VALUE IF NOT EXISTS 'PAGAR NUSA';
+    ALTER TYPE category_generation_enum ADD VALUE IF NOT EXISTS 'UMUM';
+  END IF;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+-- 5. Pastikan tabel admin_users tersedia
 CREATE TABLE IF NOT EXISTS public.admin_users (
     id VARCHAR(50) PRIMARY KEY,
     full_name VARCHAR(150) NOT NULL,
@@ -143,17 +171,8 @@ ALTER TABLE IF EXISTS public.participants
 
 NOTIFY pgrst, 'reload schema';
 
--- 1. Tipe ENUM Kategori & Status
+-- 1. Tipe ENUM Status Registrasi
 DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'category_generation_enum') THEN
-        CREATE TYPE category_generation_enum AS ENUM (
-            'Pra-Santri/Anak',
-            'SMP/MTs',
-            'SMA/SMK/MA',
-            'Santri Ponpes',
-            'Umum/Mahasiswa'
-        );
-    END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'registration_status_enum') THEN
         CREATE TYPE registration_status_enum AS ENUM (
             'Menunggu Verifikasi',
@@ -168,7 +187,7 @@ CREATE TABLE IF NOT EXISTS competitions (
     id VARCHAR(50) PRIMARY KEY,
     code VARCHAR(30) UNIQUE NOT NULL,
     title VARCHAR(150) NOT NULL,
-    category category_generation_enum NOT NULL,
+    category VARCHAR(100) NOT NULL,
     short_desc TEXT NOT NULL,
     full_desc TEXT NOT NULL,
     rules JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -190,7 +209,7 @@ CREATE TABLE IF NOT EXISTS participants (
     registration_number VARCHAR(30) UNIQUE NOT NULL,
     full_name VARCHAR(150) NOT NULL,
     institution VARCHAR(200) NOT NULL,
-    category category_generation_enum NOT NULL,
+    category VARCHAR(100) NOT NULL,
     birth_date DATE,
     whatsapp VARCHAR(25) NOT NULL,
     email VARCHAR(100),
@@ -206,6 +225,12 @@ CREATE TABLE IF NOT EXISTS participants (
     registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Fleksibilitas kolom category & migrasi PAUD/TK -> PAUD/RA/TK
+ALTER TABLE IF EXISTS public.competitions ALTER COLUMN category TYPE VARCHAR(100) USING category::text;
+ALTER TABLE IF EXISTS public.participants ALTER COLUMN category TYPE VARCHAR(100) USING category::text;
+UPDATE public.competitions SET category = 'PAUD/RA/TK' WHERE category = 'PAUD/TK';
+UPDATE public.participants SET category = 'PAUD/RA/TK' WHERE category = 'PAUD/TK';
 
 -- 4. Tabel Pengguna Panitia (Admin Users)
 CREATE TABLE IF NOT EXISTS admin_users (

@@ -806,7 +806,7 @@ MWC NU Kecamatan Poncokusumo, Kabupaten Malang, Jawa Timur.
                   1. Pilih Kategori Peserta:
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {(['PAUD/TK', 'SD/MI', 'SMP/MTs', 'SMA/MA/SMK', 'IPNU/IPPNU', 'FATAYAT', 'MUSLIMAT'] as CategoryGeneration[]).map((cat) => (
+                  {(['PAUD/RA/TK', 'SD/MI', 'SMP/MTs', 'SMA/MA/SMK', 'IPNU/IPPNU', 'FATAYAT', 'MUSLIMAT', 'PAGAR NUSA', 'UMUM'] as CategoryGeneration[]).map((cat) => (
                     <button
                       key={cat}
                       type="button"

@@ -1,12 +1,14 @@
 export type CategoryGeneration = 
-  | 'PAUD/TK'
+  | 'PAUD/RA/TK'
   | 'SD/MI'
   | 'SMP/MTs'
   | 'SMA/MA/SMK'
   | 'IPNU/IPPNU'
   | 'FATAYAT'
   | 'MUSLIMAT'
-  | 'UMUM';
+  | 'PAGAR NUSA'
+  | 'UMUM'
+  | (string & {});
 
 export interface FivePillar {
   id: string;
