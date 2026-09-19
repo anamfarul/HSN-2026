@@ -137,13 +137,38 @@ export function isSupabaseConnected(): boolean {
   return Boolean(url && anonKey && (url.includes('.supabase.co') || url.includes('localhost') || url.includes('127.0.0.1')));
 }
 
+// Helper untuk mendeteksi error penolakan tipe ENUM pada PostgreSQL / Supabase
+export function isCategoryEnumError(error: any): boolean {
+  if (!error) return false;
+  const msg = ((error.message || '') + ' ' + (error.details || '') + ' ' + (error.hint || '')).toLowerCase();
+  return (
+    error.code === '22P02' ||
+    msg.includes('category_generation_enum') ||
+    msg.includes('invalid input value for enum') ||
+    (msg.includes('category') && msg.includes('enum')) ||
+    msg.includes('violates check constraint') ||
+    msg.includes('category_check')
+  );
+}
+
 // Map database row to app's Competition interface
 export function mapSupabaseToCompetition(row: any): Competition {
+  let category = row.category as CategoryGeneration;
+  if (category === ('PAUD/TK' as any)) {
+    category = 'PAUD/RA/TK';
+  } else if (!category && row.code?.includes('PAUD')) {
+    category = 'PAUD/RA/TK';
+  } else if (row.code?.startsWith('LMB-PN')) {
+    category = 'PAGAR NUSA';
+  } else if (!category) {
+    category = 'SMP/MTs';
+  }
+
   return {
     id: row.id || `comp-${row.code || Date.now()}`,
     code: row.code || 'LMB-00',
     title: row.title || 'Cabang Lomba',
-    category: (row.category as CategoryGeneration) || 'SMP/MTs',
+    category,
     targetAudience: row.target_audience || 'Peserta Santri',
     description: row.description || '',
     rules: Array.isArray(row.rules) ? row.rules : (typeof row.rules === 'string' ? JSON.parse(row.rules) : []),
@@ -362,6 +387,7 @@ export async function insertCompetitionToSupabase(comp: Competition): Promise<{ 
     let row = mapCompetitionToSupabase(comp);
     let attempts = 6;
     let lastError: any = null;
+    let fallbackCategoryApplied = false;
 
     while (attempts > 0) {
       attempts--;
@@ -371,6 +397,21 @@ export async function insertCompetitionToSupabase(comp: Competition): Promise<{ 
       }
 
       lastError = error;
+
+      // 1. Cek jika database Supabase menolak enum baru ('PAUD/RA/TK' atau 'PAGAR NUSA')
+      if (!fallbackCategoryApplied && isCategoryEnumError(error)) {
+        fallbackCategoryApplied = true;
+        if (row.category === 'PAUD/RA/TK') {
+          console.warn('Supabase menolak enum PAUD/RA/TK, otomatis fallback ke PAUD/TK untuk kompatibilitas database...');
+          row.category = 'PAUD/TK';
+          continue;
+        } else if (row.category === 'PAGAR NUSA') {
+          console.warn('Supabase menolak enum PAGAR NUSA, otomatis fallback ke UMUM untuk kompatibilitas database...');
+          row.category = 'UMUM';
+          continue;
+        }
+      }
+
       const match = error.message?.match(/Could not find the '([^']+)' column of 'competitions'/i);
       if (match && match[1]) {
         const missingCol = match[1];
@@ -398,6 +439,7 @@ export async function updateCompetitionInSupabase(comp: Competition): Promise<{ 
     let row = mapCompetitionToSupabase(comp);
     let attempts = 6;
     let lastError: any = null;
+    let fallbackCategoryApplied = false;
 
     while (attempts > 0) {
       attempts--;
@@ -411,6 +453,21 @@ export async function updateCompetitionInSupabase(comp: Competition): Promise<{ 
       }
 
       lastError = error;
+
+      // 1. Cek fallback enum kategori
+      if (!fallbackCategoryApplied && isCategoryEnumError(error)) {
+        fallbackCategoryApplied = true;
+        if (row.category === 'PAUD/RA/TK') {
+          console.warn('Supabase menolak enum PAUD/RA/TK saat update, otomatis fallback ke PAUD/TK...');
+          row.category = 'PAUD/TK';
+          continue;
+        } else if (row.category === 'PAGAR NUSA') {
+          console.warn('Supabase menolak enum PAGAR NUSA saat update, otomatis fallback ke UMUM...');
+          row.category = 'UMUM';
+          continue;
+        }
+      }
+
       const match = error.message?.match(/Could not find the '([^']+)' column of 'competitions'/i);
       if (match && match[1]) {
         const missingCol = match[1];
@@ -490,6 +547,7 @@ export async function syncAllCompetitionsToSupabase(competitions: Competition[])
 
     let attempts = 6;
     let lastError: any = null;
+    let fallbackCategoryApplied = false;
 
     while (attempts > 0) {
       attempts--;
@@ -503,7 +561,21 @@ export async function syncAllCompetitionsToSupabase(competitions: Competition[])
       }
 
       lastError = error;
-      // Periksa apakah ada kolom yang tidak ditemukan di schema cache Supabase (seperti juknis_file_name, juknis_url, dll.)
+
+      // 1. Cek jika database Supabase belum mendukung enum baru ('PAUD/RA/TK' atau 'PAGAR NUSA')
+      if (!fallbackCategoryApplied && isCategoryEnumError(error)) {
+        fallbackCategoryApplied = true;
+        console.warn('Supabase menolak enum kategori pada sync. Mengonversi PAUD/RA/TK -> PAUD/TK dan PAGAR NUSA -> UMUM untuk database lama...');
+        rows = rows.map((r) => {
+          let cat = r.category;
+          if (cat === 'PAUD/RA/TK') cat = 'PAUD/TK';
+          else if (cat === 'PAGAR NUSA') cat = 'UMUM';
+          return { ...r, category: cat };
+        });
+        continue;
+      }
+
+      // 2. Periksa apakah ada kolom yang tidak ditemukan di schema cache Supabase (seperti juknis_file_name, juknis_url, dll.)
       const match = error.message?.match(/Could not find the '([^']+)' column of 'competitions'/i);
       if (match && match[1]) {
         const missingCol = match[1];
@@ -526,12 +598,19 @@ export async function syncAllCompetitionsToSupabase(competitions: Competition[])
 
 // Map participant row from Supabase to ParticipantRegistration
 export function mapSupabaseToParticipant(row: any): any {
+  let category = row.category;
+  if (category === 'PAUD/TK') {
+    category = 'PAUD/RA/TK';
+  } else if (!category) {
+    category = 'SMP/MTs';
+  }
+
   return {
     id: row.id || `reg-${Date.now()}`,
     registrationNumber: row.registration_number || 'HSN26-REG',
     fullName: row.full_name || '',
     institution: row.institution || '',
-    category: row.category || 'SMP/MTs',
+    category,
     birthDate: row.birth_date || '',
     whatsapp: row.whatsapp || '',
     email: row.email || '',
@@ -588,6 +667,7 @@ export async function insertParticipantToSupabase(participant: any): Promise<{ s
     let row = mapParticipantToSupabase(participant);
     let attempts = 6;
     let lastError: any = null;
+    let fallbackCategoryApplied = false;
 
     while (attempts > 0) {
       attempts--;
@@ -598,7 +678,21 @@ export async function insertParticipantToSupabase(participant: any): Promise<{ s
 
       lastError = error;
 
-      // 1. Cek jika kolom belum ada di schema cache tabel participants Supabase (misal payment_proof_name, payment_proof_url, document_name, dll.)
+      // 1. Cek jika database Supabase belum mendukung enum kategori baru
+      if (!fallbackCategoryApplied && isCategoryEnumError(error)) {
+        fallbackCategoryApplied = true;
+        if (row.category === 'PAUD/RA/TK') {
+          console.warn('Supabase peserta menolak enum PAUD/RA/TK, fallback ke PAUD/TK...');
+          row.category = 'PAUD/TK';
+          continue;
+        } else if (row.category === 'PAGAR NUSA') {
+          console.warn('Supabase peserta menolak enum PAGAR NUSA, fallback ke UMUM...');
+          row.category = 'UMUM';
+          continue;
+        }
+      }
+
+      // 2. Cek jika kolom belum ada di schema cache tabel participants Supabase (misal payment_proof_name, payment_proof_url, document_name, dll.)
       const missingMatch = error.message?.match(/Could not find the '([^']+)' column of 'participants'/i);
       if (missingMatch && missingMatch[1]) {
         const missingCol = missingMatch[1];
@@ -607,7 +701,7 @@ export async function insertParticipantToSupabase(participant: any): Promise<{ s
         continue;
       }
 
-      // 2. Cek jika terjadi error foreign key pada competition_id karena tabel competitions belum terisi di Supabase
+      // 3. Cek jika terjadi error foreign key pada competition_id karena tabel competitions belum terisi di Supabase
       if (row.competition_id && (
         error.code === '23503' || 
         error.message?.toLowerCase().includes('foreign key') || 
@@ -690,6 +784,7 @@ export async function syncAllParticipantsToSupabase(
     let rows = participants.map(mapParticipantToSupabase);
     let attempts = 6;
     let lastError: any = null;
+    let fallbackCategoryApplied = false;
 
     while (attempts > 0) {
       attempts--;
@@ -703,6 +798,19 @@ export async function syncAllParticipantsToSupabase(
       }
 
       lastError = error;
+
+      // 1. Cek jika database menolak enum kategori baru
+      if (!fallbackCategoryApplied && isCategoryEnumError(error)) {
+        fallbackCategoryApplied = true;
+        console.warn('Supabase peserta sync menolak enum kategori, fallback ke format lama...');
+        rows = rows.map((r) => {
+          let cat = r.category;
+          if (cat === 'PAUD/RA/TK') cat = 'PAUD/TK';
+          else if (cat === 'PAGAR NUSA') cat = 'UMUM';
+          return { ...r, category: cat };
+        });
+        continue;
+      }
 
       // Check if column missing in schema cache
       const match = error.message?.match(/Could not find the '([^']+)' column of 'participants'/i);
@@ -1001,6 +1109,44 @@ ALTER TABLE IF EXISTS public.participants
   ON DELETE CASCADE;
 
 -- 3. Muat ulang cache schema PostgREST Supabase
+NOTIFY pgrst, 'reload schema';
+`;
+
+export const FIX_CATEGORY_ENUM_SQL = `-- ==============================================================================
+-- SKRIP PERBAIKAN KATEGORI LOMBA (PAUD/RA/TK & PAGAR NUSA) DI SUPABASE
+-- Mengatasi error: invalid input value for enum category_generation_enum: "PAUD/RA/TK"
+-- Jalankan di Supabase Dashboard -> SQL Editor -> New Query -> Run
+-- ==============================================================================
+
+-- 1. Jadikan kolom category bertipe VARCHAR(100) fleksibel pada tabel competitions & participants
+--    Hal ini membebaskan sistem dari batasan tipe ENUM lama
+ALTER TABLE IF EXISTS public.competitions 
+  ALTER COLUMN category TYPE VARCHAR(100) USING category::text;
+
+ALTER TABLE IF EXISTS public.participants 
+  ALTER COLUMN category TYPE VARCHAR(100) USING category::text;
+
+-- 2. Migrasikan data lama dari 'PAUD/TK' menjadi 'PAUD/RA/TK'
+UPDATE public.competitions 
+  SET category = 'PAUD/RA/TK' 
+  WHERE category = 'PAUD/TK';
+
+UPDATE public.participants 
+  SET category = 'PAUD/RA/TK' 
+  WHERE category = 'PAUD/TK';
+
+-- 3. Tambahkan nilai ke ENUM jika tipe category_generation_enum masih terikat pada objek lain
+DO $$ 
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'category_generation_enum') THEN
+    ALTER TYPE category_generation_enum ADD VALUE IF NOT EXISTS 'PAUD/RA/TK';
+    ALTER TYPE category_generation_enum ADD VALUE IF NOT EXISTS 'PAGAR NUSA';
+    ALTER TYPE category_generation_enum ADD VALUE IF NOT EXISTS 'UMUM';
+  END IF;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+-- 4. Muat ulang cache schema PostgREST Supabase agar perubahan langsung aktif
 NOTIFY pgrst, 'reload schema';
 `;
 

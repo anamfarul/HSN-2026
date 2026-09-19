@@ -37,7 +37,8 @@ import {
   sanitizeSupabaseKey,
   pingSupabaseEndpoint,
   ADMIN_USERS_SETUP_SQL,
-  FIX_FOREIGN_KEY_CASCADE_SQL
+  FIX_FOREIGN_KEY_CASCADE_SQL,
+  FIX_CATEGORY_ENUM_SQL
 } from '../lib/supabaseClient';
 import { AdminUser, Competition, ParticipantRegistration } from '../types';
 import { 
@@ -318,8 +319,10 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
   const [copiedSql, setCopiedSql] = useState(false);
   const [copiedAdminUsersSql, setCopiedAdminUsersSql] = useState(false);
   const [copiedCascadeSql, setCopiedCascadeSql] = useState(false);
+  const [copiedCategorySql, setCopiedCategorySql] = useState(false);
   const [showAdminUsersSqlModal, setShowAdminUsersSqlModal] = useState(false);
   const [showCascadeSqlModal, setShowCascadeSqlModal] = useState(false);
+  const [showCategorySqlModal, setShowCategorySqlModal] = useState(false);
   const [showSqlViewer, setShowSqlViewer] = useState(false);
   const [pingTesting, setPingTesting] = useState(false);
   const [pingResult, setPingResult] = useState<string | null>(null);
@@ -444,6 +447,13 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
     setCopiedCascadeSql(true);
     notify('Skrip SQL CASCADE Hapus Lomba berhasil disalin! Jalankan di SQL Editor Supabase untuk mengatasi error foreign key.');
     setTimeout(() => setCopiedCascadeSql(false), 4000);
+  };
+
+  const handleCopyCategorySql = () => {
+    navigator.clipboard.writeText(FIX_CATEGORY_ENUM_SQL);
+    setCopiedCategorySql(true);
+    notify('Skrip SQL perbaikan kategori PAUD/RA/TK & PAGAR NUSA disalin! Jalankan di SQL Editor Supabase.');
+    setTimeout(() => setCopiedCategorySql(false), 4000);
   };
 
   const handleSyncToSupabase = async () => {
@@ -897,7 +907,16 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                       Tabel <code className="text-[#F2C96D]">competitions</code>: juknis, syarat, hadiah, dan biaya pendaftaran.
                     </p>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-1.5 shrink-0 flex-wrap sm:flex-nowrap">
+                    <button
+                      type="button"
+                      onClick={() => setShowCategorySqlModal(true)}
+                      className="px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 hover:text-white text-xs font-bold flex items-center gap-1 transition-all active:scale-95"
+                      title="Perbaiki format enum kategori PAUD/RA/TK & PAGAR NUSA di database Supabase"
+                    >
+                      <Sparkles className="w-3 h-3 text-amber-400" />
+                      <span>Fix Kategori</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => setShowCascadeSqlModal(true)}
@@ -905,7 +924,7 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                       title="Perbaiki error foreign key saat menghapus lomba di database Supabase"
                     >
                       <Trash2 className="w-3 h-3 text-rose-400" />
-                      <span>Fix Hapus (CASCADE)</span>
+                      <span>Fix Hapus</span>
                     </button>
                     <button
                       type="button"
@@ -919,8 +938,23 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                   </div>
                 </div>
 
+                {/* Banner edukasi kategori baru PAUD/RA/TK & PAGAR NUSA */}
+                <div className="mt-2.5 p-2.5 rounded-lg bg-amber-950/30 border border-amber-500/30 flex items-center justify-between gap-2 text-[11px] text-amber-200">
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span>Kategori <strong>PAUD/RA/TK</strong> atau <strong>PAGAR NUSA</strong> gagal terkirim? Buka solusi migrasi database Supabase.</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowCategorySqlModal(true)}
+                    className="px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-white font-bold text-[10px] shrink-0 uppercase tracking-wider transition-colors"
+                  >
+                    Buka Solusi
+                  </button>
+                </div>
+
                 {/* Banner edukasi penanganan error foreign key */}
-                <div className="mt-2.5 p-2 rounded-lg bg-rose-950/40 border border-rose-500/30 flex items-center justify-between gap-2 text-[11px] text-rose-200">
+                <div className="mt-2 p-2 rounded-lg bg-rose-950/40 border border-rose-500/30 flex items-center justify-between gap-2 text-[11px] text-rose-200">
                   <span className="flex items-center gap-1.5">
                     <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
                     <span>Lomba tidak bisa dihapus di tabel Supabase? Aktifkan <strong>ON DELETE CASCADE</strong> agar referensi peserta terhapus otomatis.</span>
@@ -1297,6 +1331,111 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowCascadeSqlModal(false)}
+                  className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition-all"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Skrip Perbaikan Kategori Lomba (PAUD/RA/TK & PAGAR NUSA) */}
+      {showCategorySqlModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-2xl rounded-3xl bg-[#020e19] border border-amber-500/40 p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0">
+                  <Sparkles className="w-5 h-5 text-amber-400" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-heading font-bold text-white text-base">
+                      Perbaikan Kategori Baru (PAUD/RA/TK & PAGAR NUSA)
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                      Supabase SQL
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#DDE7E8]/80 mt-0.5">
+                    Mengatasi penolakan enum: <code className="text-amber-300">invalid input value for enum category_generation_enum</code>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCategorySqlModal(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm font-bold transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Status auto-healing info */}
+            <div className="p-3.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 space-y-1.5 text-xs text-emerald-200">
+              <div className="flex items-center gap-2 font-bold text-white">
+                <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Proteksi Otomatis Website Sudah Aktif:</span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-emerald-200/90">
+                Sistem CMS kini telah dilengkapi penyesuaian otomatis (fallback compatibility) sehingga pengiriman data lomba tetap berhasil. Namun, agar database Supabase Anda menyimpan nama <strong>PAUD/RA/TK</strong> dan <strong>PAGAR NUSA</strong> secara asli tanpa batas enum, sangat disarankan menjalankan skrip SQL berikut.
+              </p>
+            </div>
+
+            {/* Step by step guide */}
+            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2">
+              <h4 className="text-xs font-bold text-[#F2C96D] uppercase tracking-wider flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <span>Cara Menjalankan Skrip di Supabase:</span>
+              </h4>
+              <ol className="text-xs text-[#DDE7E8]/90 space-y-1.5 list-decimal list-inside pl-1">
+                <li>
+                  Klik tombol <strong>"Salin Skrip SQL Kategori"</strong> di bawah ini.
+                </li>
+                <li>
+                  Buka <strong>Supabase Dashboard → SQL Editor → New query</strong>, lalu tempelkan (<strong>Ctrl+V</strong>).
+                </li>
+                <li>
+                  Klik tombol hijau <strong>"Run"</strong> (atau tekan <strong>Ctrl+Enter</strong>). Selesai!
+                </li>
+              </ol>
+            </div>
+
+            {/* SQL Code Box */}
+            <div className="relative rounded-2xl bg-[#010b14] border border-white/15 p-3.5 max-h-48 overflow-y-auto">
+              <pre className="text-[11px] font-mono text-amber-300 whitespace-pre-wrap leading-relaxed">
+                {FIX_CATEGORY_ENUM_SQL}
+              </pre>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+              <a
+                href="https://supabase.com/dashboard"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all"
+              >
+                <span>Buka Supabase SQL Editor</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={handleCopyCategorySql}
+                  className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 hover:text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-95"
+                >
+                  {copiedCategorySql ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                  <span>{copiedCategorySql ? 'SQL Tersalin!' : 'Salin Skrip SQL Kategori'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowCategorySqlModal(false)}
                   className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition-all"
                 >
                   Tutup
