@@ -371,6 +371,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       'MUSLIMAT': 'LMB-MSL',
       'PAGAR NUSA': 'LMB-PN',
       'GURU': 'LMB-GRU',
+      'ANSOR': 'LMB-ANS',
       'UMUM': 'LMB-UMUM',
     };
     const prefix = prefixMap[category] || 'LMB';
@@ -704,6 +705,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                     <option value="MUSLIMAT">MUSLIMAT</option>
                     <option value="PAGAR NUSA">PAGAR NUSA</option>
                     <option value="GURU">GURU</option>
+                    <option value="ANSOR">ANSOR</option>
                     <option value="UMUM">UMUM</option>
                   </select>
 
@@ -945,6 +947,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                     'MUSLIMAT',
                     'PAGAR NUSA',
                     'GURU',
+                    'ANSOR',
                     'UMUM',
                   ].map((cat) => {
                     const count =
@@ -1445,6 +1448,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                       <option value="MUSLIMAT">MUSLIMAT</option>
                       <option value="PAGAR NUSA">PAGAR NUSA</option>
                       <option value="GURU">GURU</option>
+                      <option value="ANSOR">ANSOR</option>
                       <option value="UMUM">UMUM</option>
                     </select>
                   </div>
@@ -1576,7 +1580,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   <span>Distribusi Peserta Berdasarkan Kategori Generasi:</span>
                 </h4>
                 <div className="space-y-3 text-xs">
-                  {['PAUD/RA/TK', 'SD/MI', 'SMP/MTs', 'SMA/MA/SMK', 'IPNU/IPPNU', 'FATAYAT', 'MUSLIMAT', 'PAGAR NUSA', 'GURU', 'UMUM'].map((c) => {
+                  {['PAUD/RA/TK', 'SD/MI', 'SMP/MTs', 'SMA/MA/SMK', 'IPNU/IPPNU', 'FATAYAT', 'MUSLIMAT', 'PAGAR NUSA', 'GURU', 'ANSOR', 'UMUM'].map((c) => {
                     const count = participants.filter((p) => p.category === c || (c === 'PAUD/RA/TK' && p.category === 'PAUD/TK')).length;
                     const percent = participants.length > 0 ? Math.round((count / participants.length) * 100) : 0;
                     return (
@@ -1730,6 +1734,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                     <option value="MUSLIMAT">MUSLIMAT</option>
                     <option value="PAGAR NUSA">PAGAR NUSA</option>
                     <option value="GURU">GURU</option>
+                    <option value="ANSOR">ANSOR</option>
                     <option value="UMUM">UMUM</option>
                   </select>
                 </div>
@@ -2348,6 +2353,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                         <option value="MUSLIMAT">MUSLIMAT</option>
                         <option value="PAGAR NUSA">PAGAR NUSA</option>
                         <option value="GURU">GURU</option>
+                        <option value="ANSOR">ANSOR</option>
                         <option value="UMUM">UMUM</option>
                       </select>
                     </div>

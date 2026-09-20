@@ -162,6 +162,8 @@ export function mapSupabaseToCompetition(row: any): Competition {
     category = 'PAGAR NUSA';
   } else if (row.code?.startsWith('LMB-GRU') || row.code?.includes('GURU')) {
     category = 'GURU';
+  } else if (row.code?.startsWith('LMB-ANS') || row.code?.includes('ANSOR')) {
+    category = 'ANSOR';
   } else if (!category) {
     category = 'SMP/MTs';
   }
@@ -415,6 +417,10 @@ export async function insertCompetitionToSupabase(comp: Competition): Promise<{ 
           console.warn('Supabase menolak enum GURU, otomatis fallback ke UMUM untuk kompatibilitas database...');
           row.category = 'UMUM';
           continue;
+        } else if (row.category === 'ANSOR') {
+          console.warn('Supabase menolak enum ANSOR, otomatis fallback ke UMUM untuk kompatibilitas database...');
+          row.category = 'UMUM';
+          continue;
         }
       }
 
@@ -473,6 +479,10 @@ export async function updateCompetitionInSupabase(comp: Competition): Promise<{ 
           continue;
         } else if (row.category === 'GURU') {
           console.warn('Supabase menolak enum GURU saat update, otomatis fallback ke UMUM...');
+          row.category = 'UMUM';
+          continue;
+        } else if (row.category === 'ANSOR') {
+          console.warn('Supabase menolak enum ANSOR saat update, otomatis fallback ke UMUM...');
           row.category = 'UMUM';
           continue;
         }
@@ -575,11 +585,11 @@ export async function syncAllCompetitionsToSupabase(competitions: Competition[])
       // 1. Cek jika database Supabase belum mendukung enum baru ('PAUD/RA/TK' atau 'PAGAR NUSA')
       if (!fallbackCategoryApplied && isCategoryEnumError(error)) {
         fallbackCategoryApplied = true;
-        console.warn('Supabase menolak enum kategori pada sync. Mengonversi PAUD/RA/TK -> PAUD/TK dan PAGAR NUSA/GURU -> UMUM untuk database lama...');
+        console.warn('Supabase menolak enum kategori pada sync. Mengonversi PAUD/RA/TK -> PAUD/TK dan PAGAR NUSA/GURU/ANSOR -> UMUM untuk database lama...');
         rows = rows.map((r) => {
           let cat = r.category;
           if (cat === 'PAUD/RA/TK') cat = 'PAUD/TK';
-          else if (cat === 'PAGAR NUSA' || cat === 'GURU') cat = 'UMUM';
+          else if (cat === 'PAGAR NUSA' || cat === 'GURU' || cat === 'ANSOR') cat = 'UMUM';
           return { ...r, category: cat };
         });
         continue;
@@ -703,6 +713,10 @@ export async function insertParticipantToSupabase(participant: any): Promise<{ s
           console.warn('Supabase peserta menolak enum GURU, fallback ke UMUM...');
           row.category = 'UMUM';
           continue;
+        } else if (row.category === 'ANSOR') {
+          console.warn('Supabase peserta menolak enum ANSOR, fallback ke UMUM...');
+          row.category = 'UMUM';
+          continue;
         }
       }
 
@@ -820,7 +834,7 @@ export async function syncAllParticipantsToSupabase(
         rows = rows.map((r) => {
           let cat = r.category;
           if (cat === 'PAUD/RA/TK') cat = 'PAUD/TK';
-          else if (cat === 'PAGAR NUSA' || cat === 'GURU') cat = 'UMUM';
+          else if (cat === 'PAGAR NUSA' || cat === 'GURU' || cat === 'ANSOR') cat = 'UMUM';
           return { ...r, category: cat };
         });
         continue;
@@ -1127,20 +1141,34 @@ NOTIFY pgrst, 'reload schema';
 `;
 
 export const FIX_CATEGORY_ENUM_SQL = `-- ==============================================================================
--- SKRIP PERBAIKAN KATEGORI LOMBA (PAUD/RA/TK & PAGAR NUSA) DI SUPABASE
--- Mengatasi error: invalid input value for enum category_generation_enum: "PAUD/RA/TK"
+-- SKRIP PERBAIKAN KATEGORI LOMBA (PAUD/RA/TK, PAGAR NUSA, GURU & ANSOR) DI SUPABASE
+-- Mengatasi Error:
+-- 1. ERROR: invalid input value for enum category_generation_enum
+-- 2. ERROR 0A000: cannot alter type of a column used by a view or rule (view_rekap_peserta_lomba & view_pendaftar_terbaru)
 -- Jalankan di Supabase Dashboard -> SQL Editor -> New Query -> Run
 -- ==============================================================================
 
--- 1. Jadikan kolom category bertipe VARCHAR(100) fleksibel pada tabel competitions & participants
---    Hal ini membebaskan sistem dari batasan tipe ENUM lama
+-- 1. Lepaskan view dependen sementara agar ALTER COLUMN tidak terblokir (Error 0A000)
+--    Semua view yang bergantung pada kolom category dilepas terlebih dahulu dengan CASCADE
+DROP VIEW IF EXISTS public.view_rekap_peserta_lomba CASCADE;
+DROP VIEW IF EXISTS public.view_pendaftar_terbaru CASCADE;
+
+-- 2. Jadikan kolom category bertipe VARCHAR(100) fleksibel pada tabel competitions & participants
+--    Hal ini membebaskan sistem dari batasan tipe ENUM lama untuk selamanya
 ALTER TABLE IF EXISTS public.competitions 
   ALTER COLUMN category TYPE VARCHAR(100) USING category::text;
 
 ALTER TABLE IF EXISTS public.participants 
   ALTER COLUMN category TYPE VARCHAR(100) USING category::text;
 
--- 2. Migrasikan data lama dari 'PAUD/TK' menjadi 'PAUD/RA/TK'
+-- 3. Hapus batasan CHECK constraint jika ada
+ALTER TABLE IF EXISTS public.competitions 
+  DROP CONSTRAINT IF EXISTS competitions_category_check;
+
+ALTER TABLE IF EXISTS public.participants 
+  DROP CONSTRAINT IF EXISTS participants_category_check;
+
+-- 4. Migrasikan data lama dari 'PAUD/TK' menjadi 'PAUD/RA/TK'
 UPDATE public.competitions 
   SET category = 'PAUD/RA/TK' 
   WHERE category = 'PAUD/TK';
@@ -1149,19 +1177,37 @@ UPDATE public.participants
   SET category = 'PAUD/RA/TK' 
   WHERE category = 'PAUD/TK';
 
--- 3. Tambahkan nilai ke ENUM jika tipe category_generation_enum masih terikat pada objek lain
-DO $$ 
-BEGIN
-  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'category_generation_enum') THEN
-    ALTER TYPE category_generation_enum ADD VALUE IF NOT EXISTS 'PAUD/RA/TK';
-    ALTER TYPE category_generation_enum ADD VALUE IF NOT EXISTS 'PAGAR NUSA';
-    ALTER TYPE category_generation_enum ADD VALUE IF NOT EXISTS 'GURU';
-    ALTER TYPE category_generation_enum ADD VALUE IF NOT EXISTS 'UMUM';
-  END IF;
-EXCEPTION WHEN OTHERS THEN NULL;
-END $$;
+-- 5. Bangun kembali view_rekap_peserta_lomba dengan tipe baru agar fitur pelaporan tetap aktif
+CREATE OR REPLACE VIEW public.view_rekap_peserta_lomba AS
+SELECT 
+  c.id AS competition_id,
+  c.code AS competition_code,
+  c.title AS competition_title,
+  c.category AS competition_category,
+  COUNT(p.id) AS total_pendaftar,
+  COUNT(CASE WHEN p.status = 'Terverifikasi' THEN 1 END) AS total_terverifikasi,
+  COUNT(CASE WHEN p.status = 'Menunggu Verifikasi' THEN 1 END) AS total_menunggu,
+  COUNT(CASE WHEN p.status = 'Finalis' THEN 1 END) AS total_finalis
+FROM public.competitions c
+LEFT JOIN public.participants p ON c.id = p.competition_id
+GROUP BY c.id, c.code, c.title, c.category
+ORDER BY c.code ASC;
 
--- 4. Muat ulang cache schema PostgREST Supabase agar perubahan langsung aktif
+-- 6. Bangun kembali view_pendaftar_terbaru dengan tipe baru
+CREATE OR REPLACE VIEW public.view_pendaftar_terbaru AS
+SELECT 
+  p.registration_number,
+  p.full_name,
+  p.institution,
+  p.category,
+  p.competition_title,
+  p.whatsapp,
+  p.status,
+  p.registered_at
+FROM public.participants p
+ORDER BY p.registered_at DESC;
+
+-- 7. Muat ulang cache schema PostgREST Supabase agar perubahan langsung aktif
 NOTIFY pgrst, 'reload schema';
 `;
 

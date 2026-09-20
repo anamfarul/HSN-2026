@@ -190,6 +190,19 @@ export const GENERATION_PROGRAMS: GenerationProgram[] = [
     iconName: 'GraduationCap',
     accentColor: '#00D9F5',
   },
+  {
+    id: 'gen-10',
+    cardNumber: 'CARD 10',
+    title: 'KEPANDUAN & KETANGKASAN ANSOR BANSER',
+    category: 'ANSOR',
+    badge: 'Benteng Ulama & NKRI',
+    programs: ['Festival Baris Berbaris & Ketangkasan Banser', 'Lomba Paduan Suara Mars Ansor & Syubbanul Wathan', 'Simulasi Tanggap Bencana & Kepanduan'],
+    description: 'Penguatan militansi, kedisiplinan baris berbaris, kesiapsiagaan kader, dan loyalitas khidmah pemuda Nahdliyin dalam mengawal ulama dan bangsa.',
+    objective: 'Menempa kepemimpinan disiplin, kesiapsiagaan bela negara, serta soliditas barisan pemuda Ansor dan Banser.',
+    participantTarget: 'Kader GP Ansor, Satkoryon Banser, dan Pemuda Nahdliyin se-Poncokusumo',
+    iconName: 'Flame',
+    accentColor: '#F59E0B',
+  },
 ];
 
 export const SIGNATURE_PROGRAMS: SignatureProgram[] = [
@@ -496,6 +509,31 @@ export const INITIAL_COMPETITIONS: Competition[] = [
     location: 'Aula LP Ma\'arif NU Poncokusumo',
     contactPerson: '0813-9876-5432 (Koordinator Lomba Guru)',
     iconName: 'GraduationCap',
+  },
+  {
+    id: 'comp-11',
+    code: 'LMB-ANS-01',
+    title: 'Festival Ketangkasan Baris Berbaris & Disiplin Banser Ansor',
+    category: 'ANSOR',
+    targetAudience: 'Kader GP Ansor, Satkoryon Banser & Pemuda Nahdliyin',
+    description: 'Kompetisi keterampilan baris berbaris (PBB), formasi variasi, ketangkasan lapangan, dan kekompakan yel-yel kebangsaan.',
+    rules: [
+      'Peserta beregu/peleton mewakili Ranting GP Ansor atau Satkorkel Banser',
+      'Mengenakan seragam resmi PDL Banser lengkap atau seragam resmi GP Ansor',
+      'Materi lomba meliputi PBB statis, dinamis, formasi variasi kreasi, dan yel-yel kekompakan',
+      'Penilaian mengutamakan ketepatan aba-aba, kerapian barisan, kekompakan, dan semangat juang',
+    ],
+    prizes: {
+      first: 'Piala Bergilir PAC GP Ansor + Piagam Kehormatan + Uang Pembinaan',
+      second: 'Trofi Juara II + Piagam Kehormatan + Uang Pembinaan',
+      third: 'Trofi Juara III + Piagam Kehormatan + Uang Pembinaan',
+    },
+    registrationFee: 'Gratis',
+    deadline: '10 Oktober 2026',
+    technicalMeeting: '12 Oktober 2026',
+    location: 'Lapangan Utama Poncokusumo',
+    contactPerson: '0812-9876-1934 (Koordinator Lomba Ansor/Banser)',
+    iconName: 'Flame',
   },
 ];
 

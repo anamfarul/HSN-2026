@@ -15,7 +15,8 @@ import {
   Sparkles,
   Calendar,
   Shield,
-  GraduationCap
+  GraduationCap,
+  Flame
 } from 'lucide-react';
 
 interface ProgramGenerationsSectionProps {
@@ -45,6 +46,8 @@ export const ProgramGenerationsSection: React.FC<ProgramGenerationsSectionProps>
         return <Shield className="w-6 h-6" />;
       case 'GraduationCap':
         return <GraduationCap className="w-6 h-6" />;
+      case 'Flame':
+        return <Flame className="w-6 h-6" />;
       case 'Users':
       default:
         return <Users className="w-6 h-6" />;

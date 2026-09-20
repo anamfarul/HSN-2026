@@ -1355,14 +1355,14 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="font-heading font-bold text-white text-base">
-                      Perbaikan Kategori Baru (PAUD/RA/TK, PAGAR NUSA & GURU)
+                      Perbaikan Kategori Baru (PAUD/RA/TK, PAGAR NUSA, GURU & ANSOR)
                     </h3>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
                       Supabase SQL
                     </span>
                   </div>
                   <p className="text-xs text-[#DDE7E8]/80 mt-0.5">
-                    Mengatasi penolakan enum: <code className="text-amber-300">invalid input value for enum category_generation_enum</code>
+                    Mengatasi penolakan enum &amp; error 0A000 view: <code className="text-amber-300">view_rekap_peserta_lomba &amp; view_pendaftar_terbaru</code>
                   </p>
                 </div>
               </div>
@@ -1382,7 +1382,7 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                 <span>Proteksi Otomatis Website Sudah Aktif:</span>
               </div>
               <p className="text-[11px] leading-relaxed text-emerald-200/90">
-                Sistem CMS kini telah dilengkapi penyesuaian otomatis (fallback compatibility) sehingga pengiriman data lomba tetap berhasil. Namun, agar database Supabase Anda menyimpan nama <strong>PAUD/RA/TK</strong>, <strong>PAGAR NUSA</strong>, dan <strong>GURU</strong> secara asli tanpa batas enum, sangat disarankan menjalankan skrip SQL berikut.
+                Sistem CMS kini telah dilengkapi penyesuaian otomatis (fallback compatibility) sehingga pengiriman data lomba tetap berhasil. Skrip SQL di bawah ini telah diperbarui agar <strong>bebas dari Error 0A000 (view_rekap_peserta_lomba)</strong> serta mendukung kategori <strong>PAUD/RA/TK</strong>, <strong>PAGAR NUSA</strong>, <strong>GURU</strong>, dan <strong>ANSOR</strong> secara permanen.
               </p>
             </div>
 
