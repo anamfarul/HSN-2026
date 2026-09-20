@@ -38,7 +38,9 @@ import {
   pingSupabaseEndpoint,
   ADMIN_USERS_SETUP_SQL,
   FIX_FOREIGN_KEY_CASCADE_SQL,
-  FIX_CATEGORY_ENUM_SQL
+  FIX_CATEGORY_ENUM_SQL,
+  DELETE_MOCK_PARTICIPANTS_SQL,
+  purgeMockParticipantsFromSupabase
 } from '../lib/supabaseClient';
 import { AdminUser, Competition, ParticipantRegistration } from '../types';
 import { 
@@ -321,9 +323,12 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
   const [copiedAdminUsersSql, setCopiedAdminUsersSql] = useState(false);
   const [copiedCascadeSql, setCopiedCascadeSql] = useState(false);
   const [copiedCategorySql, setCopiedCategorySql] = useState(false);
+  const [copiedPurgeSql, setCopiedPurgeSql] = useState(false);
   const [showAdminUsersSqlModal, setShowAdminUsersSqlModal] = useState(false);
   const [showCascadeSqlModal, setShowCascadeSqlModal] = useState(false);
   const [showCategorySqlModal, setShowCategorySqlModal] = useState(false);
+  const [showPurgeSqlModal, setShowPurgeSqlModal] = useState(false);
+  const [purgingMocks, setPurgingMocks] = useState(false);
   const [showSqlViewer, setShowSqlViewer] = useState(false);
   const [pingTesting, setPingTesting] = useState(false);
   const [pingResult, setPingResult] = useState<string | null>(null);
@@ -616,6 +621,31 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
       notify(`Terjadi kesalahan: ${err.message}`);
     } finally {
       setSyncingParticipants(false);
+    }
+  };
+
+  const handlePurgeMockParticipants = async () => {
+    setPurgingMocks(true);
+    try {
+      // Hapus data lokal dummy jika masih tersimpan
+      try {
+        localStorage.removeItem('hsn2026_participants');
+      } catch (_) {}
+
+      const res = await purgeMockParticipantsFromSupabase();
+      if (res.success) {
+        notify(`Sukses! Data awal dummy peserta telah dihapus secara permanen dari Supabase.`);
+        setStatusMessage(`Data awal dummy peserta berhasil dibersihkan (${res.count} baris dihapus).`);
+        if (onRefreshParticipants) {
+          onRefreshParticipants();
+        }
+      } else {
+        notify(`Pemberitahuan Supabase: ${res.error || 'Periksa koneksi Supabase.'}`);
+      }
+    } catch (err: any) {
+      notify(`Terjadi kesalahan: ${err.message}`);
+    } finally {
+      setPurgingMocks(false);
     }
   };
 
@@ -1038,7 +1068,7 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
 
               {/* 3. Peserta Terdaftar Sync Card */}
               <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 hover:border-emerald-500/30 transition-all">
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                   <div>
                     <h5 className="text-xs font-bold text-white flex items-center gap-1.5">
                       <Table className="w-4 h-4 text-emerald-400" />
@@ -1048,15 +1078,26 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                       Tabel <code className="text-[#F2C96D]">participants</code>: formulir registrasi, kontak WA, & bukti bayar.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleSyncParticipantsToSupabase}
-                    disabled={syncingParticipants}
-                    className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 hover:text-white text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all active:scale-95"
-                  >
-                    <UploadCloud className={`w-3.5 h-3.5 ${syncingParticipants ? 'animate-bounce' : ''}`} />
-                    <span>{syncingParticipants ? 'Menyinkronkan...' : 'Kirim Peserta'}</span>
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setShowPurgeSqlModal(true)}
+                      className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 hover:text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95"
+                      title="Hapus data awal/contoh peserta secara permanen"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Hapus Data Awal</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSyncParticipantsToSupabase}
+                      disabled={syncingParticipants}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 hover:text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95"
+                    >
+                      <UploadCloud className={`w-3.5 h-3.5 ${syncingParticipants ? 'animate-bounce' : ''}`} />
+                      <span>{syncingParticipants ? 'Menyinkronkan...' : 'Kirim Peserta'}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1437,6 +1478,105 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowCategorySqlModal(false)}
+                  className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition-all"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Hapus Data Awal Dummy Peserta */}
+      {showPurgeSqlModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-2xl rounded-3xl bg-[#020e19] border border-rose-500/40 p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5 text-rose-400" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-heading font-bold text-white text-base">
+                      Hapus Permanen Data Awal / Dummy Peserta
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                      Permanen
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#DDE7E8]/80 mt-0.5">
+                    Membersihkan data contoh registrasi dari database Supabase dan penyimpanan lokal website.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPurgeSqlModal(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm font-bold transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Info Box */}
+            <div className="p-3.5 rounded-2xl bg-rose-950/40 border border-rose-500/40 space-y-1.5 text-xs text-rose-200">
+              <div className="flex items-center gap-2 font-bold text-white">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>Konfirmasi Penghapusan Permanen:</span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-rose-200/90">
+                Aksi ini akan menghapus semua baris data contoh awal (seperti Ahmad Fauzi, Siti Maryam, Ahmad Faiz, dll.) dari tabel <code className="text-white bg-black/40 px-1 py-0.5 rounded font-mono">participants</code> di database Supabase dan cache website. Data peserta baru yang didaftarkan secara riil setelah ini tidak akan terpengaruh.
+              </p>
+            </div>
+
+            {/* SQL Code Box */}
+            <div className="space-y-1.5">
+              <span className="text-xs font-bold text-[#F2C96D]">Skrip SQL Supabase yang dijalankan:</span>
+              <div className="relative rounded-2xl bg-[#010b14] border border-white/15 p-3.5 max-h-36 overflow-y-auto">
+                <pre className="text-[11px] font-mono text-rose-300 whitespace-pre-wrap leading-relaxed">
+                  {DELETE_MOCK_PARTICIPANTS_SQL}
+                </pre>
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await handlePurgeMockParticipants();
+                    setShowPurgeSqlModal(false);
+                  }}
+                  disabled={purgingMocks}
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-red-700 hover:brightness-110 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md active:scale-95"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>{purgingMocks ? 'Menghapus...' : 'Hapus Sekarang (Otomatis)'}</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(DELETE_MOCK_PARTICIPANTS_SQL);
+                    setCopiedPurgeSql(true);
+                    notify('Skrip SQL hapus dummy berhasil disalin ke clipboard!');
+                    setTimeout(() => setCopiedPurgeSql(false), 3000);
+                  }}
+                  className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                >
+                  {copiedPurgeSql ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                  <span>{copiedPurgeSql ? 'SQL Tersalin!' : 'Salin Skrip SQL'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPurgeSqlModal(false)}
                   className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition-all"
                 >
                   Tutup

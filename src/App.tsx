@@ -21,7 +21,7 @@ import { Footer } from './components/Footer';
 import { RegistrationModal } from './components/RegistrationModal';
 import { AdminDashboardModal } from './components/AdminDashboardModal';
 
-import { COMPETITIONS, SAMPLE_PARTICIPANTS, DOWNLOAD_DOCUMENTS, INITIAL_STATS } from './data/initialData';
+import { COMPETITIONS, DOWNLOAD_DOCUMENTS, INITIAL_STATS } from './data/initialData';
 import { Competition, CategoryGeneration, ParticipantRegistration } from './types';
 import { 
   fetchCompetitionsFromSupabase, 
@@ -31,11 +31,63 @@ import {
   fetchParticipantsFromSupabase,
   updateParticipantStatusInSupabase,
   deleteParticipantFromSupabase,
+  purgeMockParticipantsFromSupabase,
   isSupabaseConnected
 } from './lib/supabaseClient';
 import { Sparkles, MessageCircle, Shield } from 'lucide-react';
 
 const DELETED_COMPETITIONS_KEY = 'hsn2026_deleted_competitions_v1';
+const PARTICIPANTS_STORAGE_KEY = 'hsn2026_participants';
+
+// Pemeriksa data dummy awal peserta yang dihapus permanen
+const isInitialMockParticipant = (p: any): boolean => {
+  if (!p) return false;
+  const id = String(p.id || '').toLowerCase();
+  const regNo = String(p.registrationNumber || p.registration_number || '').toUpperCase();
+  const fullName = String(p.fullName || p.full_name || '').toLowerCase();
+
+  return (
+    id.startsWith('reg-00') ||
+    regNo.startsWith('HSN-2026-00') ||
+    regNo.startsWith('HSN26-SMP-0001') ||
+    regNo.startsWith('HSN26-SMA-0002') ||
+    regNo.startsWith('HSN26-IPNU-0003') ||
+    regNo.startsWith('HSN26-FAT-0004') ||
+    regNo.startsWith('HSN26-PAUD-0005') ||
+    fullName.includes('ahmad faiz al-hafidz') ||
+    fullName.includes('siti nur khadijah') ||
+    fullName.includes('rizki bayu pratama') ||
+    fullName.includes('umi kalsum') ||
+    fullName.includes('muhammad bilal ramadhan') ||
+    fullName.includes('ahmad fauzi rabbani') ||
+    fullName.includes('siti maryam azzahra') ||
+    fullName.includes('m. rizqi maulana')
+  );
+};
+
+const getStoredCleanParticipants = (): ParticipantRegistration[] => {
+  try {
+    const raw = localStorage.getItem(PARTICIPANTS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const cleaned = parsed.filter((p) => !isInitialMockParticipant(p));
+    // Simpan ulang versi bersih jika sebelumnya terdapat data dummy
+    if (cleaned.length !== parsed.length) {
+      localStorage.setItem(PARTICIPANTS_STORAGE_KEY, JSON.stringify(cleaned));
+    }
+    return cleaned;
+  } catch {
+    return [];
+  }
+};
+
+const saveCleanParticipantsToStorage = (list: ParticipantRegistration[]) => {
+  try {
+    const cleaned = list.filter((p) => !isInitialMockParticipant(p));
+    localStorage.setItem(PARTICIPANTS_STORAGE_KEY, JSON.stringify(cleaned));
+  } catch {}
+};
 
 const getDeletedCompIds = (): string[] => {
   try {
@@ -70,7 +122,10 @@ export default function App() {
     const deleted = getDeletedCompIds();
     return COMPETITIONS.filter((c) => !deleted.includes(c.id));
   });
-  const [participants, setParticipants] = useState<ParticipantRegistration[]>(SAMPLE_PARTICIPANTS);
+  // Dimulai dari 0 data dummy (hanya peserta riil dari storage lokal / Supabase)
+  const [participants, setParticipants] = useState<ParticipantRegistration[]>(() => {
+    return getStoredCleanParticipants();
+  });
   const [isSupabaseLive, setIsSupabaseLive] = useState(false);
   const [supabaseLoading, setSupabaseLoading] = useState(false);
 
@@ -91,8 +146,17 @@ export default function App() {
         }
 
         const { data: remoteParticipants, error: partErr } = await fetchParticipantsFromSupabase();
-        if (isMounted && remoteParticipants && remoteParticipants.length > 0) {
-          setParticipants(remoteParticipants);
+        if (isMounted && remoteParticipants) {
+          // Filter ketat agar data dummy awal tidak pernah muncul kembali
+          const cleanRemote = remoteParticipants.filter((p) => !isInitialMockParticipant(p));
+          setParticipants(cleanRemote);
+          saveCleanParticipantsToStorage(cleanRemote);
+
+          // Jika Supabase masih menyimpan data dummy contoh, bersihkan otomatis di database
+          const hasDummyInRemote = remoteParticipants.some((p) => isInitialMockParticipant(p));
+          if (hasDummyInRemote) {
+            purgeMockParticipantsFromSupabase().catch(console.warn);
+          }
         }
       } catch (err) {
         console.warn('Supabase fetch note:', err);
@@ -133,22 +197,32 @@ export default function App() {
   };
 
   const handleSuccessRegister = (newRecord: ParticipantRegistration) => {
-    setParticipants((prev) => [newRecord, ...prev]);
+    setParticipants((prev) => {
+      const updated = [newRecord, ...prev];
+      saveCleanParticipantsToStorage(updated);
+      return updated;
+    });
   };
 
   const handleUpdateParticipantStatus = (
     id: string,
     status: 'Terverifikasi' | 'Menunggu' | 'Ditolak'
   ) => {
-    setParticipants((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, status } : p))
-    );
+    setParticipants((prev) => {
+      const updated = prev.map((p) => (p.id === id ? { ...p, status } : p));
+      saveCleanParticipantsToStorage(updated);
+      return updated;
+    });
     updateParticipantStatusInSupabase(id, status).catch(console.warn);
   };
 
   const handleDeleteParticipant = (id: string) => {
     const target = participants.find((p) => p.id === id);
-    setParticipants((prev) => prev.filter((p) => p.id !== id));
+    setParticipants((prev) => {
+      const updated = prev.filter((p) => p.id !== id);
+      saveCleanParticipantsToStorage(updated);
+      return updated;
+    });
     if (target) {
       deleteParticipantFromSupabase(target.registrationNumber || target.id).catch(console.warn);
     } else {

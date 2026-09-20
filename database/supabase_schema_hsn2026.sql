@@ -625,13 +625,9 @@ ON CONFLICT (id) DO UPDATE SET
     title = EXCLUDED.title,
     download_count = EXCLUDED.download_count;
 
--- 8.7. Seed Data Contoh Pendaftar (Participants)
-INSERT INTO participants (registration_number, full_name, institution, category, birth_date, whatsapp, email, address, competition_id, competition_title, status)
-VALUES
-('HSN-2026-001', 'Ahmad Fauzi Rabbani', 'PP. Al-Hidayah Poncokusumo', 'SMP/MTs', '2010-04-12', '081234567801', 'fauzi.rabbani@example.com', 'Dusun Krajan RT 02 RW 01, Poncokusumo', 'comp-1', 'Lomba Desain Poster Digital HSN', 'Terverifikasi'),
-('HSN-2026-002', 'Siti Maryam Azzahra', 'MA Miftahul Ulum Wringinanom', 'SMA/MA/SMK', '2008-08-25', '081234567802', 'maryam.azzahra@example.com', 'Desa Wringinanom, Poncokusumo', 'comp-2', 'Pidato 3 Bahasa (Arab, Inggris, Jawa)', 'Terverifikasi'),
-('HSN-2026-003', 'M. Rizqi Maulana', 'MI Ma''arif Poncokusumo', 'SD/MI', '2014-11-03', '081234567803', 'wali.rizqi@example.com', 'Desa Pandansari, Poncokusumo', 'comp-3', 'Video Konten Kreatif Hari Santri', 'Menunggu Verifikasi')
-ON CONFLICT (registration_number) DO NOTHING;
+-- 8.7. Data Pendaftar (Participants)
+-- Tabel pendaftar peserta sengaja dimulai dalam kondisi kosong (0 peserta riil)
+-- Data baru akan otomatis terisi saat peserta mendaftar melalui form registrasi website.
 
 -- 8.8. Seed Data Sponsor
 INSERT INTO sponsors (id, name, tier, logo_url, contribution, benefits, sort_order)

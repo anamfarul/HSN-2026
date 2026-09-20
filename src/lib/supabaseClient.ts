@@ -928,6 +928,44 @@ export async function deleteParticipantFromSupabase(
   }
 }
 
+// Purge all initial mock/sample participants from Supabase table permanently
+export async function purgeMockParticipantsFromSupabase(): Promise<{ success: boolean; count: number; error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, count: 0, error: 'Supabase client belum dikonfigurasi.' };
+  }
+
+  try {
+    const { data, error } = await client
+      .from('participants')
+      .delete()
+      .or('registration_number.ilike.HSN-2026-00%,registration_number.ilike.HSN26-%-000%,id.ilike.reg-00%')
+      .select('id');
+
+    if (error) {
+      return { success: false, count: 0, error: error.message };
+    }
+
+    return { success: true, count: data?.length || 0, error: null };
+  } catch (err: any) {
+    return { success: false, count: 0, error: err.message || 'Gagal membersihkan data dummy peserta' };
+  }
+}
+
+export const DELETE_MOCK_PARTICIPANTS_SQL = `-- ==============================================================================
+-- SKRIP HAPUS DATA CONTOH/DUMMY PESERTA AWAL SECARA PERMANEN DI SUPABASE
+-- Jalankan di Supabase Dashboard -> SQL Editor -> New Query -> Run
+-- ==============================================================================
+
+DELETE FROM public.participants 
+WHERE registration_number LIKE 'HSN-2026-00%' 
+   OR registration_number LIKE 'HSN26-%-000%' 
+   OR id LIKE 'reg-00%';
+
+-- Muat ulang cache schema PostgREST Supabase
+NOTIFY pgrst, 'reload schema';
+`;
+
 // Upload file to Supabase Storage bucket (e.g. bukti pembayaran or dokumen mandat)
 export async function uploadFileToSupabaseStorage(
   bucketName: string,
