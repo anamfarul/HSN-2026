@@ -115,7 +115,10 @@ export function printElementSafely(elementId: string): boolean {
 /**
  * Generate official PDF Ticket / Bukti Registrasi for a Participant
  */
-export function generateRegistrationTicketPDF(ticket: ParticipantRegistration): {
+export function generateRegistrationTicketPDF(
+  ticket: ParticipantRegistration,
+  triggerDownload: boolean = true
+): {
   success: boolean;
   filename: string;
   url?: string;
@@ -197,7 +200,15 @@ export function generateRegistrationTicketPDF(ticket: ParticipantRegistration): 
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
-    doc.setTextColor(16, 185, 129);
+    const isPending = ticket.status.toLowerCase().includes('menunggu');
+    const isRejected = ticket.status.toLowerCase().includes('tolak');
+    if (isPending) {
+      doc.setTextColor(217, 119, 6); // amber-600
+    } else if (isRejected) {
+      doc.setTextColor(225, 29, 72); // rose-600
+    } else {
+      doc.setTextColor(16, 185, 129); // emerald-500
+    }
     doc.text(`[ STATUS: ${ticket.status.toUpperCase()} ]   •   WAKTU DAFTAR: ${ticket.registeredAt}`, pageWidth / 2, 64, { align: 'center' });
 
     // 5. Data Peserta Table
@@ -205,6 +216,13 @@ export function generateRegistrationTicketPDF(ticket: ParticipantRegistration): 
     doc.setFontSize(9.5);
     doc.setTextColor(15, 23, 42);
     doc.text('A. DATA IDENTITAS PESERTA & LEMBAGA', margin, 74);
+
+    const fullAddressDisplay = [
+      ticket.address,
+      ticket.district ? `Kec. ${ticket.district}` : '',
+      ticket.regency || '',
+      ticket.province || ''
+    ].filter(Boolean).join(', ');
 
     const participantData = [
       ['Nama Lengkap', `: ${ticket.fullName}`],
@@ -214,7 +232,7 @@ export function generateRegistrationTicketPDF(ticket: ParticipantRegistration): 
       ['Tanggal Lahir', `: ${ticket.birthDate || '-'}`],
       ['Kontak WhatsApp', `: ${ticket.whatsapp}`],
       ['Alamat Email', `: ${ticket.email}`],
-      ['Alamat Domisili', `: ${ticket.address}`],
+      ['Alamat Lengkap', `: ${fullAddressDisplay}`],
       ['Berkas Pendukung / Mandat', `: ${ticket.documentName || 'Surat Mandat / Keterangan Lembaga'}`],
       ['Bukti Pembayaran', `: ${ticket.paymentProofName ? `Terlampir (${ticket.paymentProofName})` : 'Tidak dilampirkan (Bebas Biaya / Diserahkan saat TM)'}`],
     ];
@@ -347,15 +365,28 @@ export function generateRegistrationTicketPDF(ticket: ParticipantRegistration): 
       { align: 'center' }
     );
 
-    // Generate output blob & trigger download
+    // Generate output blob & conditionally trigger download
     const filename = `Bukti_Pendaftaran_HSN2026_${ticket.registrationNumber}.pdf`;
-    try {
-      doc.save(filename);
-    } catch {
-      // ignore
-    }
     const blob = doc.output('blob');
-    const { success, url } = downloadBlobSafely(blob, filename);
+    let url: string | undefined;
+    let success = true;
+
+    if (triggerDownload) {
+      try {
+        doc.save(filename);
+      } catch {
+        // ignore
+      }
+      const dl = downloadBlobSafely(blob, filename);
+      success = dl.success;
+      url = dl.url;
+    } else {
+      try {
+        url = URL.createObjectURL(blob);
+      } catch {
+        // fallback
+      }
+    }
 
     return { success, filename, url, blob };
   } catch (err) {

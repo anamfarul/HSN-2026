@@ -17,6 +17,9 @@ import {
   Mail,
   MapPin,
   Calendar,
+  Building2,
+  Compass,
+  Clock,
   Receipt,
   Trash2,
   Image as ImageIcon,
@@ -66,6 +69,9 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
   const [whatsapp, setWhatsapp] = useState('');
   const [email, setEmail] = useState('');
   const [address, setAddress] = useState('');
+  const [district, setDistrict] = useState('');
+  const [regency, setRegency] = useState('');
+  const [province, setProvince] = useState('');
   const [selectedCompId, setSelectedCompId] = useState<string>('');
   const [documentFile, setDocumentFile] = useState<File | null>(null);
   const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
@@ -143,6 +149,28 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
     }
   }, [category, availableCompetitions, selectedCompId]);
 
+  useEffect(() => {
+    if (!isOpen) {
+      setCreatedTicket(null);
+      setPdfDownloadUrl(null);
+      setPdfNotice(null);
+      setFullName('');
+      setInstitution('');
+      setBirthDate('');
+      setWhatsapp('');
+      setEmail('');
+      setAddress('');
+      setDistrict('');
+      setRegency('');
+      setProvince('');
+      setDocumentFile(null);
+      setPaymentProofFile(null);
+      setPaymentProofPreview(null);
+      setAgreed(false);
+      setErrors({});
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const validate = () => {
@@ -152,7 +180,10 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
     if (!birthDate) newErrors.birthDate = 'Tanggal lahir wajib diisi';
     if (!whatsapp.trim()) newErrors.whatsapp = 'Nomor WhatsApp aktif wajib diisi';
     if (!email.trim() || !email.includes('@')) newErrors.email = 'Email valid wajib diisi';
-    if (!address.trim()) newErrors.address = 'Alamat domisili lengkap wajib diisi';
+    if (!address.trim()) newErrors.address = 'Alamat lengkap wajib diisi';
+    if (!district.trim()) newErrors.district = 'Kecamatan wajib diisi';
+    if (!regency.trim()) newErrors.regency = 'Kabupaten/Kota wajib diisi';
+    if (!province.trim()) newErrors.province = 'Provinsi wajib diisi';
     if (!selectedCompId) newErrors.selectedCompId = 'Pilih salah satu cabang lomba';
     if (!agreed) newErrors.agreed = 'Anda harus menyetujui keabsahan data';
 
@@ -214,6 +245,9 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
         whatsapp: whatsapp.trim(),
         email: email.trim(),
         address: address.trim(),
+        district: district.trim(),
+        regency: regency.trim(),
+        province: province.trim(),
         competitionId: selectedCompId,
         competitionTitle: matchedComp ? matchedComp.title : 'Perlombaan HSN 2026',
         documentName: documentFile ? documentFile.name : 'surat_keterangan_mandat.pdf',
@@ -221,7 +255,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
         paymentProofName: paymentProofFile ? paymentProofFile.name : undefined,
         paymentProofUrl: finalPaymentProofUrl,
         registeredAt: dateStr,
-        status: 'Terverifikasi',
+        status: 'Menunggu',
       };
 
       onSuccessRegister(newRecord);
@@ -266,14 +300,14 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
           });
       }
 
-      // Automatically generate PDF ready for download
+      // Siapkan URL berkas PDF di latar belakang tanpa mengunduh atau mencetak otomatis
       try {
-        const gen = generateRegistrationTicketPDF(newRecord);
+        const gen = generateRegistrationTicketPDF(newRecord, false);
         if (gen.url) {
           setPdfDownloadUrl(gen.url);
         }
       } catch (e) {
-        console.warn('Auto PDF generation note:', e);
+        console.warn('Persiapan URL PDF pendaftaran:', e);
       }
 
       // Trigger Confetti Celebration
@@ -374,7 +408,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
     if (!createdTicket) return;
     setIsGeneratingPDF(true);
     try {
-      const result = generateRegistrationTicketPDF(createdTicket);
+      const result = generateRegistrationTicketPDF(createdTicket, true);
       if (result.success) {
         setPdfNotice(`Berkas ${result.filename} berhasil diunduh.`);
         if (result.url) setPdfDownloadUrl(result.url);
@@ -393,6 +427,13 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
 
   const handleDownloadTicketText = () => {
     if (!createdTicket) return;
+    const fullDisplayAddress = [
+      createdTicket.address,
+      createdTicket.district ? `Kec. ${createdTicket.district}` : '',
+      createdTicket.regency || '',
+      createdTicket.province || ''
+    ].filter(Boolean).join(', ');
+
     const ticketText = `=====================================================
 KARTU BUKTI REGISTRASI RESMI
 FESTIVAL HARI SANTRI NASIONAL 2026
@@ -400,7 +441,7 @@ MWC NU KECAMATAN PONCOKUSUMO - KABUPATEN MALANG
 "Mengawal Indonesia Merdeka Menuju Peradaban Dunia"
 =====================================================
 NOMOR REGISTRASI : ${createdTicket.registrationNumber}
-STATUS           : ${createdTicket.status.toUpperCase()}
+STATUS           : ${createdTicket.status.toUpperCase()} (MENUNGGU VERIFIKASI RESMI PANITIA)
 TANGGAL DAFTAR   : ${createdTicket.registeredAt}
 
 DATA PESERTA:
@@ -410,7 +451,7 @@ Kategori Usia    : ${createdTicket.category}
 Tanggal Lahir    : ${createdTicket.birthDate}
 Nomor WhatsApp   : ${createdTicket.whatsapp}
 Email            : ${createdTicket.email}
-Alamat           : ${createdTicket.address}
+Alamat Lengkap   : ${fullDisplayAddress}
 
 CABANG PERLOMBAAN:
 Lomba Terpilih   : ${createdTicket.competitionTitle}
@@ -647,9 +688,9 @@ MWC NU Kecamatan Poncokusumo, Kabupaten Malang, Jawa Timur.
                 <div className="absolute bottom-2 right-2 w-3 h-3 border-b-2 border-r-2 border-[#00D9F5]" />
 
                 <div className="text-center pb-4 border-b border-white/15">
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-bold uppercase mb-2 border border-emerald-500/40">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Pendaftaran Sukses & Terverifikasi</span>
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-xs font-bold uppercase mb-2 border border-amber-500/40">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>Pendaftaran Berhasil Dikirim • Status: MENUNGGU</span>
                   </div>
                   <div className="text-[10px] tracking-widest text-[#DDE7E8]/70 uppercase">
                     NOMOR REGISTRASI PESERTA
@@ -659,6 +700,14 @@ MWC NU Kecamatan Poncokusumo, Kabupaten Malang, Jawa Timur.
                   </div>
                   <div className="text-xs text-white/80 font-semibold">
                     {createdTicket.competitionTitle}
+                  </div>
+                </div>
+
+                {/* Notice Status Menunggu & Verifikasi */}
+                <div className="mt-3.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2.5 text-xs text-amber-200/90">
+                  <Clock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div className="leading-relaxed">
+                    <span className="font-bold text-amber-300">Pemberitahuan Verifikasi:</span> Data pendaftaran berhasil masuk dengan status <strong className="text-white">MENUNGGU</strong>. Status <strong className="text-emerald-400">TERVERIFIKASI</strong> dilakukan oleh tim verifikator panitia setelah pengecekan berkas dan keabsahan identitas. Formulir tidak langsung tercetak atau terdownload otomatis; silakan gunakan tombol aksi di bawah jika ingin mencetak atau mengunduh secara manual.
                   </div>
                 </div>
 
@@ -685,8 +734,21 @@ MWC NU Kecamatan Poncokusumo, Kabupaten Malang, Jawa Timur.
                     <span className="text-white/90">{createdTicket.registeredAt}</span>
                   </div>
                   <div>
-                    <span className="text-white/60 block text-[10px] uppercase font-bold">Status Berkas</span>
-                    <span className="text-emerald-400 font-bold">{createdTicket.status}</span>
+                    <span className="text-white/60 block text-[10px] uppercase font-bold">Status Pendaftaran</span>
+                    <span className="text-amber-300 font-bold px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-xs inline-block mt-0.5">
+                      {createdTicket.status.toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <span className="text-white/60 block text-[10px] uppercase font-bold">Alamat Lengkap</span>
+                    <span className="text-white font-medium">
+                      {[
+                        createdTicket.address,
+                        createdTicket.district ? `Kec. ${createdTicket.district}` : '',
+                        createdTicket.regency || '',
+                        createdTicket.province || ''
+                      ].filter(Boolean).join(', ')}
+                    </span>
                   </div>
                   <div className="sm:col-span-2 pt-1 border-t border-white/10 flex items-center justify-between gap-3">
                     <div>
@@ -941,15 +1003,15 @@ MWC NU Kecamatan Poncokusumo, Kabupaten Malang, Jawa Timur.
                   {errors.email && <p className="text-[11px] text-rose-400 mt-0.5">{errors.email}</p>}
                 </div>
 
-                {/* Address */}
+                {/* Alamat Lengkap */}
                 <div className="sm:col-span-2">
                   <label className="block text-xs font-medium text-[#DDE7E8] mb-1">
-                    Alamat Lengkap / Domisili Desa di Poncokusumo <span className="text-rose-400">*</span>
+                    Alamat Lengkap <span className="text-rose-400">*</span>
                   </label>
                   <div className="relative">
                     <input
                       type="text"
-                      placeholder="Contoh: Dusun Krajan, RT 02 RW 01 Desa Poncokusumo"
+                      placeholder="Contoh: Jl. Raya Poncokusumo RT 02 RW 01, Dusun Krajan"
                       value={address}
                       onChange={(e) => setAddress(e.target.value)}
                       className="w-full pl-9 pr-3 py-2 rounded-xl text-xs bg-[#020e19] border border-white/15 focus:border-[#00D9F5] text-white placeholder-white/40 focus:outline-none"
@@ -957,6 +1019,60 @@ MWC NU Kecamatan Poncokusumo, Kabupaten Malang, Jawa Timur.
                     <MapPin className="w-4 h-4 text-white/40 absolute left-3 top-1/2 -translate-y-1/2" />
                   </div>
                   {errors.address && <p className="text-[11px] text-rose-400 mt-0.5">{errors.address}</p>}
+                </div>
+
+                {/* Kecamatan */}
+                <div>
+                  <label className="block text-xs font-medium text-[#DDE7E8] mb-1">
+                    Kecamatan <span className="text-rose-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Contoh: Poncokusumo"
+                      value={district}
+                      onChange={(e) => setDistrict(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 rounded-xl text-xs bg-[#020e19] border border-white/15 focus:border-[#00D9F5] text-white placeholder-white/40 focus:outline-none"
+                    />
+                    <Building2 className="w-4 h-4 text-white/40 absolute left-3 top-1/2 -translate-y-1/2" />
+                  </div>
+                  {errors.district && <p className="text-[11px] text-rose-400 mt-0.5">{errors.district}</p>}
+                </div>
+
+                {/* Kabupaten / Kota */}
+                <div>
+                  <label className="block text-xs font-medium text-[#DDE7E8] mb-1">
+                    Kabupaten/Kota <span className="text-rose-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Contoh: Kabupaten Malang"
+                      value={regency}
+                      onChange={(e) => setRegency(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 rounded-xl text-xs bg-[#020e19] border border-white/15 focus:border-[#00D9F5] text-white placeholder-white/40 focus:outline-none"
+                    />
+                    <MapPin className="w-4 h-4 text-white/40 absolute left-3 top-1/2 -translate-y-1/2" />
+                  </div>
+                  {errors.regency && <p className="text-[11px] text-rose-400 mt-0.5">{errors.regency}</p>}
+                </div>
+
+                {/* Provinsi */}
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-[#DDE7E8] mb-1">
+                    Provinsi <span className="text-rose-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Contoh: Jawa Timur"
+                      value={province}
+                      onChange={(e) => setProvince(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 rounded-xl text-xs bg-[#020e19] border border-white/15 focus:border-[#00D9F5] text-white placeholder-white/40 focus:outline-none"
+                    />
+                    <Compass className="w-4 h-4 text-white/40 absolute left-3 top-1/2 -translate-y-1/2" />
+                  </div>
+                  {errors.province && <p className="text-[11px] text-rose-400 mt-0.5">{errors.province}</p>}
                 </div>
               </div>
 

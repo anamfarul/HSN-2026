@@ -12,8 +12,7 @@ import {
   AlertCircle, 
   Sparkles, 
   X,
-  CheckCircle2,
-  HelpCircle
+  CheckCircle2
 } from 'lucide-react';
 
 interface AdminLoginViewProps {
@@ -34,14 +33,6 @@ export const AdminLoginView: React.FC<AdminLoginViewProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successToast, setSuccessToast] = useState(false);
-
-  // Quick Demo Auto-Fill
-  const handleFillDemo = () => {
-    setUsername('admin');
-    setPassword('santri2026');
-    setRole('Sekretariat Utama HSN 2026');
-    setErrorMessage('');
-  };
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,7 +97,7 @@ export const AdminLoginView: React.FC<AdminLoginViewProps> = ({
         }, 500);
       } else {
         setIsLoading(false);
-        setErrorMessage('Username atau kata sandi panitia tidak cocok. Silakan periksa kembali atau gunakan kredensial demo.');
+        setErrorMessage('Username atau kata sandi panitia tidak cocok. Silakan periksa kembali atau hubungi Sekretariat Utama.');
       }
     }, 600);
   };
@@ -264,25 +255,6 @@ export const AdminLoginView: React.FC<AdminLoginViewProps> = ({
           )}
         </button>
       </form>
-
-      {/* Quick Demo Access Box */}
-      <div className="relative z-10 mt-6 pt-5 border-t border-white/10 text-center">
-        <div className="flex items-center justify-between text-[11px] text-[#DDE7E8]/70 mb-2">
-          <span className="flex items-center gap-1">
-            <HelpCircle className="w-3 h-3 text-[#F2C96D]" />
-            <span>Kredensial Demo Penguji:</span>
-          </span>
-          <span className="font-mono text-[#F2C96D]">admin / santri2026</span>
-        </div>
-        <button
-          type="button"
-          onClick={handleFillDemo}
-          className="w-full py-2 px-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 hover:border-[#D9B45B]/40 text-[#F2C96D] text-xs font-semibold flex items-center justify-center gap-1.5 transition-all"
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Klik Disini untuk Isi Otomatis Akun Demo</span>
-        </button>
-      </div>
     </div>
   );
 };

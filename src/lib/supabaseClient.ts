@@ -654,6 +654,15 @@ export function mapParticipantToSupabase(p: any): Record<string, any> {
     cleanBirthDate = p.birthDate.trim();
   }
 
+  const fullAddress = p.district || p.regency || p.province
+    ? [
+        (p.address || '').trim(),
+        p.district ? `Kec. ${p.district.trim()}` : '',
+        p.regency ? p.regency.trim() : '',
+        p.province ? p.province.trim() : ''
+      ].filter(Boolean).join(', ')
+    : (p.address || '').trim();
+
   return {
     registration_number: p.registrationNumber,
     full_name: (p.fullName || '').trim(),
@@ -662,7 +671,7 @@ export function mapParticipantToSupabase(p: any): Record<string, any> {
     birth_date: cleanBirthDate,
     whatsapp: (p.whatsapp || '').trim(),
     email: p.email ? p.email.trim() : null,
-    address: (p.address || '').trim(),
+    address: fullAddress,
     competition_id: p.competitionId || null,
     competition_title: p.competitionTitle || 'Perlombaan HSN 2026',
     document_name: p.documentName || null,

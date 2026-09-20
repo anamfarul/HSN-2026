@@ -426,11 +426,11 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
   // Export CSV function
   const handleExportCSV = () => {
-    const headers = 'No Reg,Nama Lengkap,Lembaga,Kategori,Lomba,WhatsApp,Email,Status,Tanggal Daftar\n';
+    const headers = 'No Reg,Nama Lengkap,Lembaga,Kategori,Lomba,WhatsApp,Email,Alamat,Kecamatan,Kabupaten/Kota,Provinsi,Status,Tanggal Daftar\n';
     const rows = filteredParticipants
       .map(
         (p) =>
-          `"${p.registrationNumber}","${p.fullName}","${p.institution}","${p.category}","${p.competitionTitle}","${p.whatsapp}","${p.email}","${p.status}","${p.registeredAt}"`
+          `"${p.registrationNumber}","${p.fullName}","${p.institution}","${p.category}","${p.competitionTitle}","${p.whatsapp}","${p.email}","${p.address || ''}","${p.district || ''}","${p.regency || ''}","${p.province || ''}","${p.status}","${p.registeredAt}"`
       )
       .join('\n');
 
@@ -773,6 +773,14 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                           <td className="p-3">
                             <div className="font-bold text-white">{p.fullName}</div>
                             <div className="text-[11px] text-white/60">{p.institution}</div>
+                            {(p.address || p.district || p.regency || p.province) && (
+                              <div 
+                                className="text-[10px] text-white/50 truncate max-w-[220px] mt-0.5" 
+                                title={[p.address, p.district ? `Kec. ${p.district}` : '', p.regency, p.province].filter(Boolean).join(', ')}
+                              >
+                                📍 {[p.address, p.district ? `Kec. ${p.district}` : '', p.regency, p.province].filter(Boolean).join(', ')}
+                              </div>
+                            )}
                             {p.paymentProofName ? (
                               <div className="mt-1 inline-flex items-center gap-1 text-[10px] text-emerald-300 bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/30">
                                 <Receipt className="w-3 h-3 text-emerald-400 shrink-0" />

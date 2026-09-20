@@ -118,6 +118,9 @@ export interface ParticipantRegistration {
   whatsapp: string;
   email: string;
   address: string;
+  district?: string; // Kecamatan
+  regency?: string; // Kabupaten/Kota
+  province?: string; // Provinsi
   competitionId: string;
   competitionTitle: string;
   documentName?: string;
@@ -125,7 +128,7 @@ export interface ParticipantRegistration {
   paymentProofName?: string;
   paymentProofUrl?: string;
   registeredAt: string;
-  status: 'Menunggu Verifikasi' | 'Terverifikasi' | 'Finalis';
+  status: 'Menunggu' | 'Menunggu Verifikasi' | 'Terverifikasi' | 'Ditolak' | 'Finalis' | (string & {});
 }
 
 export interface SponsorItem {
