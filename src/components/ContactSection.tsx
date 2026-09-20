@@ -34,9 +34,9 @@ export const ContactSection: React.FC = () => {
       const res = await insertContactMessageToSupabase(formData);
       setSentSuccess(true);
       if (res.success) {
-        setStatusFeedback('Pesan tersimpan di Database Supabase & diteruskan ke panitia.');
+        setStatusFeedback('Pesan Anda berhasil dikirim dan diteruskan ke panitia.');
       } else {
-        setStatusFeedback('Pesan terkirim ke sistem lokal panitia.');
+        setStatusFeedback('Pesan Anda telah diterima oleh sistem panitia.');
       }
 
       setTimeout(() => {

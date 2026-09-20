@@ -12,8 +12,7 @@ import {
   CheckCircle2, 
   X,
   Sparkles,
-  Award,
-  Database
+  Award
 } from 'lucide-react';
 
 interface CompetitionsSectionProps {
@@ -84,19 +83,6 @@ export const CompetitionsSection: React.FC<CompetitionsSectionProps> = ({
           <p className="mt-4 text-sm sm:text-base text-[#DDE7E8]/85">
             Salurkan bakat, orisinalitas karya, dan sportivitas Anda dalam berbagai cabang perlombaan bergengsi berhadiah trofi kehormatan dan uang pembinaan.
           </p>
-
-          {/* Supabase CMS Live Indicator */}
-          <div className="mt-3.5 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#020e19]/80 border border-white/10 text-[11px] text-[#DDE7E8]/80 shadow-sm backdrop-blur-sm">
-            <span className={`w-2 h-2 rounded-full ${isSupabaseLive ? 'bg-emerald-400 animate-pulse' : 'bg-[#00D9F5]'}`} />
-            <Database className="w-3 h-3 text-[#00D9F5]" />
-            <span>
-              {isSupabaseLive ? (
-                <>Terhubung langsung dengan <strong className="text-emerald-400 font-semibold">Database Supabase CMS</strong> ({competitions.length} Cabang Lomba)</>
-              ) : (
-                <>Katalog Lomba Resmi HSN 2026 ({competitions.length} Cabang Lomba)</>
-              )}
-            </span>
-          </div>
         </div>
 
         {/* Filter and Search Toolbar */}
