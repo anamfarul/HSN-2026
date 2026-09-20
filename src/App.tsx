@@ -32,11 +32,13 @@ import {
   updateParticipantStatusInSupabase,
   deleteParticipantFromSupabase,
   purgeMockParticipantsFromSupabase,
-  isSupabaseConnected
+  isSupabaseConnected,
+  saveSupabaseCredentials
 } from './lib/supabaseClient';
 import { Sparkles, MessageCircle, Shield } from 'lucide-react';
 
 const DELETED_COMPETITIONS_KEY = 'hsn2026_deleted_competitions_v1';
+const CUSTOM_COMPETITIONS_KEY = 'hsn2026_custom_competitions_v1';
 const PARTICIPANTS_STORAGE_KEY = 'hsn2026_participants';
 
 // Pemeriksa data dummy awal peserta yang dihapus permanen
@@ -98,6 +100,15 @@ const getDeletedCompIds = (): string[] => {
   }
 };
 
+const getCustomCompetitions = (): Competition[] => {
+  try {
+    const raw = localStorage.getItem(CUSTOM_COMPETITIONS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
 const markCompetitionDeleted = (id: string) => {
   try {
     const deleted = getDeletedCompIds();
@@ -120,7 +131,9 @@ export default function App() {
   // App data state (allowing real-time interaction in CMS)
   const [competitions, setCompetitions] = useState<Competition[]>(() => {
     const deleted = getDeletedCompIds();
-    return COMPETITIONS.filter((c) => !deleted.includes(c.id));
+    const custom = getCustomCompetitions();
+    const combined = [...custom, ...COMPETITIONS.filter((c) => !custom.some((cust) => cust.id === c.id))];
+    return combined.filter((c) => !deleted.includes(c.id));
   });
   // Dimulai dari 0 data dummy (hanya peserta riil dari storage lokal / Supabase)
   const [participants, setParticipants] = useState<ParticipantRegistration[]>(() => {
@@ -128,6 +141,39 @@ export default function App() {
   });
   const [isSupabaseLive, setIsSupabaseLive] = useState(false);
   const [supabaseLoading, setSupabaseLoading] = useState(false);
+
+  // Deteksi sinkronisasi otomatis dari URL params / hash (misal dari tautan Vercel Setup)
+  useEffect(() => {
+    try {
+      const currentUrl = new URL(window.location.href);
+      const hash = window.location.hash || '';
+
+      let targetUrl = currentUrl.searchParams.get('supabase_url') || currentUrl.searchParams.get('su');
+      let targetKey = currentUrl.searchParams.get('supabase_key') || currentUrl.searchParams.get('sk');
+
+      if ((!targetUrl || !targetKey) && hash.includes('setup-supabase')) {
+        const hashQuery = hash.split('?')[1];
+        if (hashQuery) {
+          const hashParams = new URLSearchParams(hashQuery);
+          targetUrl = hashParams.get('url') || hashParams.get('su');
+          targetKey = hashParams.get('key') || hashParams.get('sk');
+        }
+      }
+
+      if (targetUrl && targetKey) {
+        saveSupabaseCredentials(targetUrl, targetKey);
+        setIsSupabaseLive(true);
+        // Hapus kredensial dari address bar agar rapi dan aman
+        currentUrl.searchParams.delete('supabase_url');
+        currentUrl.searchParams.delete('supabase_key');
+        currentUrl.searchParams.delete('su');
+        currentUrl.searchParams.delete('sk');
+        const cleanPath = currentUrl.pathname + (currentUrl.searchParams.toString() ? '?' + currentUrl.searchParams.toString() : '');
+        window.history.replaceState({}, document.title, cleanPath);
+        window.dispatchEvent(new Event('supabase_credentials_updated'));
+      }
+    } catch {}
+  }, []);
 
   // Fetch live competitions & participants from Supabase on mount
   useEffect(() => {
@@ -237,8 +283,11 @@ export default function App() {
         const nextDeleted = deleted.filter((id) => id !== newComp.id);
         localStorage.setItem(DELETED_COMPETITIONS_KEY, JSON.stringify(nextDeleted));
       }
+      const custom = getCustomCompetitions();
+      const nextCustom = [newComp, ...custom.filter((c) => c.id !== newComp.id)];
+      localStorage.setItem(CUSTOM_COMPETITIONS_KEY, JSON.stringify(nextCustom));
     } catch {}
-    setCompetitions((prev) => [newComp, ...prev]);
+    setCompetitions((prev) => [newComp, ...prev.filter((c) => c.id !== newComp.id)]);
     insertCompetitionToSupabase(newComp).then((res) => {
       if (res.success) setIsSupabaseLive(true);
     }).catch(console.warn);
@@ -246,6 +295,11 @@ export default function App() {
 
   const handleDeleteCompetition = async (id: string) => {
     markCompetitionDeleted(id);
+    try {
+      const custom = getCustomCompetitions();
+      const nextCustom = custom.filter((c) => c.id !== id);
+      localStorage.setItem(CUSTOM_COMPETITIONS_KEY, JSON.stringify(nextCustom));
+    } catch {}
     setCompetitions((prev) => prev.filter((c) => c.id !== id));
     // Bersihkan peserta yang terdaftar pada lomba ini di state lokal
     setParticipants((prev) => prev.filter((p) => p.competitionId !== id));
@@ -257,6 +311,14 @@ export default function App() {
   };
 
   const handleUpdateCompetition = (updatedComp: Competition) => {
+    try {
+      const custom = getCustomCompetitions();
+      const nextCustom = custom.map((c) => (c.id === updatedComp.id ? updatedComp : c));
+      if (!nextCustom.some((c) => c.id === updatedComp.id)) {
+        nextCustom.push(updatedComp);
+      }
+      localStorage.setItem(CUSTOM_COMPETITIONS_KEY, JSON.stringify(nextCustom));
+    } catch {}
     setCompetitions((prev) =>
       prev.map((c) => (c.id === updatedComp.id ? updatedComp : c))
     );
