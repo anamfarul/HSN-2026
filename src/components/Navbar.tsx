@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, X, ShieldCheck, Download, Sparkles } from 'lucide-react';
+import { Menu, X, Download } from 'lucide-react';
 
 interface NavbarProps {
-  onOpenRegister: () => void;
-  onOpenAdmin: () => void;
+  onOpenRegister?: () => void;
+  onOpenAdmin?: () => void;
   onOpenDownload: () => void;
 }
 
@@ -107,7 +107,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </a>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden xl:flex items-center gap-1 lg:gap-2">
+          <nav className="hidden lg:flex items-center gap-1 xl:gap-2">
             {navLinks.map((link) => (
               <a
                 key={link.name}
@@ -122,44 +122,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             ))}
           </nav>
 
-          {/* Action CTAs */}
-          <div className="hidden lg:flex items-center gap-3">
-            {/* Admin CMS Trigger */}
-            <button
-              id="nav-admin-cms-btn"
-              onClick={onOpenAdmin}
-              title="Portal Admin & CMS"
-              className="px-3 py-1.5 rounded-lg border border-[#008F72]/40 bg-[#006B4F]/15 hover:bg-[#006B4F]/30 text-xs font-semibold text-[#DDE7E8] hover:text-[#F2C96D] flex items-center gap-1.5 transition-all"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-[#00D9F5]" />
-              <span>Admin</span>
-            </button>
-
-            {/* Registration Primary CTA */}
-            <button
-              id="nav-cta-register-desktop"
-              onClick={onOpenRegister}
-              className="relative group overflow-hidden px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider text-[#031525] bg-gradient-to-r from-[#D9B45B] via-[#F2C96D] to-[#00D9F5] hover:brightness-110 shadow-lg shadow-[#00D9F5]/20 active:scale-95 transition-all duration-300 flex items-center gap-2"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-[#031525]" />
-              <span>DAFTAR SEKARANG</span>
-              <div className="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
-            </button>
-          </div>
-
           {/* Mobile Menu Hamburger Button */}
-          <div className="flex lg:hidden items-center gap-2">
-            <button
-              id="nav-mobile-register-btn"
-              onClick={onOpenRegister}
-              className="px-3 py-1.5 rounded-lg text-xs font-bold uppercase text-[#031525] bg-gradient-to-r from-[#F2C96D] to-[#00D9F5] shadow"
-            >
-              Daftar
-            </button>
+          <div className="flex lg:hidden items-center">
             <button
               id="mobile-menu-toggle-btn"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-lg bg-[#006B4F]/20 border border-[#00D9F5]/20 text-[#DDE7E8] hover:text-white"
+              className="p-2 rounded-lg bg-[#006B4F]/20 border border-[#00D9F5]/20 text-[#DDE7E8] hover:text-white transition-colors"
               aria-label="Toggle navigation menu"
             >
               {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -186,42 +154,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               </a>
             ))}
 
-            <div className="pt-4 border-t border-[#00D9F5]/15 flex flex-col gap-3">
+            <div className="pt-4 border-t border-[#00D9F5]/15">
               <button
-                id="mobile-cta-register"
+                id="mobile-download-btn"
                 onClick={() => {
                   setMobileMenuOpen(false);
-                  onOpenRegister();
+                  onOpenDownload();
                 }}
-                className="w-full py-3 rounded-xl text-center text-sm font-bold uppercase tracking-wider text-[#031525] bg-gradient-to-r from-[#D9B45B] via-[#F2C96D] to-[#00D9F5] shadow-lg shadow-[#00D9F5]/20"
+                className="w-full py-2.5 px-3 rounded-xl border border-[#00D9F5]/30 bg-[#00D9F5]/10 hover:bg-[#00D9F5]/20 text-xs font-semibold text-[#00D9F5] flex items-center justify-center gap-1.5 transition-colors"
               >
-                DAFTAR SEKARANG
+                <Download className="w-4 h-4" />
+                <span>Unduh Proposal & Dokumen</span>
               </button>
-
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  id="mobile-admin-btn"
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    onOpenAdmin();
-                  }}
-                  className="py-2.5 px-3 rounded-xl border border-[#008F72]/40 bg-[#006B4F]/20 text-xs font-semibold text-[#F2C96D] flex items-center justify-center gap-1.5"
-                >
-                  <ShieldCheck className="w-4 h-4 text-[#00D9F5]" />
-                  <span>Admin CMS</span>
-                </button>
-                <button
-                  id="mobile-download-btn"
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    onOpenDownload();
-                  }}
-                  className="py-2.5 px-3 rounded-xl border border-[#00D9F5]/30 bg-[#00D9F5]/10 text-xs font-semibold text-[#00D9F5] flex items-center justify-center gap-1.5"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Unduh Proposal</span>
-                </button>
-              </div>
             </div>
           </div>
         </div>
