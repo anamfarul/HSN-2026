@@ -6,6 +6,7 @@ import { AdminLoginView } from './AdminLoginView';
 import { AdminUsersTab } from './AdminUsersTab';
 import { AdminDeploymentTab } from './AdminDeploymentTab';
 import { AdminSupabaseTab } from './AdminSupabaseTab';
+import { AdminAddressStatsSection } from './AdminAddressStatsSection';
 import { generateParticipantReportPDF, printElementSafely } from '../lib/pdfGenerator';
 import { ROLE_DEFINITIONS } from '../data/rolesPermissions';
 import { deleteParticipantFromSupabase } from '../lib/supabaseClient';
@@ -1415,6 +1416,15 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* REKAPITULASI PESERTA BERDASARKAN ALAMAT (KECAMATAN, KABUPATEN/KOTA, PROVINSI) */}
+              <AdminAddressStatsSection
+                participants={participants}
+                onViewParticipantsLocation={(locationName) => {
+                  setSearchQuery(locationName);
+                  setActiveTab('participants');
+                }}
+              />
 
               {/* REKAP JUMLAH PESERTA MASING-MASING CABANG PERLOMBAAN */}
               <div className="p-6 rounded-3xl bg-white/5 border border-white/10 space-y-4 shadow-xl">
