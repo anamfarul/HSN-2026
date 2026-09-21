@@ -274,13 +274,13 @@ export function generateRegistrationTicketPDF(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.setTextColor(15, 23, 42);
-    doc.text('VALIDASI KEHADIRAN & REGISTRASI ULANG', margin + 27, afterTableY + 8);
+    doc.text('VALIDASI REGISTRASI PESERTA', margin + 27, afterTableY + 8);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.setTextColor(71, 85, 105);
     doc.text(
-      'Harap tunjukkan dokumen ini (cetak atau file PDF) kepada petugas administrasi panitia saat\nregistrasi ulang dan Technical Meeting di lokasi perlombaan MWC NU Poncokusumo.',
+      'Harap tunjukkan dokumen ini (cetak atau file PDF) kepada petugas administrasi panitia saat\nTechnical Meeting.',
       margin + 27,
       afterTableY + 13
     );
@@ -290,13 +290,16 @@ export function generateRegistrationTicketPDF(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(15, 23, 42);
-    doc.text('B. TATA TERTIB & KETENTUAN PESERTA', margin, rulesY);
+    doc.text('B. GRUP WA PESERTA LOMBA', margin, rulesY);
 
     const rulesList = [
-      '1. Seluruh peserta wajib hadir 30 menit sebelum jadwal perlombaan dimulai dengan mengenakan busana muslim/santri yang rapi & sopan.',
-      '2. Peserta mentaati protokol dan petunjuk teknis (Juknis) resmi yang telah disepakati pada saat Technical Meeting (TM).',
-      '3. Menjunjung tinggi sportivitas, kejujuran, serta akhlaqul karimah Ahlussunnah wal Jama\'ah an-Nahdliyyah.',
-      '4. Keputusan dewan juri bersifat mutlak, profesional, independen, dan tidak dapat diganggu gugat.',
+      '1. Lomba Permainan Tradisional (PAUD/RA/TK) = https://chat.whatsapp.com/DIHmvpIL5yjLgFqrMARSBs.',
+      '2. Lomba Video Konten Kreatif HSN (SD/MI) = https://chat.whatsapp.com/JTQQrAbrjG5092DbN37GXt.',
+      '3. Lomba Poster Digital HSN (SMP/MTs) = https://chat.whatsapp.com/DvJaElIcPmXKwmds8e4TJ9.',
+      '4. Lomba Public Speaking HSN (MA/SMA/SMK) = https://chat.whatsapp.com/GBdDEb46fWzLwaW2phTmvR.',
+      '5. Lomba Seni Pagar Nusa = https://chat.whatsapp.com/L3CO2E377DO7rFCQMclib8.',
+      '5. Lomba Video Konten Kreatif (IPNU/IPPNU) = https://chat.whatsapp.com/GucbcI6eLBLJJXijpq8L2N.',
+      '5. Lomba Video Konten Kreatif (Fatayat) = https://chat.whatsapp.com/GuzkmHNH1Ym4Xtgt4HoljS.',
     ];
 
     doc.setFont('helvetica', 'normal');
@@ -323,10 +326,10 @@ export function generateRegistrationTicketPDF(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.setTextColor(15, 23, 42);
-    doc.text('Ust. H. Ahmad Mustofa, S.Pd.I', 40, signY + 22);
+    doc.text('Far ul Anam, M.Pd', 40, signY + 22);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
-    doc.text('MWC NU Poncokusumo', 40, signY + 26);
+    doc.text('Panitia HSN 2026', 40, signY + 26);
 
     // Kanan: Sekretariat Pelaksana
     const nowStr = new Date().toLocaleDateString('id-ID', {
@@ -347,7 +350,7 @@ export function generateRegistrationTicketPDF(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.setTextColor(15, 23, 42);
-    doc.text('M. Wildan Maulana, S.Kom', pageWidth - 40, signY + 22, { align: 'center' });
+    doc.text('Imam Muhidin, S.Pd', pageWidth - 40, signY + 22, { align: 'center' });
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.text('Koordinator Peserta & Pendaftaran', pageWidth - 40, signY + 26, { align: 'center' });
@@ -359,7 +362,7 @@ export function generateRegistrationTicketPDF(
     doc.setFontSize(6.5);
     doc.setTextColor(255, 255, 255);
     doc.text(
-      'FESTIVAL HARI SANTRI NASIONAL 2026 • MWC NU KECAMATAN PONCOKUSUMO • MALANG JAWA TIMUR',
+      'FESTIVAL SANTRI NUSANTARA 2026 • PERINGATAN HARI SANTRI NASIONAL 2026',
       pageWidth / 2,
       295.5,
       { align: 'center' }
@@ -425,7 +428,7 @@ export function generateParticipantReportPDF(
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(70, 70, 70);
-    doc.text('Sekretariat: Kompleks Kantor MWC NU Poncokusumo, Kab. Malang, Jawa Timur 65157 • Narahubung Panitia: 0812-XXXX-XXXX', pageWidth / 2, 23, { align: 'center' });
+    doc.text('Sekretariat: Kompleks Kantor MWC NU Poncokusumo, Kab. Malang, Jawa Timur 65157 • Narahubung Panitia: 0857-3119-4085', pageWidth / 2, 23, { align: 'center' });
 
     // Garis Ganda Kop Surat
     doc.setDrawColor(20, 20, 20);
@@ -526,15 +529,15 @@ export function generateParticipantReportPDF(
     doc.text('Mengetahui,', 40, signY);
     doc.setFont('helvetica', 'bold');
     doc.text('Ketua Panitia HSN 2026', 40, signY + 4);
-    doc.text('Ust. H. Ahmad Mustofa, S.Pd.I', 40, signY + 16);
+    doc.text('Far ul Anam, M.Pd', 40, signY + 16);
     doc.setFont('helvetica', 'normal');
-    doc.text('MWC NU Poncokusumo', 40, signY + 20);
+    doc.text('Panitia HSN 2026', 40, signY + 20);
 
     // Kanan: Sekretariat Pelaksana
     doc.text(`Poncokusumo, ${dateStr}`, pageWidth - 40, signY, { align: 'right' });
     doc.setFont('helvetica', 'bold');
     doc.text('Sekretariat Pelaksana', pageWidth - 40, signY + 4, { align: 'right' });
-    doc.text('M. Wildan Maulana, S.Kom', pageWidth - 40, signY + 16, { align: 'right' });
+    doc.text('Imam Muhidin, S.Pd', pageWidth - 40, signY + 16, { align: 'right' });
     doc.setFont('helvetica', 'normal');
     doc.text('Koordinator Administrasi & Peserta', pageWidth - 40, signY + 20, { align: 'right' });
 
