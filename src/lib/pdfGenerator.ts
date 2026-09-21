@@ -298,8 +298,8 @@ export function generateRegistrationTicketPDF(
       '3. Lomba Poster Digital HSN (SMP/MTs) = https://chat.whatsapp.com/DvJaElIcPmXKwmds8e4TJ9.',
       '4. Lomba Public Speaking HSN (MA/SMA/SMK) = https://chat.whatsapp.com/GBdDEb46fWzLwaW2phTmvR.',
       '5. Lomba Seni Pagar Nusa = https://chat.whatsapp.com/L3CO2E377DO7rFCQMclib8.',
-      '5. Lomba Video Konten Kreatif (IPNU/IPPNU) = https://chat.whatsapp.com/GucbcI6eLBLJJXijpq8L2N.',
-      '5. Lomba Video Konten Kreatif (Fatayat) = https://chat.whatsapp.com/GuzkmHNH1Ym4Xtgt4HoljS.',
+      '6. Lomba Video Konten Kreatif (IPNU/IPPNU) = https://chat.whatsapp.com/GucbcI6eLBLJJXijpq8L2N.',
+      '7. Lomba Video Konten Kreatif (Fatayat) = https://chat.whatsapp.com/GuzkmHNH1Ym4Xtgt4HoljS.',
     ];
 
     doc.setFont('helvetica', 'normal');
@@ -310,7 +310,7 @@ export function generateRegistrationTicketPDF(
     });
 
     // 8. Tanda Tangan & Pengesahan Panitia
-    const signY = rulesY + 30;
+    const signY = rulesY + 70;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(51, 65, 85);
@@ -326,7 +326,7 @@ export function generateRegistrationTicketPDF(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.setTextColor(15, 23, 42);
-    doc.text('Far ul Anam, M.Pd', 40, signY + 22);
+    doc.text('Far\'ul Anam, M.Pd', 40, signY + 22);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.text('Panitia HSN 2026', 40, signY + 26);
@@ -529,7 +529,7 @@ export function generateParticipantReportPDF(
     doc.text('Mengetahui,', 40, signY);
     doc.setFont('helvetica', 'bold');
     doc.text('Ketua Panitia HSN 2026', 40, signY + 4);
-    doc.text('Far ul Anam, M.Pd', 40, signY + 16);
+    doc.text('Far\'ul Anam, M.Pd', 40, signY + 16);
     doc.setFont('helvetica', 'normal');
     doc.text('Panitia HSN 2026', 40, signY + 20);
 
