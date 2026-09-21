@@ -300,6 +300,8 @@ export function generateRegistrationTicketPDF(
       '5. Lomba Seni Pagar Nusa = https://chat.whatsapp.com/L3CO2E377DO7rFCQMclib8.',
       '6. Lomba Video Konten Kreatif (IPNU/IPPNU) = https://chat.whatsapp.com/GucbcI6eLBLJJXijpq8L2N.',
       '7. Lomba Video Konten Kreatif (Fatayat) = https://chat.whatsapp.com/GuzkmHNH1Ym4Xtgt4HoljS.',
+      '8. Lomba Video Pembelajaran Kreatif (GURU) = https://chat.whatsapp.com/E8G47daUguFLmu4ssGcikr.',
+      '9. Lomba Gerak Jalan, Voly, Sepak Bola = https://chat.whatsapp.com/JWLh5gKdUvMLYqE515R3mX.',
     ];
 
     doc.setFont('helvetica', 'normal');
