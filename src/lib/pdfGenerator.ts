@@ -310,7 +310,7 @@ export function generateRegistrationTicketPDF(
     });
 
     // 8. Tanda Tangan & Pengesahan Panitia
-    const signY = rulesY + 70;
+    const signY = rulesY + 60;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(51, 65, 85);
