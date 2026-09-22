@@ -19,7 +19,7 @@ export const SignatureProgramsSection: React.FC = () => {
   };
 
   return (
-    <section id="program-unggulan" className="relative py-24 px-4 sm:px-6 lg:px-8 bg-[#020e19] overflow-hidden">
+    <section id="program" className="relative py-24 px-4 sm:px-6 lg:px-8 bg-[#020e19] overflow-hidden">
       {/* Visual Ambiance */}
       <div className="absolute inset-0 bg-islamic-pattern opacity-20 pointer-events-none" />
       <div className="absolute top-1/2 left-1/4 w-96 h-96 bg-[#D9B45B]/10 rounded-full blur-[140px] pointer-events-none" />

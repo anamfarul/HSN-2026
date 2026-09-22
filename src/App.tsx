@@ -9,7 +9,6 @@ import { HeroSection } from './components/HeroSection';
 import { CountdownSection } from './components/CountdownSection';
 import { IntroStatsSection } from './components/IntroStatsSection';
 import { FivePillarsSection } from './components/FivePillarsSection';
-import { ProgramGenerationsSection } from './components/ProgramGenerationsSection';
 import { SignatureProgramsSection } from './components/SignatureProgramsSection';
 import { CompetitionsSection } from './components/CompetitionsSection';
 import { EventTimelineSection } from './components/EventTimelineSection';
@@ -365,12 +364,7 @@ export default function App() {
         {/* 4. Five Pillars of Santri Future */}
         <FivePillarsSection />
 
-        {/* 5. Generation-Based Programs */}
-        <ProgramGenerationsSection
-          onSelectCategoryForRegister={handleSelectCategoryForRegister}
-        />
-
-        {/* 6. Signature Programs */}
+        {/* 5. Signature Programs */}
         <SignatureProgramsSection />
 
         {/* 7. Competitions & Festivals */}
