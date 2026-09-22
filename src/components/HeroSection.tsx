@@ -10,7 +10,8 @@ import {
   BookOpen,
   Laptop,
   Flame,
-  Globe2
+  Globe2,
+  UploadCloud
 } from 'lucide-react';
 import { HeroParticlesCanvas } from './HeroParticlesCanvas';
 import heroArtworkImg from '../assets/images/hero_hsn_artwork_1788617565328.jpg';
@@ -20,6 +21,7 @@ interface HeroSectionProps {
   onOpenDownload?: () => void;
   onScrollToProgram?: () => void;
   onOpenExplore?: () => void;
+  onOpenUploadWork?: () => void;
 }
 
 export const HeroSection: React.FC<HeroSectionProps> = ({
@@ -36,6 +38,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
     const el = document.getElementById('tentang');
     if (el) el.scrollIntoView({ behavior: 'smooth' });
   },
+  onOpenUploadWork,
 }) => {
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [isDesktop, setIsDesktop] = useState(true);
@@ -321,6 +324,17 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
               <FileText className="w-3.5 h-3.5 text-[#D9B45B]" />
               <span>PROPOSAL</span>
             </button>
+
+            {onOpenUploadWork && (
+              <button
+                id="hero-mobile-cta-aploud-karya"
+                onClick={onOpenUploadWork}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl font-heading font-bold text-xs tracking-wider uppercase text-[#031525] bg-gradient-to-r from-[#D9B45B] to-[#00D9F5] flex items-center justify-center gap-1.5 shadow-md shadow-[#00D9F5]/30"
+              >
+                <UploadCloud className="w-3.5 h-3.5 text-[#031525]" />
+                <span>APLOUD KARYA</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -453,6 +467,18 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                 <FileText className="w-4 h-4 text-[#D9B45B]" />
                 <span>PROPOSAL</span>
               </button>
+
+              {/* QUATERNARY CTA: APLOUD KARYA (Bagi peserta yang sudah mendaftar) */}
+              {onOpenUploadWork && (
+                <button
+                  id="hero-desktop-cta-aploud-karya"
+                  onClick={onOpenUploadWork}
+                  className="px-5 py-4 rounded-xl font-heading font-extrabold text-xs xl:text-sm tracking-wider uppercase text-[#031525] bg-gradient-to-r from-[#D9B45B] via-[#F2C96D] to-[#00D9F5] hover:brightness-110 shadow-[0_0_20px_rgba(0,217,245,0.3)] active:scale-95 transition-all duration-300 flex items-center gap-2"
+                >
+                  <UploadCloud className="w-4 h-4 text-[#031525]" />
+                  <span>APLOUD KARYA</span>
+                </button>
+              )}
             </div>
           </div>
 

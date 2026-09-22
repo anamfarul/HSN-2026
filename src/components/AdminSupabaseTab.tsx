@@ -49,6 +49,65 @@ import {
   isUserDeleted 
 } from '../data/initialUsers';
 
+export const WORK_SUBMISSION_SETUP_SQL = `-- ==============================================================================
+-- SKRIP TABEL & KOLOM APLOUD KARYA PESERTA: SUPABASE DATABASE
+-- Salin dan jalankan di Supabase Dashboard -> SQL Editor -> New Query -> Run
+-- ==============================================================================
+
+-- 1. Tambahkan kolom berkas karya pada tabel participants
+ALTER TABLE IF EXISTS public.participants 
+  ADD COLUMN IF NOT EXISTS work_submission_type VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS work_file_url TEXT,
+  ADD COLUMN IF NOT EXISTS work_file_name VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS work_drive_link TEXT,
+  ADD COLUMN IF NOT EXISTS work_notes TEXT,
+  ADD COLUMN IF NOT EXISTS work_submitted_at TIMESTAMPTZ;
+
+-- 2. Buat tabel arsip karya peserta (participant_works)
+CREATE TABLE IF NOT EXISTS public.participant_works (
+    id BIGSERIAL PRIMARY KEY,
+    registration_number VARCHAR(100) NOT NULL,
+    submission_type VARCHAR(50) NOT NULL, -- 'file' atau 'drive'
+    work_file_name VARCHAR(255),
+    work_file_url TEXT,
+    work_drive_link TEXT,
+    work_notes TEXT,
+    submitted_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Index pencarian nomor registrasi karya
+CREATE INDEX IF NOT EXISTS idx_participant_works_reg_number ON public.participant_works(registration_number);
+
+-- Aktifkan Row Level Security (RLS)
+ALTER TABLE public.participant_works ENABLE ROW LEVEL SECURITY;
+
+-- Buat policy publik aman untuk insert, read, dan update
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'participant_works' AND policyname = 'Allow public insert participant_works'
+  ) THEN
+    CREATE POLICY "Allow public insert participant_works" ON public.participant_works FOR INSERT WITH CHECK (true);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'participant_works' AND policyname = 'Allow public read participant_works'
+  ) THEN
+    CREATE POLICY "Allow public read participant_works" ON public.participant_works FOR SELECT USING (true);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'participant_works' AND policyname = 'Allow public update participant_works'
+  ) THEN
+    CREATE POLICY "Allow public update participant_works" ON public.participant_works FOR UPDATE USING (true);
+  END IF;
+END $$;
+
+-- Muat ulang cache schema PostgREST Supabase
+NOTIFY pgrst, 'reload schema';
+`;
+
 export const FIX_COLUMNS_MIGRATION_SQL = `-- ==============================================================================
 -- SKRIP PERBAIKAN SCHEMA CACHE & TABEL SUPABASE: FESTIVAL HARI SANTRI 2026
 -- Salin dan jalankan di Supabase Dashboard -> SQL Editor -> New Query -> Run
@@ -66,13 +125,32 @@ ALTER TABLE IF EXISTS public.competitions
   ADD COLUMN IF NOT EXISTS juknis_file_name VARCHAR(255),
   ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
 
--- 2. Pastikan kolom tabel participants lengkap
+-- 2. Pastikan kolom tabel participants lengkap (Termasuk Kolom APLOUD KARYA Peserta)
 ALTER TABLE IF EXISTS public.participants 
   ADD COLUMN IF NOT EXISTS document_url TEXT,
   ADD COLUMN IF NOT EXISTS document_name VARCHAR(255),
   ADD COLUMN IF NOT EXISTS payment_proof_url TEXT,
   ADD COLUMN IF NOT EXISTS payment_proof_name VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS work_submission_type VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS work_file_url TEXT,
+  ADD COLUMN IF NOT EXISTS work_file_name VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS work_drive_link TEXT,
+  ADD COLUMN IF NOT EXISTS work_notes TEXT,
+  ADD COLUMN IF NOT EXISTS work_submitted_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS notes TEXT;
+
+-- 2b. Pastikan tabel arsip karya peserta (participant_works) tersedia
+CREATE TABLE IF NOT EXISTS public.participant_works (
+    id BIGSERIAL PRIMARY KEY,
+    registration_number VARCHAR(100) NOT NULL,
+    submission_type VARCHAR(50) NOT NULL,
+    work_file_name VARCHAR(255),
+    work_file_url TEXT,
+    work_drive_link TEXT,
+    work_notes TEXT,
+    submitted_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
 
 -- 3. PERBAIKAN FOREIGN KEY CASCADE: Mencegah error 'referenced by a foreign key constraint from table participants'
 -- Memungkinkan penghapusan lomba langsung di Supabase Table Editor maupun via Website CMS

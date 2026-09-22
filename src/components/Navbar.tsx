@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, X, Download } from 'lucide-react';
+import { Menu, X, Download, UploadCloud } from 'lucide-react';
 
 interface NavbarProps {
   onOpenRegister?: () => void;
   onOpenAdmin?: () => void;
   onOpenDownload: () => void;
+  onOpenUploadWork?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   onOpenRegister,
   onOpenAdmin,
   onOpenDownload,
+  onOpenUploadWork,
 }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -113,17 +115,39 @@ export const Navbar: React.FC<NavbarProps> = ({
                 key={link.name}
                 href={link.href}
                 onClick={(e) => handleNavClick(e, link.href)}
-                className="px-3 py-1.5 text-xs font-semibold tracking-wider text-[#DDE7E8] hover:text-[#00D9F5] transition-colors duration-200 relative group"
+                className="px-2.5 py-1.5 text-xs font-semibold tracking-wider text-[#DDE7E8] hover:text-[#00D9F5] transition-colors duration-200 relative group"
                 id={`nav-link-${link.name.toLowerCase()}`}
               >
                 {link.name}
-                <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-gradient-to-r from-[#006B4F] via-[#00D9F5] to-[#D9B45B] scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left rounded-full" />
+                <span className="absolute bottom-0 left-2.5 right-2.5 h-0.5 bg-gradient-to-r from-[#006B4F] via-[#00D9F5] to-[#D9B45B] scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left rounded-full" />
               </a>
             ))}
+
+            {/* Menu APLOUD KARYA bagi peserta terdaftar */}
+            {onOpenUploadWork && (
+              <button
+                id="nav-btn-aploud-karya"
+                onClick={onOpenUploadWork}
+                className="ml-2 px-3 py-1.5 rounded-lg text-xs font-black tracking-wider uppercase text-[#031525] bg-gradient-to-r from-[#D9B45B] via-[#F2C96D] to-[#00D9F5] hover:brightness-110 active:scale-95 transition-all flex items-center gap-1.5 shadow-md shadow-[#00D9F5]/20"
+              >
+                <UploadCloud className="w-3.5 h-3.5 text-[#031525]" />
+                <span>APLOUD KARYA</span>
+              </button>
+            )}
           </nav>
 
           {/* Mobile Menu Hamburger Button */}
-          <div className="flex lg:hidden items-center">
+          <div className="flex lg:hidden items-center gap-2">
+            {onOpenUploadWork && (
+              <button
+                onClick={onOpenUploadWork}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-black uppercase text-[#031525] bg-gradient-to-r from-[#D9B45B] to-[#00D9F5] flex items-center gap-1"
+              >
+                <UploadCloud className="w-3 h-3 text-[#031525]" />
+                <span>APLOUD KARYA</span>
+              </button>
+            )}
+
             <button
               id="mobile-menu-toggle-btn"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -143,6 +167,19 @@ export const Navbar: React.FC<NavbarProps> = ({
           className="lg:hidden bg-[#031525]/98 border-b border-[#00D9F5]/20 px-6 py-6 backdrop-blur-2xl shadow-2xl animate-fade-in"
         >
           <div className="flex flex-col space-y-3">
+            {onOpenUploadWork && (
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onOpenUploadWork();
+                }}
+                className="w-full py-2.5 px-4 rounded-xl text-xs font-black uppercase tracking-wider text-[#031525] bg-gradient-to-r from-[#D9B45B] via-[#F2C96D] to-[#00D9F5] flex items-center justify-center gap-2 shadow-lg shadow-[#00D9F5]/20"
+              >
+                <UploadCloud className="w-4 h-4 text-[#031525]" />
+                <span>APLOUD KARYA PESERTA</span>
+              </button>
+            )}
+
             {navLinks.map((link) => (
               <a
                 key={link.name}

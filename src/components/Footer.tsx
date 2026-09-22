@@ -4,9 +4,10 @@ import { ShieldCheck, Heart, ArrowUp, Sparkles, MapPin, Calendar } from 'lucide-
 interface FooterProps {
   onOpenAdmin: () => void;
   onOpenRegister: () => void;
+  onOpenUploadWork?: () => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ onOpenAdmin, onOpenRegister }) => {
+export const Footer: React.FC<FooterProps> = ({ onOpenAdmin, onOpenRegister, onOpenUploadWork }) => {
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -125,6 +126,16 @@ export const Footer: React.FC<FooterProps> = ({ onOpenAdmin, onOpenRegister }) =
                   Download Proposal & Juknis
                 </a>
               </li>
+              {onOpenUploadWork && (
+                <li>
+                  <button
+                    onClick={onOpenUploadWork}
+                    className="text-left text-[#00D9F5] hover:text-[#D9B45B] hover:underline flex items-center gap-1 font-semibold"
+                  >
+                    <span>Aploud Karya Peserta</span>
+                  </button>
+                </li>
+              )}
               <li>
                 <a href="#berita" className="hover:text-[#00D9F5] transition-colors">
                   Kabar Hari Santri

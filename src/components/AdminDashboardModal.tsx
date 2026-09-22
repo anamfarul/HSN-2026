@@ -6,6 +6,7 @@ import { AdminLoginView } from './AdminLoginView';
 import { AdminUsersTab } from './AdminUsersTab';
 import { AdminDeploymentTab } from './AdminDeploymentTab';
 import { AdminSupabaseTab } from './AdminSupabaseTab';
+import { AdminWorksTab } from './AdminWorksTab';
 import { AdminAddressStatsSection } from './AdminAddressStatsSection';
 import { generateParticipantReportPDF, printElementSafely } from '../lib/pdfGenerator';
 import { ROLE_DEFINITIONS } from '../data/rolesPermissions';
@@ -65,6 +66,18 @@ interface AdminDashboardModalProps {
   onRefreshCompetitions?: (comps: Competition[]) => void;
   onRefreshParticipants?: (parts: ParticipantRegistration[]) => void;
   documents: DownloadDoc[];
+  onUpdateParticipantWork?: (
+    registrationNumber: string,
+    workData: {
+      workSubmissionType?: 'file' | 'drive';
+      workFileName?: string;
+      workFileUrl?: string;
+      workDriveUrl?: string;
+      workNotes?: string;
+      workSubmittedAt?: string;
+    }
+  ) => void;
+  onOpenWorkModalForParticipant?: (regNumber: string) => void;
 }
 
 export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
@@ -80,6 +93,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   onRefreshCompetitions,
   onRefreshParticipants,
   documents,
+  onUpdateParticipantWork,
+  onOpenWorkModalForParticipant,
 }) => {
   // Authentication state - check stored session
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -112,8 +127,13 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     adminRole.toLowerCase().includes('super admin') ||
     adminUser.toLowerCase() === 'admin';
 
-  const [activeTab, setActiveTab] = useState<'participants' | 'competitions' | 'documents' | 'stats' | 'users' | 'deployment' | 'supabase'>('participants');
+  const [activeTab, setActiveTab] = useState<'participants' | 'competitions' | 'works' | 'documents' | 'stats' | 'users' | 'deployment' | 'supabase'>('participants');
   const [pdfReportBlobUrl, setPdfReportBlobUrl] = useState<string | null>(null);
+
+  // Jumlah karya peserta yang telah masuk
+  const participantsWithWorksCount = participants.filter(
+    (p) => !!(p.workSubmissionType || p.workFileUrl || p.workDriveUrl || p.workSubmittedAt)
+  ).length;
   
   // Jika login selain super admin, pastikan tidak dapat mengakses tab users atau deployment
   useEffect(() => {
@@ -600,6 +620,27 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
           >
             <Trophy className="w-3.5 h-3.5" />
             <span>Cabang Lomba ({competitions.length})</span>
+          </button>
+
+          {/* TAB BARU: KARYA PESERTA (APLOUD KARYA) */}
+          <button
+            id="admin-tab-btn-karya"
+            onClick={() => setActiveTab('works')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all relative ${
+              activeTab === 'works'
+                ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-[#F2C96D] border border-[#D9B45B]/50 shadow'
+                : 'text-[#DDE7E8] hover:bg-white/5'
+            }`}
+          >
+            <UploadCloud className="w-3.5 h-3.5 text-[#00D9F5]" />
+            <span>Karya Peserta</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+              participantsWithWorksCount > 0 
+                ? 'bg-[#D9B45B] text-[#031525]' 
+                : 'bg-white/10 text-white/50'
+            }`}>
+              {participantsWithWorksCount}
+            </span>
           </button>
 
           <button
@@ -1370,6 +1411,16 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 );
               })()}
             </div>
+          )}
+
+          {/* TAB: KARYA PESERTA (APLOUD KARYA CMS) */}
+          {activeTab === 'works' && (
+            <AdminWorksTab
+              participants={participants}
+              onUpdateParticipantStatus={onUpdateParticipantStatus}
+              onUpdateParticipantWork={onUpdateParticipantWork}
+              onOpenWorkModalForParticipant={onOpenWorkModalForParticipant}
+            />
           )}
 
           {/* TAB 3: STATS */}

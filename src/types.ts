@@ -129,6 +129,28 @@ export interface ParticipantRegistration {
   paymentProofUrl?: string;
   registeredAt: string;
   status: 'Menunggu' | 'Menunggu Verifikasi' | 'Terverifikasi' | 'Ditolak' | 'Finalis' | (string & {});
+  // Data Aploud Karya Peserta Lomba
+  workSubmissionType?: 'file' | 'drive';
+  workFileName?: string;
+  workFileUrl?: string;
+  workDriveUrl?: string;
+  workNotes?: string;
+  workSubmittedAt?: string;
+}
+
+export interface ParticipantWorkSubmission {
+  id: string;
+  registrationNumber: string;
+  fullName: string;
+  institution: string;
+  competitionTitle: string;
+  category: CategoryGeneration | string;
+  submissionType: 'file' | 'drive';
+  workFileName?: string;
+  workFileUrl?: string;
+  workDriveUrl?: string;
+  workNotes?: string;
+  submittedAt: string;
 }
 
 export interface SponsorItem {

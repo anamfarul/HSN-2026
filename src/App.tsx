@@ -19,6 +19,7 @@ import { ContactSection } from './components/ContactSection';
 import { Footer } from './components/Footer';
 import { RegistrationModal } from './components/RegistrationModal';
 import { AdminDashboardModal } from './components/AdminDashboardModal';
+import { WorkSubmissionModal } from './components/WorkSubmissionModal';
 
 import { COMPETITIONS, DOWNLOAD_DOCUMENTS, INITIAL_STATS } from './data/initialData';
 import { Competition, CategoryGeneration, ParticipantRegistration } from './types';
@@ -30,11 +31,12 @@ import {
   fetchParticipantsFromSupabase,
   updateParticipantStatusInSupabase,
   deleteParticipantFromSupabase,
+  updateParticipantWorkInSupabase,
   purgeMockParticipantsFromSupabase,
   isSupabaseConnected,
   saveSupabaseCredentials
 } from './lib/supabaseClient';
-import { Sparkles, MessageCircle, Shield } from 'lucide-react';
+import { Sparkles, MessageCircle, Shield, UploadCloud } from 'lucide-react';
 
 const DELETED_COMPETITIONS_KEY = 'hsn2026_deleted_competitions_v1';
 const CUSTOM_COMPETITIONS_KEY = 'hsn2026_custom_competitions_v1';
@@ -122,6 +124,8 @@ export default function App() {
   // Modal states
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
+  const [isWorkModalOpen, setIsWorkModalOpen] = useState(false);
+  const [selectedRegNumberForWork, setSelectedRegNumberForWork] = useState<string | undefined>(undefined);
   
   // Registration selection context
   const [registerCategory, setRegisterCategory] = useState<CategoryGeneration>('SMP/MTs');
@@ -275,6 +279,42 @@ export default function App() {
     }
   };
 
+  const handleOpenUploadWork = (initialRegNumber?: string) => {
+    setSelectedRegNumberForWork(initialRegNumber);
+    setIsWorkModalOpen(true);
+  };
+
+  const handleUpdateParticipantWork = (
+    registrationNumber: string,
+    workData: {
+      workSubmissionType?: 'file' | 'drive';
+      workFileName?: string;
+      workFileUrl?: string;
+      workDriveUrl?: string;
+      workNotes?: string;
+      workSubmittedAt?: string;
+    }
+  ) => {
+    setParticipants((prev) => {
+      const updated = prev.map((p) => {
+        if (
+          p.registrationNumber?.toLowerCase() === registrationNumber.toLowerCase() ||
+          p.id === registrationNumber
+        ) {
+          return {
+            ...p,
+            ...workData,
+          };
+        }
+        return p;
+      });
+      saveCleanParticipantsToStorage(updated);
+      return updated;
+    });
+
+    updateParticipantWorkInSupabase(registrationNumber, workData).catch(console.warn);
+  };
+
   const handleAddCompetition = (newComp: Competition) => {
     try {
       const deleted = getDeletedCompIds();
@@ -330,6 +370,11 @@ export default function App() {
       <Navbar
         onOpenRegister={handleOpenRegister}
         onOpenAdmin={() => setIsAdminModalOpen(true)}
+        onOpenDownload={() => {
+          const el = document.getElementById('unduhan');
+          if (el) el.scrollIntoView({ behavior: 'smooth' });
+        }}
+        onOpenUploadWork={() => handleOpenUploadWork()}
       />
 
       {/* Main Content Layout */}
@@ -349,6 +394,7 @@ export default function App() {
             const el = document.getElementById('tentang');
             if (el) el.scrollIntoView({ behavior: 'smooth' });
           }}
+          onOpenUploadWork={() => handleOpenUploadWork()}
         />
 
         {/* 2. Countdown Section */}
@@ -399,6 +445,7 @@ export default function App() {
       <Footer
         onOpenAdmin={() => setIsAdminModalOpen(true)}
         onOpenRegister={handleOpenRegister}
+        onOpenUploadWork={() => handleOpenUploadWork()}
       />
 
       {/* Floating Quick Action Buttons */}
@@ -412,6 +459,19 @@ export default function App() {
         >
           <Shield className="w-5 h-5" />
           <span className="sr-only">CMS Panitia</span>
+        </button>
+
+        {/* Upload Karya Floating Quick Action Button */}
+        <button
+          id="floating-btn-aploud-karya"
+          onClick={() => handleOpenUploadWork()}
+          className="pointer-events-auto px-4 py-2.5 rounded-full bg-[#031525]/95 border border-[#00D9F5]/40 text-[#00D9F5] hover:text-white hover:bg-[#006B4F]/80 font-bold text-xs uppercase tracking-wider shadow-xl backdrop-blur-md hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5"
+          aria-label="Aploud Karya Peserta"
+          title="Bagi peserta yang sudah mendaftar: Aploud Karya Lomba"
+        >
+          <UploadCloud className="w-4 h-4 text-[#00D9F5]" />
+          <span className="hidden sm:inline">Aploud Karya</span>
+          <span className="sm:hidden">Karya</span>
         </button>
 
         {/* Primary Register Floating Button */}
@@ -436,6 +496,15 @@ export default function App() {
         onSuccessRegister={handleSuccessRegister}
       />
 
+      {/* Work Submission Modal Dialog (APLOUD KARYA PESERTA) */}
+      <WorkSubmissionModal
+        isOpen={isWorkModalOpen}
+        onClose={() => setIsWorkModalOpen(false)}
+        participants={participants}
+        initialRegistrationNumber={selectedRegNumberForWork}
+        onSaveWork={handleUpdateParticipantWork}
+      />
+
       {/* Admin CMS Modal Dialog */}
       <AdminDashboardModal
         isOpen={isAdminModalOpen}
@@ -450,6 +519,8 @@ export default function App() {
         onRefreshCompetitions={setCompetitions}
         onRefreshParticipants={setParticipants}
         documents={DOWNLOAD_DOCUMENTS}
+        onUpdateParticipantWork={handleUpdateParticipantWork}
+        onOpenWorkModalForParticipant={(regNo) => handleOpenUploadWork(regNo)}
       />
     </div>
   );

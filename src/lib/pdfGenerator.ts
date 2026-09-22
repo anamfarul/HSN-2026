@@ -559,3 +559,253 @@ export function generateParticipantReportPDF(
     return { success: false, filename: 'rekap_peserta.pdf' };
   }
 }
+
+/**
+ * Generate official PDF Formulir Penyerahan & Tanda Terima Aploud Karya
+ */
+export function generateWorkSubmissionPDF(
+  participant: ParticipantRegistration,
+  triggerDownload: boolean = true
+): {
+  success: boolean;
+  filename: string;
+  url?: string;
+  blob?: Blob;
+} {
+  try {
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+    });
+
+    const pageWidth = doc.internal.pageSize.getWidth(); // 210mm
+    const margin = 14;
+
+    // 1. Top Decorative Green Bar
+    doc.setFillColor(0, 107, 79); // #006B4F
+    doc.rect(0, 0, pageWidth, 5, 'F');
+    doc.setFillColor(217, 180, 91); // #D9B45B
+    doc.rect(0, 5, pageWidth, 1.5, 'F');
+
+    // 2. Kop Surat Panitia
+    doc.setFillColor(0, 107, 79);
+    doc.circle(26, 21, 9, 'F');
+    doc.setFont('times', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(242, 201, 109);
+    doc.text('NU', 26, 23.5, { align: 'center' });
+
+    doc.setFont('times', 'bold');
+    doc.setFontSize(12.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text('PANITIA FESTIVAL SANTRI NUSANTARA 2026', 115, 17, { align: 'center' });
+
+    doc.setFontSize(9.5);
+    doc.setTextColor(0, 107, 79);
+    doc.text('MAJELIS WAKIL CABANG NAHDLATUL ULAMA (MWC NU) KECAMATAN PONCOKUSUMO', 115, 22, { align: 'center' });
+
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 100);
+    doc.text('"Mengawal Indonesia Merdeka Menuju Peradaban Dunia"', 115, 26, { align: 'center' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(80, 80, 80);
+    doc.text('Sekretariat: Kompleks Kantor MWC NU Poncokusumo, Kab. Malang, Jawa Timur 65157 • Narahubung: 0857-3119-4085', 115, 30, { align: 'center' });
+
+    // Double Rule Kop
+    doc.setDrawColor(15, 23, 42);
+    doc.setLineWidth(0.6);
+    doc.line(margin, 33, pageWidth - margin, 33);
+    doc.setLineWidth(0.2);
+    doc.line(margin, 34, pageWidth - margin, 34);
+
+    // 3. Document Title & Badge
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(0, 107, 79);
+    doc.text('BUKTI FORMULIR APLOUD KARYA PESERTA', pageWidth / 2, 42, { align: 'center' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(100, 100, 100);
+    doc.text('Tanda Terima Penyerahan Karya & Lembar Berkas Peserta Resmi', pageWidth / 2, 46.5, { align: 'center' });
+
+    // 4. Highlighted Box for Registration Number
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(0, 107, 79);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(margin, 50, pageWidth - margin * 2, 19, 2, 2, 'FD');
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 100);
+    doc.text('NOMOR REGISTRASI PESERTA', pageWidth / 2, 55.5, { align: 'center' });
+
+    doc.setFont('courier', 'bold');
+    doc.setFontSize(15);
+    doc.setTextColor(0, 107, 79);
+    doc.text(participant.registrationNumber || '-', pageWidth / 2, 63, { align: 'center' });
+
+    // 5. Table Identitas Peserta & Karya
+    const submissionTypeLabel = participant.workSubmissionType === 'file' 
+      ? 'Berkas Gambar (File JPG/PNG)' 
+      : participant.workSubmissionType === 'drive' 
+      ? 'Tautan Cloud (Google Drive)' 
+      : (participant.workFileUrl ? 'Berkas Gambar JPG/PNG' : participant.workDriveUrl ? 'Tautan Google Drive' : 'Belum Dipilih');
+
+    const workDetailText = participant.workSubmissionType === 'file'
+      ? (participant.workFileName || 'File Gambar Terlampir')
+      : (participant.workDriveUrl || '-');
+
+    const tableRows = [
+      ['Nama Lengkap Peserta', `: ${participant.fullName || '-'}`],
+      ['Asal Lembaga / Instansi', `: ${participant.institution || '-'}`],
+      ['Cabang Perlombaan', `: ${participant.competitionTitle || '-'}`],
+      ['Kategori Perlombaan', `: ${participant.category || '-'}`],
+      ['Status Pendaftaran', `: ${participant.status || 'Terverifikasi'} (SAH & TERVERIFIKASI)`],
+      ['Metode Pengunggahan Karya', `: ${submissionTypeLabel}`],
+      ['Rincian Berkas / Link Karya', `: ${workDetailText}`],
+      ['Catatan / Keterangan Karya', `: ${participant.workNotes || 'Sesuai dengan ketentuan Juknis HSN 2026'}`],
+      ['Waktu Penyerahan Karya', `: ${participant.workSubmittedAt || new Date().toLocaleString('id-ID')}`],
+    ];
+
+    autoTable(doc, {
+      startY: 73,
+      head: [['RINCIAN DATA', 'INFORMASI KARYA PESERTA']],
+      body: tableRows,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [0, 107, 79],
+        textColor: [242, 201, 109],
+        fontSize: 8.5,
+        fontStyle: 'bold',
+        halign: 'left',
+      },
+      styles: {
+        fontSize: 8.5,
+        cellPadding: 2.8,
+        textColor: [20, 20, 20],
+        lineColor: [220, 220, 220],
+        lineWidth: 0.2,
+      },
+      columnStyles: {
+        0: { fontStyle: 'bold', cellWidth: 55, fillColor: [250, 252, 250] },
+        1: { cellWidth: 'auto' },
+      },
+      margin: { left: margin, right: margin },
+    });
+
+    const afterTableY = (doc as any).lastAutoTable.finalY + 6;
+
+    // 6. Box Ketentuan Keabsahan
+    doc.setFillColor(240, 253, 244);
+    doc.setDrawColor(34, 197, 94);
+    doc.roundedRect(margin, afterTableY, pageWidth - margin * 2, 20, 2, 2, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(21, 128, 61);
+    doc.text('VALIDASI & TANDA TERIMA BERKAS KARYA', margin + 6, afterTableY + 6);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(51, 65, 85);
+    doc.text(
+      'Dokumen ini adalah bukti resmi penyerahan karya dalam Festival Hari Santri Nasional 2026 MWC NU Poncokusumo.\nDewan juri akan menilai karya sesuai juknis dan kriteria penilaian orisinalitas, kreativitas, dan pesan nilai keislaman.\nSimpan dokumen ini sebagai tanda bukti keikutsertaan Anda.',
+      margin + 6,
+      afterTableY + 11
+    );
+
+    // 7. Tanda Tangan & Pengesahan Panitia
+    const signY = afterTableY + 30;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(51, 65, 85);
+
+    // Kiri: Ketua Panitia
+    doc.text('Mengetahui & Menyetujui,', 40, signY, { align: 'center' });
+    doc.setFont('helvetica', 'bold');
+    doc.text('Ketua Panitia HSN 2026', 40, signY + 4, { align: 'center' });
+
+    // Stempel Panitia
+    doc.setDrawColor(0, 107, 79);
+    doc.setLineWidth(0.4);
+    doc.circle(40, signY + 11, 7, 'S');
+    doc.setFontSize(5);
+    doc.setTextColor(0, 107, 79);
+    doc.text('PANITIA HSN', 40, signY + 10.5, { align: 'center' });
+    doc.text('MWC NU 2026', 40, signY + 13, { align: 'center' });
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text('Far\'ul Anam, M.Pd', 40, signY + 22, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.text('Panitia HSN 2026', 40, signY + 26, { align: 'center' });
+
+    // Kanan: Koordinator Peserta
+    const nowStr = new Date().toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(51, 65, 85);
+    doc.text(`Poncokusumo, ${nowStr}`, pageWidth - 40, signY, { align: 'center' });
+    doc.setFont('helvetica', 'bold');
+    doc.text('Sekretariat Administrasi', pageWidth - 40, signY + 4, { align: 'center' });
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text('Imam Muhidin, S.Pd', pageWidth - 40, signY + 22, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.text('Koordinator Peserta & Karya', pageWidth - 40, signY + 26, { align: 'center' });
+
+    // 8. Footer Strip
+    doc.setFillColor(0, 107, 79);
+    doc.rect(0, 292, pageWidth, 5, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(255, 255, 255);
+    doc.text(
+      'FESTIVAL SANTRI NUSANTARA 2026 • PERINGATAN HARI SANTRI NASIONAL 2026',
+      pageWidth / 2,
+      295.5,
+      { align: 'center' }
+    );
+
+    const safeReg = (participant.registrationNumber || 'KARYA').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `BUKTI_APLOUD_KARYA_${safeReg}.pdf`;
+
+    if (triggerDownload) {
+      try {
+        doc.save(filename);
+      } catch (saveErr) {
+        console.warn('doc.save fallback trigger:', saveErr);
+      }
+    }
+
+    const blob = doc.output('blob');
+    const { success, url } = downloadBlobSafely(blob, filename);
+
+    return {
+      success,
+      filename,
+      url,
+      blob,
+    };
+  } catch (err) {
+    console.error('generateWorkSubmissionPDF error:', err);
+    return {
+      success: false,
+      filename: 'bukti_karya.pdf',
+    };
+  }
+}

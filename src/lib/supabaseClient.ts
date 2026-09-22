@@ -643,6 +643,12 @@ export function mapSupabaseToParticipant(row: any): any {
     paymentProofUrl: row.payment_proof_url || undefined,
     status: row.status === 'Terverifikasi' ? 'Terverifikasi' : row.status === 'Ditolak' ? 'Ditolak' : 'Menunggu',
     registeredAt: row.registered_at ? new Date(row.registered_at).toLocaleString('id-ID') : '',
+    workSubmissionType: row.work_submission_type || (row.work_file_url ? 'file' : row.work_drive_link ? 'drive' : undefined),
+    workFileName: row.work_file_name || undefined,
+    workFileUrl: row.work_file_url || undefined,
+    workDriveUrl: row.work_drive_link || undefined,
+    workNotes: row.work_notes || undefined,
+    workSubmittedAt: row.work_submitted_at ? new Date(row.work_submitted_at).toLocaleString('id-ID') : undefined,
   };
 }
 
@@ -679,6 +685,12 @@ export function mapParticipantToSupabase(p: any): Record<string, any> {
     payment_proof_name: p.paymentProofName || null,
     payment_proof_url: p.paymentProofUrl || null,
     status: p.status === 'Terverifikasi' ? 'Terverifikasi' : p.status === 'Ditolak' ? 'Ditolak' : 'Menunggu Verifikasi',
+    work_submission_type: p.workSubmissionType || null,
+    work_file_name: p.workFileName || null,
+    work_file_url: p.workFileUrl || null,
+    work_drive_link: p.workDriveUrl || null,
+    work_notes: p.workNotes || null,
+    work_submitted_at: p.workSubmittedAt ? new Date().toISOString() : null,
   };
 }
 
@@ -909,6 +921,90 @@ export async function updateParticipantStatusInSupabase(
     return { success: true, error: null };
   } catch (err: any) {
     return { success: false, error: err.message || 'Gagal memperbarui status di Supabase' };
+  }
+}
+
+// Update or submit participant work (file JPG/PNG or Google Drive link)
+export async function updateParticipantWorkInSupabase(
+  registrationNumber: string,
+  workData: {
+    workSubmissionType?: 'file' | 'drive';
+    workFileName?: string;
+    workFileUrl?: string;
+    workDriveUrl?: string;
+    workNotes?: string;
+    workSubmittedAt?: string;
+  }
+): Promise<{ success: boolean; error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, error: 'Supabase client belum dikonfigurasi. Data tersimpan di sistem lokal.' };
+  }
+
+  try {
+    const regNum = registrationNumber.trim();
+    const nowIso = workData.workSubmittedAt || new Date().toISOString();
+
+    // 1. Update di tabel participants
+    let updatePayload: Record<string, any> = {
+      work_submission_type: workData.workSubmissionType || null,
+      work_file_name: workData.workFileName || null,
+      work_file_url: workData.workFileUrl || null,
+      work_drive_link: workData.workDriveUrl || null,
+      work_notes: workData.workNotes || null,
+      work_submitted_at: nowIso,
+    };
+
+    let attempts = 4;
+    let lastError: any = null;
+
+    while (attempts > 0) {
+      attempts--;
+      const { error } = await client
+        .from('participants')
+        .update(updatePayload)
+        .eq('registration_number', regNum);
+
+      if (!error) {
+        lastError = null;
+        break;
+      }
+      lastError = error;
+
+      // Schema-cache auto stripping jika kolom tertentu belum ditambahkan di Supabase
+      const missingMatch = error.message?.match(/Could not find the '([^']+)' column of 'participants'/i);
+      if (missingMatch && missingMatch[1]) {
+        console.warn(`Kolom '${missingMatch[1]}' belum ada di tabel participants Supabase. Melewati kolom ini dan mencoba kembali...`);
+        delete updatePayload[missingMatch[1]];
+        continue;
+      }
+      break;
+    }
+
+    // 2. Upayakan juga catat di tabel participant_works jika tabel telah dibuat
+    try {
+      await client.from('participant_works').insert([
+        {
+          registration_number: regNum,
+          submission_type: workData.workSubmissionType,
+          work_file_name: workData.workFileName || null,
+          work_file_url: workData.workFileUrl || null,
+          work_drive_link: workData.workDriveUrl || null,
+          work_notes: workData.workNotes || null,
+          submitted_at: nowIso,
+        },
+      ]);
+    } catch {
+      // Abaikan jika tabel participant_works belum dibuat
+    }
+
+    if (lastError) {
+      return { success: false, error: lastError.message };
+    }
+
+    return { success: true, error: null };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Gagal menyimpan karya ke Supabase.' };
   }
 }
 
