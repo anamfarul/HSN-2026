@@ -680,16 +680,6 @@ export const DOWNLOAD_DOCUMENTS: DownloadDoc[] = [
     description: 'Format isian resmi untuk pendaftaran delegasi santri dan siswa dari pondok pesantren atau madrasah secara massal.',
     downloadCount: 375,
   },
-  {
-    id: 'doc-7',
-    title: 'Denah Lokasi, Parkir & Tata Letak Stan Expo',
-    category: 'Denah',
-    size: '2.9 MB',
-    format: 'PDF',
-    lastUpdated: '2 September 2026',
-    description: 'Peta grafis tata ruang Lapangan Utama Poncokusumo, letak panggung, tenda transit VIP, tenda kesehatan, dan kantong parkir.',
-    downloadCount: 438,
-  },
 ];
 
 export const NEWS_ARTICLES: NewsArticle[] = [

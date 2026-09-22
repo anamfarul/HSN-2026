@@ -67,7 +67,7 @@ Dokumen ini diterbitkan secara sah oleh Panitia Pelaksana Peringatan Hari Santri
             </span>
           </h2>
           <p className="mt-4 text-sm sm:text-base text-[#DDE7E8]/85">
-            Unduh seluruh berkas administrasi resmi, proposal kerjasama, petunjuk teknis perlombaan, dan peta lokasi festival.
+            Unduh seluruh berkas administrasi resmi, proposal kerjasama, petunjuk teknis perlombaan, dan formulir pendaftaran festival.
           </p>
         </div>
 
