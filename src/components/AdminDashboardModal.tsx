@@ -11,7 +11,12 @@ import { AdminAddressStatsSection } from './AdminAddressStatsSection';
 import { generateParticipantReportPDF, printElementSafely } from '../lib/pdfGenerator';
 import { ROLE_DEFINITIONS } from '../data/rolesPermissions';
 import { normalizePanitiaRole } from '../data/initialUsers';
-import { deleteParticipantFromSupabase } from '../lib/supabaseClient';
+import { 
+  deleteParticipantFromSupabase,
+  testSupabaseConnection,
+  isSupabaseConnected,
+  fetchParticipantsFromSupabase
+} from '../lib/supabaseClient';
 import { 
   X, 
   ShieldCheck, 
@@ -51,7 +56,9 @@ import {
   Calendar,
   Info,
   LayoutGrid,
-  Table as TableIcon
+  Table as TableIcon,
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 
 interface AdminDashboardModalProps {
@@ -79,6 +86,8 @@ interface AdminDashboardModalProps {
     }
   ) => void;
   onOpenWorkModalForParticipant?: (regNumber: string) => void;
+  isSupabaseLive?: boolean;
+  onRefreshAllFromSupabase?: () => Promise<void>;
 }
 
 export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
@@ -96,6 +105,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   documents,
   onUpdateParticipantWork,
   onOpenWorkModalForParticipant,
+  isSupabaseLive,
+  onRefreshAllFromSupabase,
 }) => {
   // Authentication state - check stored session
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -104,6 +115,59 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       sessionStorage.getItem('hsn2026_admin_auth') === 'true'
     );
   });
+
+  const [supabaseConnected, setSupabaseConnected] = useState<boolean>(isSupabaseLive ?? isSupabaseConnected());
+  const [isCheckingSupabase, setIsCheckingSupabase] = useState<boolean>(false);
+  const [isRefreshingParticipants, setIsRefreshingParticipants] = useState<boolean>(false);
+
+  // Uji koneksi Supabase saat CMS dibuka
+  useEffect(() => {
+    if (isOpen) {
+      setIsCheckingSupabase(true);
+      testSupabaseConnection()
+        .then((res) => {
+          setSupabaseConnected(res.success);
+        })
+        .catch(() => {
+          setSupabaseConnected(false);
+        })
+        .finally(() => {
+          setIsCheckingSupabase(false);
+        });
+    }
+  }, [isOpen]);
+
+  // Pantau jika ada pembaruan kredensial dari tab Supabase
+  useEffect(() => {
+    const handleCredsUpdated = () => {
+      testSupabaseConnection().then((res) => setSupabaseConnected(res.success));
+    };
+    window.addEventListener('supabase_credentials_updated', handleCredsUpdated);
+    return () => window.removeEventListener('supabase_credentials_updated', handleCredsUpdated);
+  }, []);
+
+  // Handler segarkan data peserta dari Supabase
+  const handleRefreshSupabaseInParticipants = async () => {
+    setIsRefreshingParticipants(true);
+    try {
+      if (onRefreshAllFromSupabase) {
+        await onRefreshAllFromSupabase();
+        setFeedbackToast('Berhasil menyinkronkan data peserta & lomba langsung dari Supabase!');
+      } else {
+        const { data, error } = await fetchParticipantsFromSupabase();
+        if (error) {
+          setFeedbackToast(`Gagal memuat: ${error}`);
+        } else if (data && onRefreshParticipants) {
+          onRefreshParticipants(data);
+          setFeedbackToast(`Sukses! ${data.length} peserta disinkronkan dari Supabase.`);
+        }
+      }
+    } catch (err: any) {
+      setFeedbackToast(`Terjadi kesalahan: ${err?.message || 'Gagal memuat'}`);
+    } finally {
+      setIsRefreshingParticipants(false);
+    }
+  };
 
   const [adminUser, setAdminUser] = useState<string>(() => {
     return (
@@ -570,6 +634,20 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                   SESI AKTIF
                 </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('supabase')}
+                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border transition-all flex items-center gap-1.5 shadow-sm hover:brightness-110 active:scale-95 ${
+                    supabaseConnected
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                  }`}
+                  title="Status Database Supabase - Klik untuk membuka panel Supabase"
+                >
+                  <Database className="w-3 h-3" />
+                  <span>{isCheckingSupabase ? 'Memeriksa Supabase...' : supabaseConnected ? 'Supabase: Terhubung (Live)' : 'Supabase: Belum Terhubung'}</span>
+                  <span className={`w-2 h-2 rounded-full ${supabaseConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                </button>
               </div>
               <span className="text-[11px] text-[#DDE7E8]/70">
                 Sistem Manajemen Peserta & Konten MWC NU Poncokusumo
@@ -710,20 +788,19 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             </button>
           )}
 
-          {/* Tab Database Supabase CMS */}
-          {isSuperAdmin && (
-            <button
-              onClick={() => setActiveTab('supabase')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
-                activeTab === 'supabase'
-                  ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-emerald-300 border border-emerald-400/60 shadow'
-                  : 'text-emerald-400/80 hover:bg-white/5'
-              }`}
-            >
-              <Database className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Database Supabase</span>
-            </button>
-          )}
+          {/* Tab Database Supabase CMS (Dapat diakses seluruh panitia untuk cek koneksi & sinkronisasi) */}
+          <button
+            onClick={() => setActiveTab('supabase')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
+              activeTab === 'supabase'
+                ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-emerald-300 border border-emerald-400/60 shadow'
+                : 'text-emerald-400/80 hover:bg-white/5'
+            }`}
+          >
+            <Database className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Database Supabase</span>
+            <span className={`w-2 h-2 rounded-full ${supabaseConnected ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+          </button>
         </div>
 
         {/* Content Area */}
@@ -778,6 +855,17 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
                 <div className="flex items-center gap-2">
                   <button
+                    type="button"
+                    onClick={handleRefreshSupabaseInParticipants}
+                    disabled={isRefreshingParticipants}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-white/10 hover:bg-white/20 border border-white/20 transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+                    title="Tarik & Segarkan Data Terbaru dari Database Supabase"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 text-[#00D9F5] ${isRefreshingParticipants ? 'animate-spin' : ''}`} />
+                    <span>{isRefreshingParticipants ? 'Menyinkronkan...' : 'Segarkan Supabase'}</span>
+                  </button>
+
+                  <button
                     onClick={() => setShowPrintModal(true)}
                     className="px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:brightness-110 border border-emerald-500/40 transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
                     title="Cetak Tabel Rekapitulasi Peserta Terdaftar"
@@ -795,6 +883,25 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   </button>
                 </div>
               </div>
+
+              {/* Banner Info Jika Supabase Belum Terhubung */}
+              {!supabaseConnected && (
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shadow-sm">
+                  <div className="flex items-center gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>
+                      <strong>Database Supabase Belum Terhubung:</strong> Saat ini CMS menggunakan data penyimpanan lokal. Buka tab <strong>Database Supabase</strong> untuk memeriksa URL, Kunci Anon, dan menjalankan tes koneksi.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('supabase')}
+                    className="px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-[11px] font-bold shrink-0 transition-colors"
+                  >
+                    Buka Tab Supabase →
+                  </button>
+                </div>
+              )}
 
               {/* Banner Pemberitahuan jika Akun Selain Super Admin & Divisi Regristrasi & Verifikator */}
               {!canVerifyParticipants && (
@@ -1745,8 +1852,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
           {/* TAB 6: DEPLOYMENT KE VERCEL & SUPABASE (KHUSUS SUPER ADMIN) */}
           {activeTab === 'deployment' && isSuperAdmin && <AdminDeploymentTab />}
 
-          {/* TAB 7: DATABASE SUPABASE CMS (KHUSUS SUPER ADMIN) */}
-          {activeTab === 'supabase' && isSuperAdmin && (
+          {/* TAB 7: DATABASE SUPABASE CMS (Bisa diakses seluruh panitia) */}
+          {activeTab === 'supabase' && (
             <AdminSupabaseTab
               competitions={competitions}
               participants={participants}

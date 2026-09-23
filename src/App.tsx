@@ -29,6 +29,7 @@ import {
   updateCompetitionInSupabase, 
   deleteCompetitionFromSupabase,
   fetchParticipantsFromSupabase,
+  fetchAdminUsersFromSupabase,
   updateParticipantStatusInSupabase,
   deleteParticipantFromSupabase,
   updateParticipantWorkInSupabase,
@@ -36,6 +37,7 @@ import {
   isSupabaseConnected,
   saveSupabaseCredentials
 } from './lib/supabaseClient';
+import { saveRegisteredAdminUsers, isUserDeleted } from './data/initialUsers';
 import { Sparkles, MessageCircle, Shield, UploadCloud } from 'lucide-react';
 
 const DELETED_COMPETITIONS_KEY = 'hsn2026_deleted_competitions_v1';
@@ -178,42 +180,51 @@ export default function App() {
     } catch {}
   }, []);
 
-  // Fetch live competitions & participants from Supabase on mount
-  useEffect(() => {
-    let isMounted = true;
+  // Fetch live competitions, participants & admin users from Supabase
+  const loadDataFromSupabase = async () => {
+    const connected = isSupabaseConnected();
+    setIsSupabaseLive(connected);
 
-    async function loadDataFromSupabase() {
-      const connected = isSupabaseConnected();
-      setIsSupabaseLive(connected);
-
-      try {
-        const { data: remoteComps, error: compErr } = await fetchCompetitionsFromSupabase();
-        if (isMounted && remoteComps && remoteComps.length > 0) {
-          const deleted = getDeletedCompIds();
-          setCompetitions(remoteComps.filter((c) => !deleted.includes(c.id)));
-          setIsSupabaseLive(true);
-        }
-
-        const { data: remoteParticipants, error: partErr } = await fetchParticipantsFromSupabase();
-        if (isMounted && remoteParticipants) {
-          // Filter ketat agar data dummy awal tidak pernah muncul kembali
-          const cleanRemote = remoteParticipants.filter((p) => !isInitialMockParticipant(p));
-          setParticipants(cleanRemote);
-          saveCleanParticipantsToStorage(cleanRemote);
-
-          // Jika Supabase masih menyimpan data dummy contoh, bersihkan otomatis di database
-          const hasDummyInRemote = remoteParticipants.some((p) => isInitialMockParticipant(p));
-          if (hasDummyInRemote) {
-            purgeMockParticipantsFromSupabase().catch(console.warn);
-          }
-        }
-      } catch (err) {
-        console.warn('Supabase fetch note:', err);
-      } finally {
-        if (isMounted) setSupabaseLoading(false);
+    try {
+      // 1. Cabang Lomba
+      const { data: remoteComps } = await fetchCompetitionsFromSupabase();
+      if (remoteComps && remoteComps.length > 0) {
+        const deleted = getDeletedCompIds();
+        setCompetitions(remoteComps.filter((c) => !deleted.includes(c.id)));
+        setIsSupabaseLive(true);
       }
-    }
 
+      // 2. Peserta Pendaftar
+      const { data: remoteParticipants } = await fetchParticipantsFromSupabase();
+      if (remoteParticipants) {
+        // Filter ketat agar data dummy awal tidak pernah muncul kembali
+        const cleanRemote = remoteParticipants.filter((p) => !isInitialMockParticipant(p));
+        setParticipants(cleanRemote);
+        saveCleanParticipantsToStorage(cleanRemote);
+
+        // Jika Supabase masih menyimpan data dummy contoh, bersihkan otomatis di database
+        const hasDummyInRemote = remoteParticipants.some((p) => isInitialMockParticipant(p));
+        if (hasDummyInRemote) {
+          purgeMockParticipantsFromSupabase().catch(console.warn);
+        }
+      }
+
+      // 3. User Panitia
+      const { data: remoteUsers } = await fetchAdminUsersFromSupabase();
+      if (remoteUsers && remoteUsers.length > 0) {
+        try {
+          const validUsers = remoteUsers.filter((u) => !isUserDeleted(u.id, u.username));
+          saveRegisteredAdminUsers(validUsers);
+        } catch (_) {}
+      }
+    } catch (err) {
+      console.warn('Supabase fetch note:', err);
+    } finally {
+      setSupabaseLoading(false);
+    }
+  };
+
+  useEffect(() => {
     loadDataFromSupabase();
 
     const handleCredentialsUpdated = () => {
@@ -222,7 +233,6 @@ export default function App() {
     window.addEventListener('supabase_credentials_updated', handleCredentialsUpdated);
 
     return () => {
-      isMounted = false;
       window.removeEventListener('supabase_credentials_updated', handleCredentialsUpdated);
     };
   }, []);
@@ -521,6 +531,8 @@ export default function App() {
         documents={DOWNLOAD_DOCUMENTS}
         onUpdateParticipantWork={handleUpdateParticipantWork}
         onOpenWorkModalForParticipant={(regNo) => handleOpenUploadWork(regNo)}
+        isSupabaseLive={isSupabaseLive}
+        onRefreshAllFromSupabase={loadDataFromSupabase}
       />
     </div>
   );

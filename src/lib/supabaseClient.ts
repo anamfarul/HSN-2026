@@ -815,10 +815,18 @@ export async function fetchParticipantsFromSupabase(): Promise<{ data: any[] | n
   }
 
   try {
-    const { data, error } = await client
+    // Coba ambil dan urutkan berdasarkan registered_at
+    let { data, error } = await client
       .from('participants')
       .select('*')
       .order('registered_at', { ascending: false });
+
+    // Fallback jika kolom registered_at belum ada di skema tabel Supabase
+    if (error && (error.message?.includes('registered_at') || error.code === '42703')) {
+      const retry = await client.from('participants').select('*');
+      data = retry.data;
+      error = retry.error;
+    }
 
     if (error) {
       return { data: null, error: error.message };
@@ -927,15 +935,35 @@ export async function updateParticipantStatusInSupabase(
 
   try {
     const dbStatus = status === 'Terverifikasi' ? 'Terverifikasi' : status === 'Ditolak' ? 'Ditolak' : 'Menunggu Verifikasi';
-    
-    // Attempt update by registration_number or by id
-    const { error } = await client
-      .from('participants')
-      .update({ status: dbStatus, updated_at: new Date().toISOString() })
-      .or(`registration_number.eq.${registrationNumberOrId},id.eq.${registrationNumberOrId}`);
+    const key = (registrationNumberOrId || '').trim();
 
-    if (error) {
-      return { success: false, error: error.message };
+    // 1. Coba update via registration_number (paling akurat & selalu berupa string VARCHAR)
+    const { data: regMatch, error: regErr } = await client
+      .from('participants')
+      .update({ status: dbStatus })
+      .eq('registration_number', key)
+      .select('id, registration_number');
+
+    if (!regErr && regMatch && regMatch.length > 0) {
+      return { success: true, error: null };
+    }
+
+    // 2. Jika key berupa UUID atau Integer, coba update berdasarkan kolom id
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key);
+    const isNum = /^\d+$/.test(key);
+    if (isUuid || isNum) {
+      const { data: idMatch, error: idErr } = await client
+        .from('participants')
+        .update({ status: dbStatus })
+        .eq('id', key)
+        .select('id');
+      if (!idErr && idMatch && idMatch.length > 0) {
+        return { success: true, error: null };
+      }
+    }
+
+    if (regErr) {
+      return { success: false, error: regErr.message };
     }
 
     return { success: true, error: null };
@@ -1038,16 +1066,33 @@ export async function deleteParticipantFromSupabase(
   }
 
   try {
-    const { error } = await client
+    const key = (registrationNumberOrId || '').trim();
+
+    // 1. Hapus berdasarkan registration_number
+    const { error: regErr } = await client
       .from('participants')
       .delete()
-      .or(`registration_number.eq.${registrationNumberOrId},id.eq.${registrationNumberOrId}`);
+      .eq('registration_number', key);
 
-    if (error) {
-      return { success: false, error: error.message };
+    if (!regErr) {
+      return { success: true, error: null };
     }
 
-    return { success: true, error: null };
+    // 2. Jika key berupa UUID atau Integer, coba hapus berdasarkan id
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key);
+    const isNum = /^\d+$/.test(key);
+    if (isUuid || isNum) {
+      const { error: idErr } = await client
+        .from('participants')
+        .delete()
+        .eq('id', key);
+
+      if (!idErr) {
+        return { success: true, error: null };
+      }
+    }
+
+    return { success: false, error: regErr.message };
   } catch (err: any) {
     return { success: false, error: err.message || 'Gagal menghapus data peserta dari Supabase' };
   }
