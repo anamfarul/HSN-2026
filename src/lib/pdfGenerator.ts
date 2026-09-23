@@ -234,7 +234,9 @@ export function generateRegistrationTicketPDF(
       ['Alamat Email', `: ${ticket.email}`],
       ['Alamat Lengkap', `: ${fullAddressDisplay}`],
       ['Berkas Pendukung / Mandat', `: ${ticket.documentName || 'Surat Mandat / Keterangan Lembaga'}`],
-      ['Bukti Pembayaran', `: ${ticket.paymentProofName ? `Terlampir (${ticket.paymentProofName})` : 'Tidak dilampirkan (Bebas Biaya / Diserahkan saat TM)'}`],
+      ['Bukti Pembayaran', `: ${ticket.paymentProofName ? `Terlampir (${ticket.paymentProofName})` : 'Tidak dilampirkan'}`],
+      ['PEMBAYARAN MELALUI REKENING BRI NO. 0344-0109-9954-507 ATAS NAMA : NUZUL FIQRIYAH'],
+      ['KONFIRMASI PEMBAYARAN KE NO WA : 0857-3249-6213'],
     ];
 
     autoTable(doc, {
@@ -280,7 +282,7 @@ export function generateRegistrationTicketPDF(
     doc.setFontSize(7.5);
     doc.setTextColor(71, 85, 105);
     doc.text(
-      'Harap tunjukkan dokumen ini (cetak atau file PDF) kepada petugas administrasi panitia saat\nTechnical Meeting.',
+      'Harap tunjukkan dokumen ini (cetak atau file PDF) kepada Divisi Sekretariat & Administrasi Panitia HSN 2026.',
       margin + 27,
       afterTableY + 13
     );
