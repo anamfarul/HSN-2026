@@ -1135,27 +1135,6 @@ MWC NU Kecamatan Poncokusumo, Kabupaten Malang, Jawa Timur.
                       </span>
                     </div>
 
-                    {/* Banner Info Pembayaran Resmi BRI */}
-                    <div className="mb-2.5 p-2.5 rounded-xl bg-gradient-to-r from-[#006B4F]/25 to-[#021f18] border border-[#008F72]/40 text-[11px] text-[#DDE7E8] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                      <div>
-                        <span className="text-[#F2C96D] font-bold block text-[10px] uppercase">
-                          Rekening Resmi Bank BRI:
-                        </span>
-                        <div className="flex items-center gap-1.5 font-mono font-black text-white text-xs">
-                          <span>0344-0109-9954-507</span>
-                          <span className="text-[#00D9F5] text-[10px] font-sans font-semibold">a.n NUZUL FIQRIYAH</span>
-                        </div>
-                      </div>
-                      <a
-                        href="https://wa.me/6285732496213?text=Assalamualaikum%20Admin,%20saya%20ingin%20konfirmasi%20pembayaran%20pendaftaran%20lomba%20HSN%202026"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold shrink-0 transition-colors flex items-center gap-1"
-                      >
-                        <span>Konfirmasi WA</span>
-                      </a>
-                    </div>
-
                     <div className={`relative border-2 border-dashed ${
                       paymentProofFile 
                         ? 'border-emerald-500/60 bg-emerald-950/20' 
