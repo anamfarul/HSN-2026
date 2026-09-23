@@ -235,8 +235,8 @@ export function generateRegistrationTicketPDF(
       ['Alamat Lengkap', `: ${fullAddressDisplay}`],
       ['Berkas Pendukung / Mandat', `: ${ticket.documentName || 'Surat Mandat / Keterangan Lembaga'}`],
       ['Bukti Pembayaran', `: ${ticket.paymentProofName ? `Terlampir (${ticket.paymentProofName})` : 'Tidak dilampirkan'}`],
-      ['PEMBAYARAN MELALUI REKENING BRI NO. 0344-0109-9954-507 ATAS NAMA : NUZUL FIQRIYAH'],
-      ['KONFIRMASI PEMBAYARAN KE NO WA : 0857-3249-6213'],
+      ['Rekening Pembayaran', ': BRI 0344-0109-9954-507 a.n NUZUL FIQRIYAH'],
+      ['Konfirmasi Pembayaran', ': WhatsApp 0857-3249-6213'],
     ];
 
     autoTable(doc, {

@@ -669,29 +669,43 @@ export function mapParticipantToSupabase(p: any): Record<string, any> {
       ].filter(Boolean).join(', ')
     : (p.address || '').trim();
 
-  return {
+  const row: Record<string, any> = {
     registration_number: p.registrationNumber,
     full_name: (p.fullName || '').trim(),
     institution: (p.institution || '').trim(),
     category: p.category,
-    birth_date: cleanBirthDate,
     whatsapp: (p.whatsapp || '').trim(),
-    email: p.email ? p.email.trim() : null,
-    address: fullAddress,
-    competition_id: p.competitionId || null,
-    competition_title: p.competitionTitle || 'Perlombaan HSN 2026',
-    document_name: p.documentName || null,
-    document_url: p.documentUrl || null,
-    payment_proof_name: p.paymentProofName || null,
-    payment_proof_url: p.paymentProofUrl || null,
     status: p.status === 'Terverifikasi' ? 'Terverifikasi' : p.status === 'Ditolak' ? 'Ditolak' : 'Menunggu Verifikasi',
-    work_submission_type: p.workSubmissionType || null,
-    work_file_name: p.workFileName || null,
-    work_file_url: p.workFileUrl || null,
-    work_drive_link: p.workDriveUrl || null,
-    work_notes: p.workNotes || null,
-    work_submitted_at: p.workSubmittedAt ? new Date().toISOString() : null,
   };
+
+  // Kolom opsional profil & perlombaan (hanya sertakan jika ada isinya)
+  if (cleanBirthDate) row.birth_date = cleanBirthDate;
+  if (p.email && p.email.trim()) row.email = p.email.trim();
+  if (fullAddress) row.address = fullAddress;
+  if (p.competitionId) row.competition_id = p.competitionId;
+  if (p.competitionTitle) row.competition_title = p.competitionTitle;
+  if (p.documentName) row.document_name = p.documentName;
+  if (p.documentUrl) row.document_url = p.documentUrl;
+  if (p.paymentProofName) row.payment_proof_name = p.paymentProofName;
+  if (p.paymentProofUrl) row.payment_proof_url = p.paymentProofUrl;
+
+  // Kolom berkas karya: HANYA sertakan jika peserta sudah mengunggah/mengisi karya
+  // Hal ini mencegah error "Could not find the 'work_submitted_at' column of 'participants' in the schema cache"
+  // pada database Supabase yang belum menjalankan migrasi kolom karya.
+  if (p.workSubmissionType) row.work_submission_type = p.workSubmissionType;
+  if (p.workFileName) row.work_file_name = p.workFileName;
+  if (p.workFileUrl) row.work_file_url = p.workFileUrl;
+  if (p.workDriveUrl) row.work_drive_link = p.workDriveUrl;
+  if (p.workNotes) row.work_notes = p.workNotes;
+  if (p.workSubmittedAt) {
+    try {
+      row.work_submitted_at = new Date(p.workSubmittedAt).toISOString();
+    } catch {
+      row.work_submitted_at = new Date().toISOString();
+    }
+  }
+
+  return row;
 }
 
 // Insert new participant registration into Supabase (with automatic schema-cache self healing)
@@ -706,7 +720,7 @@ export async function insertParticipantToSupabase(participant: any): Promise<{ s
 
   try {
     let row = mapParticipantToSupabase(participant);
-    let attempts = 6;
+    let attempts = 25;
     let lastError: any = null;
     let fallbackCategoryApplied = false;
 
@@ -741,8 +755,11 @@ export async function insertParticipantToSupabase(participant: any): Promise<{ s
         }
       }
 
-      // 2. Cek jika kolom belum ada di schema cache tabel participants Supabase (misal payment_proof_name, payment_proof_url, document_name, dll.)
-      const missingMatch = error.message?.match(/Could not find the '([^']+)' column of 'participants'/i);
+      // 2. Cek jika kolom belum ada di schema cache tabel participants Supabase (misal work_submitted_at, payment_proof_name, dll.)
+      const missingMatch = 
+        error.message?.match(/Could not find the ['"]([^'"]+)['"] column of ['"]participants['"]/i) ||
+        error.message?.match(/column ['"]?([a-zA-Z0-9_]+)['"]? of relation ['"]?participants['"]? does not exist/i) ||
+        error.message?.match(/Could not find the '([^']+)' column/i);
       if (missingMatch && missingMatch[1]) {
         const missingCol = missingMatch[1];
         console.warn(`Supabase schema missing column '${missingCol}' in participants table. Auto-stripping '${missingCol}' and retrying...`);
@@ -831,7 +848,7 @@ export async function syncAllParticipantsToSupabase(
 
   try {
     let rows = participants.map(mapParticipantToSupabase);
-    let attempts = 6;
+    let attempts = 25;
     let lastError: any = null;
     let fallbackCategoryApplied = false;
 
@@ -862,7 +879,10 @@ export async function syncAllParticipantsToSupabase(
       }
 
       // Check if column missing in schema cache
-      const match = error.message?.match(/Could not find the '([^']+)' column of 'participants'/i);
+      const match = 
+        error.message?.match(/Could not find the ['"]([^'"]+)['"] column of ['"]participants['"]/i) ||
+        error.message?.match(/column ['"]?([a-zA-Z0-9_]+)['"]? of relation ['"]?participants['"]? does not exist/i) ||
+        error.message?.match(/Could not find the '([^']+)' column/i);
       if (match && match[1]) {
         const missingCol = match[1];
         console.warn(`Supabase schema missing column '${missingCol}' in participants. Stripping and retrying...`);
