@@ -28,7 +28,7 @@ export const INITIAL_ADMIN_USERS: AdminUser[] = [
     fullName: 'Ning Nabila Azzahra',
     username: 'sekretariat',
     password: 'hsn2026',
-    role: 'Divisi Acara & Registrasi',
+    role: 'Divisi Sekretariat & Administrasi',
     email: 'sekretariat@hsnponcokusumo.nu',
     phone: '0821-9876-5432',
     createdAt: '03 Oktober 2026',
@@ -38,6 +38,29 @@ export const INITIAL_ADMIN_USERS: AdminUser[] = [
 
 export const DELETED_USERS_STORAGE_KEY = 'hsn2026_deleted_users';
 export const REGISTERED_USERS_STORAGE_KEY = 'hsn2026_registered_users';
+
+/**
+ * Normalisasi nama peran panitia (memetakan peran lama ke nama peran baru)
+ */
+export function normalizePanitiaRole(role?: string): string {
+  if (!role) return 'Divisi Sekretariat & Administrasi';
+  const trimmed = role.trim();
+  if (
+    trimmed === 'Dewan Juri & Verifikator' ||
+    trimmed === 'Dewan Juru & Verifikator' ||
+    trimmed === 'Divisi Registrasi & Verifikator'
+  ) {
+    return 'Divisi Regristrasi & Verifikator';
+  }
+  if (
+    trimmed === 'Divisi Acara & Registrasi' ||
+    trimmed === 'Divisi Acara & Regristasi' ||
+    trimmed === 'Divisi Acara & Panggung'
+  ) {
+    return 'Divisi Sekretariat & Administrasi';
+  }
+  return trimmed;
+}
 
 /**
  * Mendapatkan daftar ID dan username user yang telah dihapus permanen
@@ -110,13 +133,18 @@ export function getRegisteredAdminUsers(): AdminUser[] {
     if (stored !== null) {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed)) {
-        return parsed.filter(
-          (u: AdminUser) =>
-            u &&
-            u.id &&
-            !deleted.has(u.id.toLowerCase()) &&
-            (!u.username || !deleted.has(u.username.toLowerCase()))
-        );
+        return parsed
+          .filter(
+            (u: AdminUser) =>
+              u &&
+              u.id &&
+              !deleted.has(u.id.toLowerCase()) &&
+              (!u.username || !deleted.has(u.username.toLowerCase()))
+          )
+          .map((u: AdminUser) => ({
+            ...u,
+            role: normalizePanitiaRole(u.role),
+          }));
       }
     }
   } catch (err) {

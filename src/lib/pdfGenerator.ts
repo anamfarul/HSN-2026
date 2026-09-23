@@ -328,7 +328,7 @@ export function generateRegistrationTicketPDF(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.setTextColor(15, 23, 42);
-    doc.text('Far\'ul Anam, M.Pd', 40, signY + 22);
+    doc.text('Far\'ul Anam, S.Pd, M.Pd', 40, signY + 22);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.text('Panitia HSN 2026', 40, signY + 26);
@@ -344,7 +344,7 @@ export function generateRegistrationTicketPDF(
     doc.setTextColor(51, 65, 85);
     doc.text(`Poncokusumo, ${nowStr}`, pageWidth - 40, signY, { align: 'center' });
     doc.setFont('helvetica', 'bold');
-    doc.text('Sekretariat Administrasi', pageWidth - 40, signY + 4, { align: 'center' });
+    doc.text('Sekretariat Pelaksana', pageWidth - 40, signY + 4, { align: 'center' });
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(7);
     doc.setTextColor(148, 163, 184);
@@ -355,7 +355,7 @@ export function generateRegistrationTicketPDF(
     doc.text('Imam Muhidin, S.Pd', pageWidth - 40, signY + 22, { align: 'center' });
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
-    doc.text('Koordinator Peserta & Pendaftaran', pageWidth - 40, signY + 26, { align: 'center' });
+    doc.text('Divisi Sekretariat & Administrasi', pageWidth - 40, signY + 26, { align: 'center' });
 
     // Footer copyright bar
     doc.setFillColor(0, 107, 79);
@@ -531,7 +531,7 @@ export function generateParticipantReportPDF(
     doc.text('Mengetahui,', 40, signY);
     doc.setFont('helvetica', 'bold');
     doc.text('Ketua Panitia HSN 2026', 40, signY + 4);
-    doc.text('Far\'ul Anam, M.Pd', 40, signY + 16);
+    doc.text('Far\'ul Anam, S.Pd, M.Pd', 40, signY + 16);
     doc.setFont('helvetica', 'normal');
     doc.text('Panitia HSN 2026', 40, signY + 20);
 
@@ -541,7 +541,7 @@ export function generateParticipantReportPDF(
     doc.text('Sekretariat Pelaksana', pageWidth - 40, signY + 4, { align: 'right' });
     doc.text('Imam Muhidin, S.Pd', pageWidth - 40, signY + 16, { align: 'right' });
     doc.setFont('helvetica', 'normal');
-    doc.text('Koordinator Administrasi & Peserta', pageWidth - 40, signY + 20, { align: 'right' });
+    doc.text('Divisi Sekretariat & Administrasi', pageWidth - 40, signY + 20, { align: 'right' });
 
     const sanitizedCat = categoryFilter.replace(/[^a-zA-Z0-9]/g, '_');
     const filename = `Rekap_Peserta_HSN2026_${categoryFilter === 'ALL' ? 'Semua' : sanitizedCat}.pdf`;
@@ -742,7 +742,7 @@ export function generateWorkSubmissionPDF(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.setTextColor(15, 23, 42);
-    doc.text('Far\'ul Anam, M.Pd', 40, signY + 22, { align: 'center' });
+    doc.text('Far\'ul Anam, S.Pd, M.Pd', 40, signY + 22, { align: 'center' });
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.text('Panitia HSN 2026', 40, signY + 26, { align: 'center' });
@@ -758,7 +758,7 @@ export function generateWorkSubmissionPDF(
     doc.setTextColor(51, 65, 85);
     doc.text(`Poncokusumo, ${nowStr}`, pageWidth - 40, signY, { align: 'center' });
     doc.setFont('helvetica', 'bold');
-    doc.text('Sekretariat Administrasi', pageWidth - 40, signY + 4, { align: 'center' });
+    doc.text('Sekretariat Pelaksana', pageWidth - 40, signY + 4, { align: 'center' });
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
@@ -766,7 +766,7 @@ export function generateWorkSubmissionPDF(
     doc.text('Imam Muhidin, S.Pd', pageWidth - 40, signY + 22, { align: 'center' });
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
-    doc.text('Koordinator Peserta & Karya', pageWidth - 40, signY + 26, { align: 'center' });
+    doc.text('Divisi Sekretariat & Administrasi', pageWidth - 40, signY + 26, { align: 'center' });
 
     // 8. Footer Strip
     doc.setFillColor(0, 107, 79);

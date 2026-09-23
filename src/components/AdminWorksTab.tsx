@@ -40,6 +40,7 @@ interface AdminWorksTabProps {
     }
   ) => void;
   onOpenWorkModalForParticipant?: (regNumber: string) => void;
+  canVerifyParticipants?: boolean;
 }
 
 export const AdminWorksTab: React.FC<AdminWorksTabProps> = ({
@@ -47,6 +48,7 @@ export const AdminWorksTab: React.FC<AdminWorksTabProps> = ({
   onUpdateParticipantStatus,
   onUpdateParticipantWork,
   onOpenWorkModalForParticipant,
+  canVerifyParticipants = true,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'file' | 'drive'>('ALL');
@@ -438,9 +440,14 @@ export const AdminWorksTab: React.FC<AdminWorksTabProps> = ({
                         {/* Edit di Modal Peserta */}
                         {onOpenWorkModalForParticipant && (
                           <button
-                            title="Edit / Ganti Berkas Karya Peserta"
-                            onClick={() => onOpenWorkModalForParticipant(participant.registrationNumber)}
-                            className="p-1.5 rounded-lg bg-[#F2C96D]/10 hover:bg-[#F2C96D]/20 border border-[#F2C96D]/30 text-[#F2C96D] transition-colors"
+                            title={canVerifyParticipants ? "Edit / Ganti Berkas Karya Peserta" : "Aksi dinonaktifkan (Khusus Super Admin & Divisi Regristrasi & Verifikator)"}
+                            disabled={!canVerifyParticipants}
+                            onClick={() => canVerifyParticipants && onOpenWorkModalForParticipant(participant.registrationNumber)}
+                            className={`p-1.5 rounded-lg border transition-colors ${
+                              canVerifyParticipants 
+                                ? "bg-[#F2C96D]/10 hover:bg-[#F2C96D]/20 border-[#F2C96D]/30 text-[#F2C96D]" 
+                                : "bg-white/5 border-white/10 text-white/20 cursor-not-allowed opacity-40"
+                            }`}
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                           </button>
@@ -448,9 +455,14 @@ export const AdminWorksTab: React.FC<AdminWorksTabProps> = ({
 
                         {/* Hapus / Reset Karya */}
                         <button
-                          title="Hapus / Reset Berkas Karya"
-                          onClick={() => handleDeleteWork(participant)}
-                          className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 transition-colors"
+                          title={canVerifyParticipants ? "Hapus / Reset Berkas Karya" : "Aksi dinonaktifkan (Khusus Super Admin & Divisi Regristrasi & Verifikator)"}
+                          disabled={!canVerifyParticipants}
+                          onClick={() => canVerifyParticipants && handleDeleteWork(participant)}
+                          className={`p-1.5 rounded-lg border transition-colors ${
+                            canVerifyParticipants 
+                              ? "bg-rose-500/10 hover:bg-rose-500/20 border-rose-500/30 text-rose-400" 
+                              : "bg-white/5 border-white/10 text-white/20 cursor-not-allowed opacity-40"
+                          }`}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>

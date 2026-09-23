@@ -304,7 +304,7 @@ INSERT INTO auth.users (
   'juri.tahfidz@hsnponcokusumo.nu',
   crypt('santri2026', gen_salt('bf')),
   now(),
-  '{"full_name":"Ustadz Dewan Juri","role":"Dewan Juri & Verifikator"}',
+  '{"full_name":"Ustadz Verifikator","role":"Divisi Regristrasi & Verifikator"}',
   now(),
   now()
 ) ON CONFLICT DO NOTHING;`;
@@ -737,6 +737,17 @@ USING (true);`;
                   })}
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          {/* Ketentuan Khusus Verifikasi Banner */}
+          <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-start gap-3">
+            <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <span className="font-bold text-white block">Ketentuan Khusus Verifikasi & Pengelolaan Peserta:</span>
+              <p className="text-[#DDE7E8]/80 text-[11px] leading-relaxed">
+                Hanya <strong>Super Admin (Sekretariat Utama)</strong> dan <strong>Divisi Regristrasi & Verifikator</strong> yang memiliki wewenang untuk memverifikasi peserta (mengubah status menjadi Terverifikasi/Ditolak/Menunggu). Bagi pengguna dengan peran lainnya, menu <strong>AKSI & KELOLA</strong> peserta otomatis dinonaktifkan.
+              </p>
             </div>
           </div>
 

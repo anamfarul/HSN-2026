@@ -1,7 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Competition, CategoryGeneration, AdminUser } from '../types';
 import { INITIAL_COMPETITIONS } from '../data/initialData';
-import { isUserDeleted } from '../data/initialUsers';
+import { isUserDeleted, normalizePanitiaRole } from '../data/initialUsers';
 
 // Helper to sanitize Supabase Project URL to prevent "TypeError: Failed to fetch"
 export function sanitizeSupabaseUrl(rawUrl: string): string {
@@ -1155,7 +1155,7 @@ export function mapSupabaseToAdminUser(row: any): AdminUser {
     fullName: row.full_name || 'Panitia HSN 2026',
     username: (row.username || '').toLowerCase().trim(),
     password: row.password || undefined,
-    role: row.role || 'Sekretariat Utama HSN 2026',
+    role: normalizePanitiaRole(row.role || 'Sekretariat Utama HSN 2026'),
     email: row.email || '',
     phone: row.phone || '',
     createdAt: row.created_at ? new Date(row.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : '01 Oktober 2026',

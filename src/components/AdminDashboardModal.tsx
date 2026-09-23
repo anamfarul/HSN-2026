@@ -10,6 +10,7 @@ import { AdminWorksTab } from './AdminWorksTab';
 import { AdminAddressStatsSection } from './AdminAddressStatsSection';
 import { generateParticipantReportPDF, printElementSafely } from '../lib/pdfGenerator';
 import { ROLE_DEFINITIONS } from '../data/rolesPermissions';
+import { normalizePanitiaRole } from '../data/initialUsers';
 import { deleteParticipantFromSupabase } from '../lib/supabaseClient';
 import { 
   X, 
@@ -113,11 +114,11 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   });
 
   const [adminRole, setAdminRole] = useState<string>(() => {
-    return (
+    const raw =
       localStorage.getItem('hsn2026_admin_role') ||
       sessionStorage.getItem('hsn2026_admin_role') ||
-      'Sekretariat Utama HSN 2026'
-    );
+      'Sekretariat Utama HSN 2026';
+    return normalizePanitiaRole(raw);
   });
 
   // Cek apakah akun yang sedang login adalah Super Admin (Sekretariat Utama)
@@ -126,6 +127,18 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     adminRole.toLowerCase().includes('sekretariat utama') ||
     adminRole.toLowerCase().includes('super admin') ||
     adminUser.toLowerCase() === 'admin';
+
+  // Cek apakah akun adalah Divisi Regristrasi & Verifikator
+  const isRegistrasiVerifikator =
+    adminRole === 'Divisi Regristrasi & Verifikator' ||
+    adminRole.toLowerCase().includes('regristasi') ||
+    adminRole.toLowerCase().includes('registrasi') ||
+    adminRole.toLowerCase().includes('verifikator');
+
+  // Ketentuan Khusus User:
+  // 1. Yang dapat memverifikasi peserta hanya bisa dilakukan oleh Super Admin dan Divisi Regristasi & Verifikator.
+  // 2. Selain Super Admin dan Divisi Regristasi & Verifikator, menu AKSI & KELOLA peserta dinonaktifkan.
+  const canVerifyParticipants = isSuperAdmin || isRegistrasiVerifikator;
 
   const [activeTab, setActiveTab] = useState<'participants' | 'competitions' | 'works' | 'documents' | 'stats' | 'users' | 'deployment' | 'supabase'>('participants');
   const [pdfReportBlobUrl, setPdfReportBlobUrl] = useState<string | null>(null);
@@ -424,7 +437,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
         <AdminLoginView
           onLoginSuccess={({ username, role }) => {
             setAdminUser(username);
-            setAdminRole(role);
+            setAdminRole(normalizePanitiaRole(role));
             setIsAuthenticated(true);
           }}
           onClose={onClose}
@@ -783,6 +796,16 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 </div>
               </div>
 
+              {/* Banner Pemberitahuan jika Akun Selain Super Admin & Divisi Regristrasi & Verifikator */}
+              {!canVerifyParticipants && (
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2.5 shadow-sm">
+                  <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>
+                    <strong>Menu Aksi & Kelola Dinonaktifkan:</strong> Sesuai ketentuan, verifikasi peserta hanya dapat dilakukan oleh <strong>Super Admin</strong> dan <strong>Divisi Regristrasi & Verifikator</strong>. Akun Anda ({adminRole}) berada dalam mode lihat saja.
+                  </span>
+                </div>
+              )}
+
               {/* Table of Participants */}
               <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#020e19]">
                 <table className="w-full text-left text-xs text-[#DDE7E8]">
@@ -795,7 +818,9 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                       <th className="p-3">Kontak WA</th>
                       <th className="p-3">Status</th>
                       <th className="p-3 text-right">
-                        {isSuperAdmin ? 'Aksi & Kelola' : 'Aksi Verifikasi'}
+                        {canVerifyParticipants 
+                          ? (isSuperAdmin ? 'Aksi & Kelola' : 'Aksi Verifikasi') 
+                          : 'Aksi & Kelola (Non-aktif)'}
                       </th>
                     </tr>
                   </thead>
@@ -857,35 +882,47 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                             </span>
                           </td>
                           <td className="p-3 text-right whitespace-nowrap space-x-1">
-                            <button
-                              onClick={() => onUpdateParticipantStatus(p.id, 'Terverifikasi')}
-                              title="Setujui Verifikasi"
-                              className="p-1 rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 transition-colors"
-                            >
-                              <CheckCircle2 className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => onUpdateParticipantStatus(p.id, 'Menunggu')}
-                              title="Set Menunggu"
-                              className="p-1 rounded bg-amber-500/20 hover:bg-amber-500/40 text-amber-300 transition-colors"
-                            >
-                              <Clock className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => onUpdateParticipantStatus(p.id, 'Ditolak')}
-                              title="Tolak Verifikasi"
-                              className="p-1 rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 transition-colors"
-                            >
-                              <XCircle className="w-4 h-4" />
-                            </button>
-                            {isSuperAdmin && (
-                              <button
-                                onClick={() => setParticipantToDelete(p)}
-                                title="Hapus Data Peserta (Khusus Super Admin)"
-                                className="p-1 rounded bg-rose-500/20 hover:bg-rose-600/40 text-rose-400 hover:text-rose-200 border border-rose-500/30 transition-all ml-1 shadow-sm active:scale-95"
+                            {canVerifyParticipants ? (
+                              <>
+                                <button
+                                  onClick={() => onUpdateParticipantStatus(p.id, 'Terverifikasi')}
+                                  title="Setujui Verifikasi"
+                                  className="p-1 rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 transition-colors"
+                                >
+                                  <CheckCircle2 className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => onUpdateParticipantStatus(p.id, 'Menunggu')}
+                                  title="Set Menunggu"
+                                  className="p-1 rounded bg-amber-500/20 hover:bg-amber-500/40 text-amber-300 transition-colors"
+                                >
+                                  <Clock className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => onUpdateParticipantStatus(p.id, 'Ditolak')}
+                                  title="Tolak Verifikasi"
+                                  className="p-1 rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 transition-colors"
+                                >
+                                  <XCircle className="w-4 h-4" />
+                                </button>
+                                {isSuperAdmin && (
+                                  <button
+                                    onClick={() => setParticipantToDelete(p)}
+                                    title="Hapus Data Peserta (Khusus Super Admin)"
+                                    className="p-1 rounded bg-rose-500/20 hover:bg-rose-600/40 text-rose-400 hover:text-rose-200 border border-rose-500/30 transition-all ml-1 shadow-sm active:scale-95"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </>
+                            ) : (
+                              <div 
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-white/40 text-[11px] select-none"
+                                title="Menu Aksi & Kelola Dinonaktifkan: Hanya Super Admin dan Divisi Regristrasi & Verifikator yang berhak memverifikasi peserta"
                               >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                                <Lock className="w-3 h-3 text-amber-400/80" />
+                                <span>Non-aktif</span>
+                              </div>
                             )}
                           </td>
                         </tr>
@@ -1420,6 +1457,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
               onUpdateParticipantStatus={onUpdateParticipantStatus}
               onUpdateParticipantWork={onUpdateParticipantWork}
               onOpenWorkModalForParticipant={onOpenWorkModalForParticipant}
+              canVerifyParticipants={canVerifyParticipants}
             />
           )}
 
@@ -3185,8 +3223,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   <div className="h-16 flex items-end justify-center">
                     <span className="text-[10px] text-gray-400 italic">(Tanda Tangan & Stempel)</span>
                   </div>
-                  <p className="font-bold underline mt-1 text-gray-950">Ust. H. Ahmad Mustofa, S.Pd.I</p>
-                  <p className="text-[10.5px] text-gray-600">MWC NU Poncokusumo</p>
+                  <p className="font-bold underline mt-1 text-gray-950">Far'ul Anam, S.Pd, M.Pd</p>
+                  <p className="text-[10.5px] text-gray-600">Panitia HSN 2026</p>
                 </div>
 
                 <div className="w-56 text-center">
@@ -3202,8 +3240,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   <div className="h-16 flex items-end justify-center">
                     <span className="text-[10px] text-gray-400 italic">(Tanda Tangan & Stempel)</span>
                   </div>
-                  <p className="font-bold underline mt-1 text-gray-950">M. Wildan Maulana, S.Kom</p>
-                  <p className="text-[10.5px] text-gray-600">Koordinator Administrasi & Peserta</p>
+                  <p className="font-bold underline mt-1 text-gray-950">Imam Muhidin, S.Pd</p>
+                  <p className="text-[10.5px] text-gray-600">Divisi Sekretariat & Administrasi</p>
                 </div>
               </div>
             </div>

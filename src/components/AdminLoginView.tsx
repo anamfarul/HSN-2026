@@ -136,7 +136,7 @@ export const AdminLoginView: React.FC<AdminLoginViewProps> = ({
           Masuk Portal Admin
         </h2>
         <p className="text-xs text-[#DDE7E8]/80 mt-1 max-w-sm">
-          Khusus Panitia Pelaksana, Dewan Juri & Sekretariat MWC NU Kecamatan Poncokusumo
+          Khusus Panitia Pelaksana, Divisi & Sekretariat MWC NU Kecamatan Poncokusumo
         </p>
       </div>
 
@@ -215,8 +215,9 @@ export const AdminLoginView: React.FC<AdminLoginViewProps> = ({
           >
             <option value="Sekretariat Utama HSN 2026">Sekretariat Utama (Super Admin)</option>
             <option value="Koordinator Teknis Lomba">Koordinator Teknis Lomba</option>
-            <option value="Dewan Juri & Verifikator">Dewan Juri & Verifikator</option>
-            <option value="Divisi Acara & Panggung">Divisi Acara & Panggung</option>
+            <option value="Divisi Regristrasi & Verifikator">Divisi Regristrasi & Verifikator</option>
+            <option value="Divisi Sekretariat & Administrasi">Divisi Sekretariat & Administrasi</option>
+            <option value="Tim Publikasi & Media Center">Tim Publikasi & Media Center</option>
           </select>
         </div>
 

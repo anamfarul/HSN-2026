@@ -37,9 +37,9 @@ export const ROLE_DEFINITIONS: Record<string, RolePermission> = {
     shortTitle: 'Koord. Lomba',
     badgeColor: 'bg-amber-500/20 text-amber-400',
     borderColor: 'border-amber-500/40',
-    description: 'Mengatur petunjuk teknis (juknis) lomba, menambah cabang lomba baru, memantau kuota peserta, dan verifikasi berkas lomba.',
+    description: 'Mengatur petunjuk teknis (juknis) lomba, menambah cabang lomba baru, memantau kuota peserta, dan meninjau daftar pendaftar lomba.',
     capabilities: {
-      verifyParticipants: 'FULL',
+      verifyParticipants: 'VIEW_ONLY',
       manageCompetitions: 'FULL',
       manageUsers: 'NONE',
       exportData: true,
@@ -48,12 +48,12 @@ export const ROLE_DEFINITIONS: Record<string, RolePermission> = {
     },
     allowedTabs: ['participants', 'competitions', 'stats', 'documents'],
   },
-  'Dewan Juri & Verifikator': {
-    roleName: 'Dewan Juri & Verifikator',
-    shortTitle: 'Verifikator & Juri',
+  'Divisi Regristrasi & Verifikator': {
+    roleName: 'Divisi Regristrasi & Verifikator',
+    shortTitle: 'Reg. & Verifikator',
     badgeColor: 'bg-purple-500/20 text-purple-300',
     borderColor: 'border-purple-500/40',
-    description: 'Fokus memverifikasi keabsahan data peserta (surat mandat, NISN/NISM, foto), mengubah status (Terverifikasi/Ditolak), dan melihat rekap peserta.',
+    description: 'Fokus memverifikasi keabsahan data peserta (surat mandat, NISN/NISM, foto, karya peserta), mengubah status (Terverifikasi/Ditolak), dan validasi pendaftaran.',
     capabilities: {
       verifyParticipants: 'FULL',
       manageCompetitions: 'VIEW_ONLY',
@@ -64,12 +64,12 @@ export const ROLE_DEFINITIONS: Record<string, RolePermission> = {
     },
     allowedTabs: ['participants', 'stats'],
   },
-  'Divisi Acara & Registrasi': {
-    roleName: 'Divisi Acara & Registrasi',
-    shortTitle: 'Divisi Acara',
+  'Divisi Sekretariat & Administrasi': {
+    roleName: 'Divisi Sekretariat & Administrasi',
+    shortTitle: 'Sekretariat & Admin',
     badgeColor: 'bg-cyan-500/20 text-cyan-400',
     borderColor: 'border-cyan-500/40',
-    description: 'Memantau pendaftaran masuk, ekspor rekap absensi/data peserta per kontingen, serta koordinasi jadwal acara dan berkas formulir.',
+    description: 'Pengelolaan surat-menyurat, berkas administrasi pendaftaran, rekapitulasi data dan absensi peserta, serta arsip dokumen resmi festival.',
     capabilities: {
       verifyParticipants: 'VIEW_ONLY',
       manageCompetitions: 'VIEW_ONLY',
@@ -98,4 +98,18 @@ export const ROLE_DEFINITIONS: Record<string, RolePermission> = {
   },
 };
 
-export const ALL_ROLES = Object.keys(ROLE_DEFINITIONS);
+// Aliases untuk kompatibilitas data lama / variasi ejaan
+ROLE_DEFINITIONS['Dewan Juru & Verifikator'] = ROLE_DEFINITIONS['Divisi Regristrasi & Verifikator'];
+ROLE_DEFINITIONS['Dewan Juri & Verifikator'] = ROLE_DEFINITIONS['Divisi Regristrasi & Verifikator'];
+ROLE_DEFINITIONS['Divisi Registrasi & Verifikator'] = ROLE_DEFINITIONS['Divisi Regristrasi & Verifikator'];
+ROLE_DEFINITIONS['Divisi Acara & Regristasi'] = ROLE_DEFINITIONS['Divisi Sekretariat & Administrasi'];
+ROLE_DEFINITIONS['Divisi Acara & Registrasi'] = ROLE_DEFINITIONS['Divisi Sekretariat & Administrasi'];
+ROLE_DEFINITIONS['Divisi Acara & Panggung'] = ROLE_DEFINITIONS['Divisi Sekretariat & Administrasi'];
+
+export const ALL_ROLES = [
+  'Sekretariat Utama HSN 2026',
+  'Koordinator Teknis Lomba',
+  'Divisi Regristrasi & Verifikator',
+  'Divisi Sekretariat & Administrasi',
+  'Tim Publikasi & Media Center',
+];
