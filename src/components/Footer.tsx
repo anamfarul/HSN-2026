@@ -69,6 +69,55 @@ export const Footer: React.FC<FooterProps> = ({ onOpenAdmin, onOpenRegister, onO
                 Santri Mendunia
               </span>
             </div>
+
+            {/* Media Sosial & Kontak Resmi */}
+            <div className="pt-3">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-[#F2C96D] block mb-2">
+                Ikuti Media Sosial Resmi:
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <a
+                  href="https://wa.me/6285731194085"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-[11px] font-semibold flex items-center gap-1 transition-all"
+                >
+                  <span>WA: 0857-3119-4085</span>
+                </a>
+                <a
+                  href="https://instagram.com/hsnofficial2026"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1 rounded-lg bg-pink-500/15 hover:bg-pink-500/25 border border-pink-500/30 text-pink-300 text-[11px] font-semibold flex items-center gap-1 transition-all"
+                >
+                  <span>Instagram</span>
+                </a>
+                <a
+                  href="https://www.facebook.com/profile.php?id=61594838331543"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 text-blue-300 text-[11px] font-semibold flex items-center gap-1 transition-all"
+                >
+                  <span>Facebook</span>
+                </a>
+                <a
+                  href="https://www.tiktok.com/@official.hsnpon?_r=1&_t=ZS-99uCX0tHHRQ"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 text-[11px] font-semibold flex items-center gap-1 transition-all"
+                >
+                  <span>TikTok</span>
+                </a>
+                <a
+                  href="https://youtube.com/@hsnofficial2026?si=kUMHGN7MPk6ZKRvJ"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 text-[11px] font-semibold flex items-center gap-1 transition-all"
+                >
+                  <span>YouTube</span>
+                </a>
+              </div>
+            </div>
           </div>
 
           {/* Col 3: Quick Navigation */}
