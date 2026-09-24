@@ -45,7 +45,7 @@ export const Footer: React.FC<FooterProps> = ({ onOpenAdmin, onOpenRegister, onO
             </div>
 
             <p className="font-heading text-sm font-bold text-[#F2C96D] leading-snug">
-              “Mengawal Indonesia Merdeka Menuju Peradaban Dunia”
+              “SANTRI MENGUATKAN NEGERI MENUJU INDONESIA EMAS”
             </p>
 
             <p className="text-xs text-[#DDE7E8]/80 leading-relaxed max-w-sm">

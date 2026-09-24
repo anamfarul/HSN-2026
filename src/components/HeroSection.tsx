@@ -257,7 +257,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
           {/* Mobile Subheadline Quote */}
           <div className="relative my-3 px-4 py-2 rounded-xl bg-[#006B4F]/20 border border-[#00D9F5]/30 backdrop-blur-sm">
             <p className="font-heading text-sm sm:text-base font-bold tracking-wide text-[#F2C96D] leading-snug">
-              “MENGAWAL INDONESIA MERDEKA MENUJU PERADABAN DUNIA”
+              “SANTRI MENGUATKAN NEGERI MENUJU INDONESIA EMAS”
             </p>
           </div>
 
@@ -372,7 +372,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
               <div className="absolute -inset-1 bg-gradient-to-r from-[#006B4F]/30 via-[#00D9F5]/20 to-transparent blur-sm rounded-xl" />
               <div className="relative px-5 py-3 rounded-xl bg-gradient-to-r from-[#006B4F]/30 via-[#031525]/90 to-transparent border-l-4 border-[#F2C96D] backdrop-blur-md">
                 <p className="font-heading text-xl xl:text-2xl font-bold tracking-wide text-[#F2C96D] leading-snug drop-shadow-md">
-                  “MENGAWAL INDONESIA MERDEKA MENUJU PERADABAN DUNIA”
+                  “SANTRI MENGUATKAN NEGERI MENUJU INDONESIA EMAS”
                 </p>
               </div>
             </div>
