@@ -418,7 +418,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 
             {/* Narrative Description */}
             <p className="max-w-xl text-sm xl:text-base text-[#DDE7E8]/90 font-normal leading-relaxed my-4">
-              Festival akbar santri mempertemukan keluhuran nilai pesantren, tradisi Islam Nusantara, sains, teknologi digital, dan kreativitas masa depan di jantung Poncokusumo Malang.
+              Festival akbar santri mempertemukan keluhuran nilai pesantren, tradisi Islam Nusantara, sains, teknologi digital, dan kreativitas masa depan Bangsa Indonesia.
             </p>
 
             {/* Event Date & Location Pill */}
