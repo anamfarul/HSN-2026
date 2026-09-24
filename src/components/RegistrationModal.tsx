@@ -74,6 +74,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
   const [province, setProvince] = useState('');
   const [selectedCompId, setSelectedCompId] = useState<string>('');
   const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [documentPreview, setDocumentPreview] = useState<string | null>(null);
   const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
   const [paymentProofPreview, setPaymentProofPreview] = useState<string | null>(null);
   const [agreed, setAgreed] = useState(false);
@@ -115,9 +116,30 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
     }
   };
 
+  const handleDocumentFileChange = (file: File | null) => {
+    if (!file) {
+      setDocumentFile(null);
+      setDocumentPreview(null);
+      return;
+    }
+    setDocumentFile(file);
+    if (file.size < 6 * 1024 * 1024) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setDocumentPreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleRemovePaymentProof = () => {
     setPaymentProofFile(null);
     setPaymentProofPreview(null);
+  };
+
+  const handleRemoveDocument = () => {
+    setDocumentFile(null);
+    setDocumentPreview(null);
   };
 
   useEffect(() => {
@@ -209,7 +231,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
       const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} WIB`;
 
       let finalPaymentProofUrl = paymentProofPreview || undefined;
-      let finalDocUrl: string | undefined = undefined;
+      let finalDocUrl: string | undefined = documentPreview || undefined;
 
       // 1. Upload Bukti Pembayaran ke Supabase Storage jika ada file
       if (paymentProofFile) {
@@ -250,7 +272,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
         province: province.trim(),
         competitionId: selectedCompId,
         competitionTitle: matchedComp ? matchedComp.title : 'Perlombaan HSN 2026',
-        documentName: documentFile ? documentFile.name : 'surat_keterangan_mandat.pdf',
+        documentName: documentFile ? documentFile.name : undefined,
         documentUrl: finalDocUrl,
         paymentProofName: paymentProofFile ? paymentProofFile.name : undefined,
         paymentProofUrl: finalPaymentProofUrl,
@@ -1095,7 +1117,7 @@ MWC NU Kecamatan Poncokusumo, Kabupaten Malang, Jawa Timur.
                         accept=".pdf,.png,.jpg,.jpeg"
                         onChange={(e) => {
                           if (e.target.files && e.target.files[0]) {
-                            setDocumentFile(e.target.files[0]);
+                            handleDocumentFileChange(e.target.files[0]);
                           }
                         }}
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"

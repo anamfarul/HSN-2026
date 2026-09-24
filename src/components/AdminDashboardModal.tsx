@@ -225,6 +225,29 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [showPrintModal, setShowPrintModal] = useState(false);
 
+  // Modal Preview Lampiran Berkas (Khusus Super Admin & Divisi Registrasi & Verifikasi)
+  const [previewAttachment, setPreviewAttachment] = useState<{
+    type: 'document' | 'payment';
+    title: string;
+    fileName?: string;
+    fileUrl?: string;
+    participant: ParticipantRegistration;
+  } | null>(null);
+
+  const handleOpenAttachment = (attachment: {
+    type: 'document' | 'payment';
+    title: string;
+    fileName?: string;
+    fileUrl?: string;
+    participant: ParticipantRegistration;
+  }) => {
+    if (!canVerifyParticipants) {
+      alert('Akses Terkunci: Lampiran bukti pendukung dan bukti bayar hanya dapat dibuka oleh Divisi Regristrasi & Verifikasi dan Super Admin.');
+      return;
+    }
+    setPreviewAttachment(attachment);
+  };
+
   // Super Admin Delete Participant State
   const [participantToDelete, setParticipantToDelete] = useState<ParticipantRegistration | null>(null);
   const [isDeletingParticipant, setIsDeletingParticipant] = useState(false);
@@ -904,12 +927,21 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
               )}
 
               {/* Banner Pemberitahuan jika Akun Selain Super Admin & Divisi Regristrasi & Verifikator */}
-              {!canVerifyParticipants && (
+              {!canVerifyParticipants ? (
                 <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2.5 shadow-sm">
                   <Lock className="w-4 h-4 text-amber-400 shrink-0" />
                   <span>
-                    <strong>Menu Aksi & Kelola Dinonaktifkan:</strong> Sesuai ketentuan, verifikasi peserta hanya dapat dilakukan oleh <strong>Super Admin</strong> dan <strong>Divisi Regristrasi & Verifikator</strong>. Akun Anda ({adminRole}) berada dalam mode lihat saja.
+                    <strong>Akses Terbatas (Mode Lihat Saja):</strong> Sesuai ketentuan, verifikasi peserta serta pembukaan <strong>Lampiran Bukti Pendukung</strong> dan <strong>Bukti Bayar</strong> hanya dapat dibuka oleh <strong>Super Admin</strong> dan <strong>Divisi Regristrasi & Verifikator</strong>. Berkas lampiran untuk akun Anda ({adminRole}) ditampilkan dalam status terkunci.
                   </span>
+                </div>
+              ) : (
+                <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center justify-between gap-2 shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>
+                      <strong>Otoritas Akses Aktif:</strong> Anda login sebagai <strong>{adminRole}</strong>. Anda memiliki wewenang penuh untuk membuka & memvalidasi berkas lampiran (Surat Mandat & Bukti Bayar) serta mengubah status verifikasi peserta.
+                    </span>
+                  </div>
                 </div>
               )}
 
@@ -923,6 +955,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                       <th className="p-3">Kategori</th>
                       <th className="p-3">Cabang Lomba</th>
                       <th className="p-3">Kontak WA</th>
+                      <th className="p-3">Lampiran Berkas</th>
                       <th className="p-3">Status</th>
                       <th className="p-3 text-right">
                         {canVerifyParticipants 
@@ -934,7 +967,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   <tbody className="divide-y divide-white/5">
                     {filteredParticipants.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="p-8 text-center text-white/50 italic">
+                        <td colSpan={8} className="p-8 text-center text-white/50 italic">
                           Tidak ada data peserta terdaftar yang sesuai dengan filter pencarian.
                         </td>
                       </tr>
@@ -955,18 +988,6 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                                 📍 {[p.address, p.district ? `Kec. ${p.district}` : '', p.regency, p.province].filter(Boolean).join(', ')}
                               </div>
                             )}
-                            {p.paymentProofName ? (
-                              <div className="mt-1 inline-flex items-center gap-1 text-[10px] text-emerald-300 bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/30">
-                                <Receipt className="w-3 h-3 text-emerald-400 shrink-0" />
-                                <span className="truncate max-w-[130px]" title={p.paymentProofName}>
-                                  Bukti: {p.paymentProofName}
-                                </span>
-                              </div>
-                            ) : (
-                              <div className="mt-1 inline-flex items-center gap-1 text-[10px] text-white/40 bg-white/5 px-1.5 py-0.5 rounded border border-white/10">
-                                <span>Tanpa Bukti Bayar</span>
-                              </div>
-                            )}
                           </td>
                           <td className="p-3 whitespace-nowrap">
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#00D9F5]/10 text-[#00D9F5] border border-[#00D9F5]/30">
@@ -975,6 +996,90 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                           </td>
                           <td className="p-3 text-white/90">{p.competitionTitle}</td>
                           <td className="p-3 font-mono">{p.whatsapp}</td>
+
+                          {/* KOLOM KHUSUS: LAMPIRAN BUKTI PENDUKUNG & BUKTI BAYAR */}
+                          <td className="p-3 whitespace-nowrap">
+                            <div className="flex flex-col gap-1.5 min-w-[155px]">
+                              {/* 1. BUKTI PENDUKUNG (SURAT MANDAT / SANTRI) */}
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-white/50 w-13 shrink-0">
+                                  Mandat:
+                                </span>
+                                {p.documentUrl || p.documentName ? (
+                                  canVerifyParticipants ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenAttachment({
+                                        type: 'document',
+                                        title: 'Surat Mandat / Keterangan Santri',
+                                        fileName: p.documentName || 'surat_mandat_santri',
+                                        fileUrl: p.documentUrl,
+                                        participant: p
+                                      })}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#00D9F5]/15 hover:bg-[#00D9F5]/30 text-[#00D9F5] border border-[#00D9F5]/40 transition-all shadow-sm active:scale-95 group"
+                                      title="Buka & verifikasi surat mandat (Khusus Verifikator & Super Admin)"
+                                    >
+                                      <FileText className="w-3 h-3 text-[#00D9F5] shrink-0" />
+                                      <span className="truncate max-w-[85px]">
+                                        {p.documentName || 'Surat Mandat'}
+                                      </span>
+                                      <Eye className="w-2.5 h-2.5 opacity-70 group-hover:opacity-100 shrink-0" />
+                                    </button>
+                                  ) : (
+                                    <span 
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-white/5 text-white/40 border border-white/10 select-none cursor-not-allowed"
+                                      title="Terkunci: Lampiran surat mandat hanya dapat dibuka oleh Divisi Regristrasi & Verifikasi dan Super Admin"
+                                    >
+                                      <Lock className="w-3 h-3 text-amber-400/80 shrink-0" />
+                                      <span>Terkunci</span>
+                                    </span>
+                                  )
+                                ) : (
+                                  <span className="text-[10px] text-white/30 italic">Tidak ada</span>
+                                )}
+                              </div>
+
+                              {/* 2. BUKTI PEMBAYARAN / TRANSFER BRI */}
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-white/50 w-13 shrink-0">
+                                  Bayar:
+                                </span>
+                                {p.paymentProofUrl || p.paymentProofName ? (
+                                  canVerifyParticipants ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenAttachment({
+                                        type: 'payment',
+                                        title: 'Bukti Pembayaran / Transfer BRI',
+                                        fileName: p.paymentProofName || 'bukti_transfer',
+                                        fileUrl: p.paymentProofUrl,
+                                        participant: p
+                                      })}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition-all shadow-sm active:scale-95 group"
+                                      title="Buka & verifikasi bukti bayar (Khusus Verifikator & Super Admin)"
+                                    >
+                                      <Receipt className="w-3 h-3 text-emerald-400 shrink-0" />
+                                      <span className="truncate max-w-[85px]">
+                                        {p.paymentProofName || 'Bukti Bayar'}
+                                      </span>
+                                      <Eye className="w-2.5 h-2.5 opacity-70 group-hover:opacity-100 shrink-0" />
+                                    </button>
+                                  ) : (
+                                    <span 
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-white/5 text-white/40 border border-white/10 select-none cursor-not-allowed"
+                                      title="Terkunci: Bukti pembayaran hanya dapat dibuka oleh Divisi Regristrasi & Verifikasi dan Super Admin"
+                                    >
+                                      <Lock className="w-3 h-3 text-amber-400/80 shrink-0" />
+                                      <span>Terkunci</span>
+                                    </span>
+                                  )
+                                ) : (
+                                  <span className="text-[10px] text-white/30 italic">Belum ada</span>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+
                           <td className="p-3 whitespace-nowrap">
                             <span
                               className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
@@ -3445,6 +3550,246 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>{isDeletingParticipant ? 'Menghapus...' : 'Hapus Permanen'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUB-MODAL: Preview Lampiran (Surat Mandat / Bukti Bayar) - Khusus Divisi Registrasi & Verifikasi dan Super Admin */}
+      {previewAttachment && (
+        <div className="fixed inset-0 z-80 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-2xl max-h-[92vh] overflow-y-auto rounded-3xl bg-[#020e19] border border-[#00D9F5]/40 p-6 sm:p-8 shadow-2xl space-y-5">
+            {/* Tombol Tutup */}
+            <button
+              onClick={() => setPreviewAttachment(null)}
+              className="absolute top-5 right-5 text-white/60 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-all"
+              title="Tutup Modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Badge Otoritas Akses */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Akses Khusus: {adminRole}</span>
+              </span>
+              <span className="font-mono text-xs font-bold text-[#F2C96D] px-2.5 py-1 rounded-lg bg-[#D9B45B]/15 border border-[#D9B45B]/30">
+                {previewAttachment.participant.registrationNumber}
+              </span>
+              <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                previewAttachment.participant.status === 'Terverifikasi'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  : previewAttachment.participant.status === 'Menunggu'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                  : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+              }`}>
+                Status: {previewAttachment.participant.status}
+              </span>
+            </div>
+
+            {/* Header Lampiran */}
+            <div className="flex items-start gap-3">
+              <div className={`p-3 rounded-2xl ${
+                previewAttachment.type === 'document'
+                  ? 'bg-[#00D9F5]/20 text-[#00D9F5] border border-[#00D9F5]/40'
+                  : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+              } shrink-0`}>
+                {previewAttachment.type === 'document' ? (
+                  <FileText className="w-6 h-6" />
+                ) : (
+                  <Receipt className="w-6 h-6" />
+                )}
+              </div>
+              <div>
+                <h3 className="font-heading text-lg font-bold text-white">
+                  {previewAttachment.title}
+                </h3>
+                <p className="text-xs text-[#DDE7E8]/80 font-medium mt-0.5">
+                  Peserta: <strong className="text-white">{previewAttachment.participant.fullName}</strong> • {previewAttachment.participant.institution}
+                </p>
+                <p className="text-[11px] text-[#00D9F5] mt-0.5">
+                  Cabang Lomba: {previewAttachment.participant.competitionTitle} ({previewAttachment.participant.category})
+                </p>
+              </div>
+            </div>
+
+            {/* Meta Card Berkas */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-3.5 rounded-2xl bg-white/5 border border-white/10 text-xs">
+              <div>
+                <span className="text-white/50 text-[10px] uppercase font-bold block">Nama Berkas:</span>
+                <span className="text-white font-mono font-semibold break-all">
+                  {previewAttachment.fileName || 'Berkas Lampiran'}
+                </span>
+              </div>
+              <div>
+                <span className="text-white/50 text-[10px] uppercase font-bold block">Kontak WhatsApp Peserta:</span>
+                <a
+                  href={`https://wa.me/${previewAttachment.participant.whatsapp.replace(/[^0-9]/g, '')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-emerald-300 hover:text-emerald-200 font-mono font-semibold inline-flex items-center gap-1 mt-0.5"
+                >
+                  <span>{previewAttachment.participant.whatsapp}</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            </div>
+
+            {/* Media Preview Box */}
+            <div className="space-y-3">
+              {previewAttachment.fileUrl ? (
+                <>
+                  {/* Cek apakah URL adalah gambar atau data URL */}
+                  {(previewAttachment.fileUrl.startsWith('data:image') ||
+                    previewAttachment.fileUrl.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i) ||
+                    previewAttachment.type === 'payment') ? (
+                    <div className="relative rounded-2xl bg-black/60 border border-white/10 p-2 overflow-hidden flex flex-col items-center justify-center min-h-[260px] max-h-[460px]">
+                      <img
+                        src={previewAttachment.fileUrl}
+                        alt={previewAttachment.title}
+                        className="max-h-[420px] max-w-full object-contain rounded-xl shadow-2xl"
+                      />
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl bg-white/5 border border-white/10 p-5 text-center space-y-3">
+                      <FileText className="w-12 h-12 text-[#00D9F5] mx-auto opacity-80" />
+                      <div>
+                        <p className="text-sm font-bold text-white">
+                          {previewAttachment.fileName || 'Dokumen PDF / Berkas Pendukung'}
+                        </p>
+                        <p className="text-xs text-white/60 mt-1">
+                          Berkas dokumen siap dibuka atau diunduh untuk verifikasi data.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Actions for File */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <span className="text-[11px] text-white/50">
+                      Tautan file terverifikasi di sistem panitia.
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <a
+                        href={previewAttachment.fileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1.5 transition-all"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Buka di Tab Baru</span>
+                      </a>
+                      <a
+                        href={previewAttachment.fileUrl}
+                        download={previewAttachment.fileName || 'lampiran_peserta'}
+                        className="px-3.5 py-2 rounded-xl bg-[#006B4F]/40 hover:bg-[#006B4F]/70 text-[#F2C96D] border border-[#008F72] text-xs font-bold flex items-center gap-1.5 transition-all"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Unduh Berkas</span>
+                      </a>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs space-y-3">
+                  <div className="flex items-start gap-2.5 text-amber-300">
+                    <AlertTriangle className="w-5 h-5 shrink-0 text-amber-400 mt-0.5" />
+                    <div className="space-y-1 leading-relaxed">
+                      <p className="font-bold">
+                        Berkas Tercatat di Pendaftaran: {previewAttachment.fileName || 'Nama berkas tidak spesifik'}
+                      </p>
+                      <p className="text-amber-200/90 text-[11px]">
+                        Tautan file langsung tidak tersedia (peserta mendaftar saat mode offline atau sebelum storage cloud aktif). Divisi Verifikasi dapat langsung meminta konfirmasi berkas melalui WhatsApp peserta dengan tombol di bawah ini.
+                      </p>
+                    </div>
+                  </div>
+                  <a
+                    href={`https://wa.me/${previewAttachment.participant.whatsapp.replace(/[^0-9]/g, '')}?text=Assalamualaikum%20Wr%20Wb%20${encodeURIComponent(previewAttachment.participant.fullName)},%20kami%20dari%20Divisi%20Registrasi%20%26%20Verifikasi%20HSN%202026%20Kecamatan%20Poncokusumo.%20Mohon%20kirimkan%20ulang%20lampiran%20${encodeURIComponent(previewAttachment.title)}%20untuk%20verifikasi%20No%20Reg%20${previewAttachment.participant.registrationNumber}.%20Terima%20kasih.`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition-all shadow-sm"
+                  >
+                    <span>Hubungi Peserta via WhatsApp untuk Verifikasi Berkas</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              )}
+            </div>
+
+            {/* Tindakan Verifikasi Langsung oleh Divisi Verifikasi / Super Admin */}
+            <div className="pt-3 border-t border-white/10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-white/70 font-semibold mr-1">Tindakan Verifikasi:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateParticipantStatus(previewAttachment.participant.id, 'Terverifikasi');
+                    setPreviewAttachment({
+                      ...previewAttachment,
+                      participant: { ...previewAttachment.participant, status: 'Terverifikasi' }
+                    });
+                    setFeedbackToast(`Status peserta "${previewAttachment.participant.fullName}" berhasil diubah menjadi TERVERIFIKASI.`);
+                    setTimeout(() => setFeedbackToast(''), 4000);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                    previewAttachment.participant.status === 'Terverifikasi'
+                      ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
+                      : 'bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 border border-emerald-500/30'
+                  }`}
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Setujui</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateParticipantStatus(previewAttachment.participant.id, 'Menunggu');
+                    setPreviewAttachment({
+                      ...previewAttachment,
+                      participant: { ...previewAttachment.participant, status: 'Menunggu' }
+                    });
+                    setFeedbackToast(`Status peserta "${previewAttachment.participant.fullName}" diset menjadi MENUNGGU.`);
+                    setTimeout(() => setFeedbackToast(''), 4000);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                    previewAttachment.participant.status === 'Menunggu'
+                      ? 'bg-amber-500 text-[#031525] shadow-lg shadow-amber-500/30 font-extrabold'
+                      : 'bg-amber-500/20 hover:bg-amber-500/40 text-amber-300 border border-amber-500/30'
+                  }`}
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>Menunggu</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateParticipantStatus(previewAttachment.participant.id, 'Ditolak');
+                    setPreviewAttachment({
+                      ...previewAttachment,
+                      participant: { ...previewAttachment.participant, status: 'Ditolak' }
+                    });
+                    setFeedbackToast(`Status peserta "${previewAttachment.participant.fullName}" diset menjadi DITOLAK.`);
+                    setTimeout(() => setFeedbackToast(''), 4000);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                    previewAttachment.participant.status === 'Ditolak'
+                      ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/30'
+                      : 'bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 border border-rose-500/30'
+                  }`}
+                >
+                  <XCircle className="w-3.5 h-3.5" />
+                  <span>Tolak</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setPreviewAttachment(null)}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold text-white transition-all self-end sm:self-auto"
+              >
+                Tutup
               </button>
             </div>
           </div>
