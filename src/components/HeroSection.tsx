@@ -3,7 +3,6 @@ import {
   Calendar, 
   MapPin, 
   ArrowRight, 
-  FileText, 
   Sparkles, 
   Trophy,
   ChevronDown,
@@ -316,15 +315,6 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
               <span>LIHAT CABANG LOMBA</span>
             </button>
 
-            <button
-              id="hero-mobile-cta-proposal"
-              onClick={onOpenDownload}
-              className="w-full sm:w-auto px-4 py-2.5 rounded-xl font-heading font-semibold text-xs tracking-wider uppercase text-[#DDE7E8] bg-[#031525]/80 border border-white/20 flex items-center justify-center gap-1.5"
-            >
-              <FileText className="w-3.5 h-3.5 text-[#D9B45B]" />
-              <span>PROPOSAL</span>
-            </button>
-
             {onOpenUploadWork && (
               <button
                 id="hero-mobile-cta-aploud-karya"
@@ -349,15 +339,6 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
           
           {/* LEFT COLUMN: Headings, Theme, 5-Pilar Process, CTAs (Col 1 to 7) */}
           <div className="lg:col-span-7 flex flex-col items-start text-left z-10 pr-4">
-            
-            {/* Top Organization Badge */}
-            <div className="inline-flex items-center gap-2.5 px-4 py-2 rounded-full bg-gradient-to-r from-[#006B4F]/40 via-[#031525]/80 to-[#008F72]/30 border border-[#00D9F5]/40 shadow-lg shadow-[#00D9F5]/15 mb-6 backdrop-blur-md">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#00D9F5] shadow-[0_0_10px_#00D9F5] animate-ping" />
-              <span className="text-xs font-bold tracking-widest uppercase text-[#00D9F5]">
-                MWC NU KECAMATAN PONCOKUSUMO MEMPERSEMBAHKAN
-              </span>
-              <span className="text-[#F2C96D] text-xs">✦</span>
-            </div>
 
             {/* Main Headline */}
             <h1 className="font-heading font-black tracking-tight text-5xl xl:text-6xl 2xl:text-7xl leading-[1.05] uppercase text-transparent bg-clip-text bg-gradient-to-b from-white via-[#E6F4F1] to-[#99E3D8] drop-shadow-[0_4px_30px_rgba(0,107,79,0.7)] mb-3">
@@ -456,16 +437,6 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
               >
                 <Trophy className="w-4 h-4 text-[#F2C96D]" />
                 <span>CABANG LOMBA</span>
-              </button>
-
-              {/* TERTIARY CTA: DOWNLOAD PROPOSAL */}
-              <button
-                id="hero-desktop-cta-proposal"
-                onClick={onOpenDownload}
-                className="px-5 py-4 rounded-xl font-heading font-semibold text-xs xl:text-sm tracking-wider uppercase text-[#DDE7E8] hover:text-[#F2C96D] bg-[#031525]/70 hover:bg-[#031525] border border-white/20 hover:border-[#D9B45B]/60 backdrop-blur-md transition-all duration-300 flex items-center gap-2"
-              >
-                <FileText className="w-4 h-4 text-[#D9B45B]" />
-                <span>PROPOSAL</span>
               </button>
 
               {/* QUATERNARY CTA: APLOUD KARYA (Bagi peserta yang sudah mendaftar) */}
