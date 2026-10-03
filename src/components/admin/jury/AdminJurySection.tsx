@@ -106,9 +106,12 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
   const [editingJudge, setEditingJudge] = useState<Partial<UserProfile> | null>(null);
   const [editingJudgeCompIds, setEditingJudgeCompIds] = useState<string[]>([]);
 
-  // Subtab 3: Assignments State
+  // Subtab 3: Assignments State & Filters
   const [assignCompId, setAssignCompId] = useState<string>(competitions[0]?.id || '');
   const [assignJuryId, setAssignJuryId] = useState<string>('');
+  const [assignFilterCompId, setAssignFilterCompId] = useState<string>('ALL');
+  const [assignSearch, setAssignSearch] = useState<string>('');
+  const [assignViewMode, setAssignViewMode] = useState<'cards' | 'by_judge' | 'matrix'>('cards');
 
   // Subtab 4: Criteria State
   const [criteriaList, setCriteriaList] = useState<ScoringCriterion[]>([]);
@@ -242,7 +245,7 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
         });
         if (!alreadyAssigned) {
           const compObj = competitions.find((c) => c.id === compId);
-          await assignJuryToCompetition(savedJuryId, compId, currentAdminName, compObj?.title);
+          await assignJuryToCompetition(savedJuryId, compId, currentAdminName, compObj?.title, compObj?.category);
         }
       }
 
@@ -259,31 +262,59 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
     setIsJudgeModalOpen(false);
     setEditingJudge(null);
     setEditingJudgeCompIds([]);
-    loadAllData();
+    await loadAllData();
   };
 
-  // Subtab 3 Handlers: Add Assignment
-  const handleAddAssignment = async () => {
-    if (!assignJuryId || !assignCompId) return;
-    const targetComp = competitions.find((c) => c.id === assignCompId);
+  // Subtab 3 Handlers: Add & Remove Assignment
+  const handleAddAssignment = async (overrideCompId?: string, overrideJuryId?: string) => {
+    const cId = overrideCompId || assignCompId;
+    const jId = overrideJuryId || assignJuryId;
+    if (!jId || !cId) return;
+    const targetComp = competitions.find((c) => c.id === cId) || resolveCompetition(competitions, cId);
     const res = await assignJuryToCompetition(
-      assignJuryId,
-      assignCompId,
+      jId,
+      targetComp ? targetComp.id : cId,
       currentAdminName,
-      targetComp?.title
+      targetComp?.title,
+      targetComp?.category
     );
     if (!res.success) {
       alert(res.message);
       return;
     }
-    setAssignJuryId('');
-    loadAllData();
+    if (!overrideJuryId) setAssignJuryId('');
+    await loadAllData();
   };
 
   const handleRemoveAssignment = async (id: string) => {
     if (!confirm('Yakin ingin membatalkan penugasan dewan juri ini?')) return;
     await removeJuryAssignment(id, currentAdminName);
-    loadAllData();
+    await loadAllData();
+  };
+
+  const handleToggleAssignment = async (juryId: string, compId: string) => {
+    const targetComp = competitions.find((c) => c.id === compId) || resolveCompetition(competitions, compId);
+    const effectiveCompId = targetComp ? targetComp.id : compId;
+
+    const existing = assignments.find((a) => {
+      if (a.juryId !== juryId || !a.isActive) return false;
+      if (a.competitionId === effectiveCompId) return true;
+      const res = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+      return res?.id === effectiveCompId;
+    });
+
+    if (existing) {
+      await removeJuryAssignment(existing.id, currentAdminName);
+    } else {
+      await assignJuryToCompetition(
+        juryId,
+        effectiveCompId,
+        currentAdminName,
+        targetComp?.title,
+        targetComp?.category
+      );
+    }
+    await loadAllData();
   };
 
   // Subtab 4 Handlers: Criteria
@@ -882,134 +913,512 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
       {/* ============================================================================== */}
       {/* SUBTAB 3: PENUGASAN JURI (ASSIGNMENTS) */}
       {/* ============================================================================== */}
-      {subTab === 'assignments' && (
-        <div className="space-y-6">
-          {/* Assignment Creation Form */}
-          <div className="rounded-3xl bg-[#020e19] border border-white/10 p-6 space-y-4">
-            <h4 className="text-sm font-bold text-white flex items-center gap-2">
-              <ClipboardList className="w-4 h-4 text-[#F2C96D]" />
-              <span>Tugaskan Dewan Juri ke Cabang Perlombaan</span>
-            </h4>
+      {subTab === 'assignments' && (() => {
+        // Find which juries are already assigned to assignCompId
+        const targetSelectedComp = competitions.find((c) => c.id === assignCompId) || resolveCompetition(competitions, assignCompId);
+        const effectiveAssignCompId = targetSelectedComp ? targetSelectedComp.id : assignCompId;
+        const alreadyAssignedToCurrentForm = assignments
+          .filter((a) => {
+            if (!a.isActive) return false;
+            if (a.competitionId === effectiveAssignCompId) return true;
+            const r = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+            return r?.id === effectiveAssignCompId;
+          })
+          .map((a) => a.juryId);
 
-            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-              <div className="sm:col-span-5">
-                <label className="block text-xs font-semibold text-white/70 mb-1">
-                  Pilih Cabang Lomba:
-                </label>
-                <select
-                  value={assignCompId}
-                  onChange={(e) => setAssignCompId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#031525] border border-white/15 text-xs text-white focus:border-[#00D9F5] outline-none"
-                >
-                  {competitions.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      [{c.category}] {c.title}
-                    </option>
-                  ))}
-                </select>
+        // Filter competitions for list
+        const filteredCompetitions = competitions.filter((comp) => {
+          if (assignFilterCompId === 'NEED_JURY') {
+            const cAss = assignments.filter((a) => {
+              if (!a.isActive) return false;
+              if (a.competitionId === comp.id) return true;
+              const r = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+              return r?.id === comp.id;
+            });
+            if (cAss.length >= 3) return false;
+          } else if (assignFilterCompId !== 'ALL' && comp.id !== assignFilterCompId) {
+            return false;
+          }
+
+          if (assignSearch.trim()) {
+            const q = assignSearch.toLowerCase();
+            const matchComp = comp.title.toLowerCase().includes(q) || comp.category.toLowerCase().includes(q);
+            const compAss = assignments.filter((a) => {
+              if (!a.isActive) return false;
+              if (a.competitionId === comp.id) return true;
+              const r = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+              return r?.id === comp.id;
+            });
+            const matchJury = compAss.some((a) => {
+              const j = juries.find((jur) => jur.id === a.juryId);
+              return (j?.fullName || a.juryName || '').toLowerCase().includes(q) ||
+                (j?.institution || a.juryInstitution || '').toLowerCase().includes(q);
+            });
+            if (!matchComp && !matchJury) return false;
+          }
+          return true;
+        });
+
+        // Filter juries for by_judge view
+        const filteredJuriesForView = juries.filter((j) => {
+          if (!assignSearch.trim()) return true;
+          const q = assignSearch.toLowerCase();
+          const matchJury = j.fullName.toLowerCase().includes(q) || (j.institution || '').toLowerCase().includes(q);
+          const myAss = assignments.filter((a) => a.juryId === j.id && a.isActive);
+          const matchComp = myAss.some((a) => {
+            const c = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+            return (c?.title || a.competitionTitle || '').toLowerCase().includes(q);
+          });
+          return matchJury || matchComp;
+        });
+
+        return (
+          <div className="space-y-6">
+            {/* Top Form: Tugaskan Dewan Juri ke Cabang Perlombaan */}
+            <div className="rounded-3xl bg-[#020e19] border border-white/10 p-6 space-y-4 shadow-xl">
+              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <ClipboardList className="w-4 h-4 text-[#F2C96D]" />
+                  <span>Tugaskan Dewan Juri ke Cabang Perlombaan</span>
+                </h4>
+                <span className="text-xs text-white/50 hidden sm:inline">
+                  Tersedia <strong className="text-[#00D9F5]">{competitions.length} Cabang</strong> &{' '}
+                  <strong className="text-[#F2C96D]">{juries.filter((j) => j.isActive).length} Juri Aktif</strong>
+                </span>
               </div>
 
-              <div className="sm:col-span-5">
-                <label className="block text-xs font-semibold text-white/70 mb-1">
-                  Pilih Dewan Juri:
-                </label>
-                <select
-                  value={assignJuryId}
-                  onChange={(e) => setAssignJuryId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#031525] border border-white/15 text-xs text-white focus:border-[#00D9F5] outline-none"
-                >
-                  <option value="">-- Pilih Juri --</option>
-                  {juries
-                    .filter((j) => j.isActive)
-                    .map((j) => (
-                      <option key={j.id} value={j.id}>
-                        {j.fullName} ({j.institution || 'MWC NU'})
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                <div className="sm:col-span-5">
+                  <label className="block text-xs font-semibold text-white/70 mb-1">
+                    Pilih Cabang Lomba:
+                  </label>
+                  <select
+                    value={assignCompId}
+                    onChange={(e) => setAssignCompId(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#031525] border border-white/15 text-xs text-white focus:border-[#00D9F5] outline-none"
+                  >
+                    {competitions.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        [{c.category}] {c.title}
                       </option>
                     ))}
-                </select>
+                  </select>
+                </div>
+
+                <div className="sm:col-span-5">
+                  <label className="block text-xs font-semibold text-white/70 mb-1">
+                    Pilih Dewan Juri:
+                  </label>
+                  <select
+                    value={assignJuryId}
+                    onChange={(e) => setAssignJuryId(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#031525] border border-white/15 text-xs text-white focus:border-[#00D9F5] outline-none"
+                  >
+                    <option value="">-- Pilih Dewan Juri --</option>
+                    {juries
+                      .filter((j) => j.isActive)
+                      .map((j) => {
+                        const isAlreadyAssigned = alreadyAssignedToCurrentForm.includes(j.id);
+                        return (
+                          <option key={j.id} value={j.id} disabled={isAlreadyAssigned}>
+                            {isAlreadyAssigned ? `✓ ${j.fullName} (Sudah Ditugaskan)` : `${j.fullName} (${j.institution || 'MWC NU'})`}
+                          </option>
+                        );
+                      })}
+                  </select>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <button
+                    type="button"
+                    onClick={() => handleAddAssignment()}
+                    disabled={!assignJuryId || alreadyAssignedToCurrentForm.includes(assignJuryId)}
+                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs uppercase tracking-wider shadow-md active:scale-95 transition-all"
+                  >
+                    Tugaskan
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Toolbar: Filter & View Switcher */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
+                {/* Cabang Lomba Filter */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <label className="text-xs font-bold text-white/70 shrink-0">Filter Lomba:</label>
+                  <select
+                    value={assignFilterCompId}
+                    onChange={(e) => setAssignFilterCompId(e.target.value)}
+                    className="px-3 py-2 rounded-xl bg-[#020e19] border border-white/15 text-xs text-white focus:border-[#00D9F5] outline-none max-w-[260px] truncate"
+                  >
+                    <option value="ALL">Semua Cabang Lomba ({competitions.length})</option>
+                    <option value="NEED_JURY">Perlu Juri Tambahan (&lt; 3 Juri)</option>
+                    {competitions.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        [{c.category}] {c.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Search */}
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="w-4 h-4 text-white/40 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Cari dewan juri atau cabang lomba..."
+                    value={assignSearch}
+                    onChange={(e) => setAssignSearch(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 rounded-xl bg-[#020e19] border border-white/15 text-xs text-white focus:outline-none focus:border-[#00D9F5]"
+                  />
+                </div>
               </div>
 
-              <div className="sm:col-span-2">
+              {/* View Mode Toggle */}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center p-1 rounded-xl bg-[#020e19] border border-white/10 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setAssignViewMode('cards')}
+                    className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                      assignViewMode === 'cards'
+                        ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-white shadow'
+                        : 'text-white/60 hover:text-white'
+                    }`}
+                  >
+                    Per Cabang Lomba
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAssignViewMode('by_judge')}
+                    className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                      assignViewMode === 'by_judge'
+                        ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-white shadow'
+                        : 'text-white/60 hover:text-white'
+                    }`}
+                  >
+                    Per Dewan Juri
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAssignViewMode('matrix')}
+                    className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                      assignViewMode === 'matrix'
+                        ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-white shadow'
+                        : 'text-white/60 hover:text-white'
+                    }`}
+                  >
+                    Matriks Penugasan
+                  </button>
+                </div>
+
                 <button
                   type="button"
-                  onClick={handleAddAssignment}
-                  disabled={!assignJuryId}
-                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] disabled:opacity-50 text-white font-bold text-xs uppercase tracking-wider shadow-md active:scale-95"
+                  onClick={loadAllData}
+                  className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs"
+                  title="Segarkan Penugasan"
                 >
-                  Tugaskan
+                  <RefreshCw className="w-4 h-4" />
                 </button>
               </div>
             </div>
-          </div>
 
-          {/* List per Competition with < 3 Judges Warning */}
-          <div className="space-y-4">
-            {competitions.map((comp) => {
-              const compAssigns = assignments.filter((a) => a.competitionId === comp.id && a.isActive);
-              const compParticipantsCount = participants.filter(
-                (p) =>
-                  p.competitionId === comp.id ||
-                  p.competitionTitle?.toLowerCase() === comp.title.toLowerCase()
-              ).length;
+            {/* VIEW MODE 1: CARDS PER CABANG LOMBA */}
+            {assignViewMode === 'cards' && (
+              <div className="space-y-4">
+                {filteredCompetitions.map((comp) => {
+                  const compAssigns = assignments.filter((a) => {
+                    if (!a.isActive) return false;
+                    if (a.competitionId === comp.id) return true;
+                    const res = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+                    return res?.id === comp.id;
+                  });
 
-              return (
-                <div
-                  key={comp.id}
-                  className="rounded-3xl bg-[#020e19] border border-white/10 p-5 space-y-3 shadow-lg"
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-white/5">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#006B4F] text-white">
-                          {comp.category}
-                        </span>
-                        <h4 className="text-sm font-bold text-white">{comp.title}</h4>
-                      </div>
-                      <span className="text-xs text-white/50 block mt-0.5">
-                        Peserta terdaftar: <strong className="text-[#F2C96D]">{compParticipantsCount} santri</strong>
-                      </span>
-                    </div>
+                  const compParticipantsCount = participants.filter(
+                    (p) =>
+                      p.competitionId === comp.id ||
+                      p.competitionTitle?.toLowerCase() === comp.title.toLowerCase()
+                  ).length;
 
-                    {/* Warning if less than 3 judges */}
-                    {compAssigns.length < 3 && (
-                      <div className="p-2 px-3 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[11px] flex items-center gap-1.5 shrink-0">
-                        <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                        <span>Disarankan minimal 3 juri (saat ini {compAssigns.length})</span>
-                      </div>
-                    )}
-                  </div>
+                  // Juries who are available to be added to this comp
+                  const assignedJuryIds = compAssigns.map((a) => a.juryId);
+                  const availableJuries = juries.filter(
+                    (j) => j.isActive && !assignedJuryIds.includes(j.id)
+                  );
 
-                  {/* Judges Badges */}
-                  <div className="flex flex-wrap gap-2">
-                    {compAssigns.length === 0 ? (
-                      <span className="text-xs text-white/40 italic">
-                        Belum ada dewan juri yang ditugaskan pada lomba ini.
-                      </span>
-                    ) : (
-                      compAssigns.map((a) => (
-                        <div
-                          key={a.id}
-                          className="pl-3 pr-2 py-1.5 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2 text-xs text-white"
-                        >
-                          <span>{a.juryName || a.juryId}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveAssignment(a.id)}
-                            className="p-1 rounded-md hover:bg-rose-500/20 text-rose-300"
-                            title="Hapus Penugasan Juri"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
+                  return (
+                    <div
+                      key={comp.id}
+                      className="rounded-3xl bg-[#020e19] border border-white/10 p-5 space-y-3.5 shadow-lg transition-all"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-white/5">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-[#006B4F] text-white">
+                              {comp.category}
+                            </span>
+                            <h4 className="text-sm font-extrabold text-white">{comp.title}</h4>
+                            <span className="text-[10px] text-white/40 font-mono">({comp.code || comp.id})</span>
+                          </div>
+                          <span className="text-xs text-white/50 block mt-0.5">
+                            Sasaran: <strong className="text-white/80">{comp.targetAudience || 'Santri'}</strong> •{' '}
+                            Peserta terdaftar: <strong className="text-[#F2C96D]">{compParticipantsCount} santri</strong> •{' '}
+                            Dewan juri bertugas: <strong className="text-[#00D9F5]">{compAssigns.length} orang</strong>
+                          </span>
                         </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+
+                        {/* Status Quorum Badge */}
+                        <div className="flex items-center gap-2 shrink-0">
+                          {compAssigns.length < 3 ? (
+                            <div className="p-2 px-3 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[11px] flex items-center gap-1.5">
+                              <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              <span>Disarankan minimal 3 juri (saat ini {compAssigns.length})</span>
+                            </div>
+                          ) : (
+                            <div className="p-2 px-3 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-[11px] flex items-center gap-1.5">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                              <span>Kuorum Terpenuhi ({compAssigns.length} juri)</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Assigned Judges List */}
+                      <div className="space-y-2">
+                        {compAssigns.length === 0 ? (
+                          <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-dashed border-white/10 text-center text-xs text-white/40">
+                            Belum ada dewan juri yang ditugaskan pada cabang lomba ini.
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                            {compAssigns.map((a) => {
+                              const judgeObj = juries.find((j) => j.id === a.juryId);
+                              const juryFullName = judgeObj?.fullName || a.juryName || a.juryId;
+                              const juryInst = judgeObj?.institution || a.juryInstitution;
+
+                              return (
+                                <div
+                                  key={a.id}
+                                  className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 flex items-center justify-between gap-2 text-xs transition-all shadow-sm"
+                                >
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#006B4F] to-[#00D9F5]/40 flex items-center justify-center font-bold text-white text-[11px] shrink-0 shadow">
+                                      {juryFullName.substring(0, 2).toUpperCase()}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="font-bold text-white truncate">{juryFullName}</div>
+                                      <div className="text-[10px] text-white/50 truncate">
+                                        {juryInst || 'MWC NU Poncokusumo'}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveAssignment(a.id)}
+                                    className="p-1.5 rounded-lg hover:bg-rose-500/20 text-rose-300 transition-colors shrink-0"
+                                    title="Batalkan Penugasan Juri"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Inline Quick Add Jury to this Competition */}
+                      {availableJuries.length > 0 && (
+                        <div className="pt-2 flex items-center gap-2">
+                          <span className="text-[11px] text-white/50 font-semibold shrink-0">Tugaskan Juri Tambahan:</span>
+                          <select
+                            defaultValue=""
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                handleAddAssignment(comp.id, e.target.value);
+                                e.target.value = '';
+                              }
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-[#031525] border border-white/15 text-xs text-white focus:border-[#00D9F5] outline-none max-w-xs"
+                          >
+                            <option value="" disabled>+ Pilih Juri Tersedia...</option>
+                            {availableJuries.map((j) => (
+                              <option key={j.id} value={j.id}>
+                                {j.fullName} ({j.institution || 'MWC NU'})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* VIEW MODE 2: PER DEWAN JURI (Identical to Kelola Juri) */}
+            {assignViewMode === 'by_judge' && (
+              <div className="rounded-3xl bg-[#020e19] border border-white/10 overflow-hidden shadow-xl">
+                <table className="w-full text-left text-xs text-[#DDE7E8]">
+                  <thead className="bg-white/5 text-white/70 uppercase text-[10px] tracking-wider border-b border-white/10">
+                    <tr>
+                      <th className="p-3.5">Nama Dewan Juri</th>
+                      <th className="p-3.5">Lembaga / Instansi</th>
+                      <th className="p-3.5">Cabang Lomba Ditugaskan</th>
+                      <th className="p-3.5 text-center">Total Lomba</th>
+                      <th className="p-3.5 text-right">Aksi Cepat</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {filteredJuriesForView.map((j) => {
+                      const myAssigns = assignments.filter((a) => a.juryId === j.id && a.isActive);
+
+                      return (
+                        <tr key={j.id} className="hover:bg-white/[0.02]">
+                          <td className="p-3.5">
+                            <div className="font-bold text-white">{j.fullName}</div>
+                            <span className="text-[10px] text-white/40 font-mono">ID: {j.id}</span>
+                          </td>
+                          <td className="p-3.5 text-white/80">{j.institution || '-'}</td>
+                          <td className="p-3.5">
+                            <div className="flex flex-wrap gap-1.5">
+                              {myAssigns.length > 0 ? (
+                                myAssigns.map((a) => {
+                                  const compObj = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+                                  return (
+                                    <span
+                                      key={a.id}
+                                      className="px-2.5 py-1 rounded-full text-[10px] bg-[#006B4F]/30 border border-emerald-500/40 text-emerald-300 font-semibold flex items-center gap-1.5"
+                                    >
+                                      <span>{compObj ? `[${compObj.category}] ${compObj.title}` : a.competitionTitle || a.competitionId}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveAssignment(a.id)}
+                                        className="hover:text-rose-400 transition-colors"
+                                        title="Hapus penugasan cabang ini"
+                                      >
+                                        <X className="w-3 h-3" />
+                                      </button>
+                                    </span>
+                                  );
+                                })
+                              ) : (
+                                <span className="text-white/30 text-[11px] italic">Belum ditugaskan</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-3.5 text-center font-mono font-bold text-white">
+                            <span className="px-2.5 py-0.5 rounded-full bg-white/10 text-white">
+                              {myAssigns.length}
+                            </span>
+                          </td>
+                          <td className="p-3.5 text-right">
+                            <select
+                              defaultValue=""
+                              onChange={(e) => {
+                                if (e.target.value) {
+                                  handleAddAssignment(e.target.value, j.id);
+                                  e.target.value = '';
+                                }
+                              }}
+                              className="px-2.5 py-1.5 rounded-xl bg-[#031525] border border-white/15 text-[11px] text-white focus:border-[#00D9F5] outline-none"
+                            >
+                              <option value="" disabled>+ Tugaskan Lomba...</option>
+                              {competitions
+                                .filter((comp) => !myAssigns.some((a) => {
+                                  if (a.competitionId === comp.id) return true;
+                                  const r = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+                                  return r?.id === comp.id;
+                                }))
+                                .map((c) => (
+                                  <option key={c.id} value={c.id}>
+                                    [{c.category}] {c.title}
+                                  </option>
+                                ))}
+                            </select>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* VIEW MODE 3: MATRIKS PENUGASAN (Interactive Juri x Lomba Grid) */}
+            {assignViewMode === 'matrix' && (
+              <div className="rounded-3xl bg-[#020e19] border border-white/10 overflow-x-auto shadow-xl">
+                <table className="w-full text-left text-xs text-[#DDE7E8]">
+                  <thead className="bg-white/5 text-white/70 uppercase text-[10px] tracking-wider border-b border-white/10">
+                    <tr>
+                      <th className="p-3.5 sticky left-0 bg-[#020e19] z-10">Dewan Juri</th>
+                      {competitions.map((comp) => (
+                        <th key={comp.id} className="p-3.5 text-center min-w-[140px]">
+                          <span className="text-[#00D9F5] font-black block">[{comp.category}]</span>
+                          <span className="truncate block max-w-[130px] font-bold text-white" title={comp.title}>
+                            {comp.title}
+                          </span>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {juries
+                      .filter((j) => j.isActive)
+                      .map((j) => {
+                        const myAssigns = assignments.filter((a) => a.juryId === j.id && a.isActive);
+
+                        return (
+                          <tr key={j.id} className="hover:bg-white/[0.02]">
+                            <td className="p-3.5 sticky left-0 bg-[#020e19] z-10 border-r border-white/5">
+                              <div className="font-bold text-white">{j.fullName}</div>
+                              <span className="text-[10px] text-white/50">{j.institution || 'MWC NU'}</span>
+                            </td>
+                            {competitions.map((comp) => {
+                              const isAssigned = myAssigns.some((a) => {
+                                if (a.competitionId === comp.id) return true;
+                                const r = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+                                return r?.id === comp.id;
+                              });
+
+                              return (
+                                <td key={comp.id} className="p-3 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleAssignment(j.id, comp.id)}
+                                    className={`px-3 py-1.5 rounded-xl font-bold text-[11px] transition-all flex items-center justify-center gap-1 mx-auto ${
+                                      isAssigned
+                                        ? 'bg-emerald-500/20 hover:bg-rose-500/20 text-emerald-300 hover:text-rose-300 border border-emerald-500/40 hover:border-rose-500/40'
+                                        : 'bg-white/5 hover:bg-[#006B4F]/30 text-white/40 hover:text-emerald-300 border border-white/10 hover:border-emerald-500/30'
+                                    }`}
+                                    title={isAssigned ? 'Klik untuk membatalkan penugasan' : 'Klik untuk menugaskan juri ini'}
+                                  >
+                                    {isAssigned ? (
+                                      <>
+                                        <Check className="w-3.5 h-3.5" />
+                                        <span>Bertugas</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Plus className="w-3.5 h-3.5" />
+                                        <span>Tugaskan</span>
+                                      </>
+                                    )}
+                                  </button>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ============================================================================== */}
       {/* SUBTAB 4: KRITERIA & BOBOT PENILAIAN */}

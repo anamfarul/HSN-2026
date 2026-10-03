@@ -31,19 +31,32 @@ const STORAGE_AUDIT = 'hsn2026_jury_audit_logs_list';
 // 0. COMPETITION ID NORMALIZATION & RESOLVER HELPER
 // ==============================================================================
 export const COMPETITION_ID_ALIASES: Record<string, string> = {
-  'lomba-poster-santri': 'comp-3',
-  'comp-poster-digital': 'comp-3',
-  'poster-digital': 'comp-3',
+  'lomba-dolanan-santri': 'comp-1',
+  'permainan-tradisional': 'comp-1',
   'lomba-video-santri': 'comp-2',
   'comp-video-kreatif': 'comp-2',
   'video-kreatif': 'comp-2',
+  'lomba-poster-santri': 'comp-3',
+  'comp-poster-digital': 'comp-3',
+  'poster-digital': 'comp-3',
+  'santri-cup': 'comp-4',
+  'sepak-bola': 'comp-4',
   'lomba-orasi-santri': 'comp-5',
   'orasi-santri': 'comp-5',
-  'lomba-tahfidz-anak': 'comp-10',
-  'tahfidz': 'comp-10',
-  'lomba-hadrah-banjari': 'comp-11',
-  'hadrah': 'comp-11',
-  'lomba-dolanan-santri': 'comp-1',
+  'public-speaking': 'comp-5',
+  'podcast-santri': 'comp-6',
+  'content-podcast': 'comp-6',
+  'women-creativepreneur': 'comp-7',
+  'fatayat-umkm': 'comp-7',
+  'outbound-muslimat': 'comp-8',
+  'inovasi-muslimat': 'comp-8',
+  'silat-santri': 'comp-9',
+  'pagar-nusa': 'comp-9',
+  'media-pembelajaran': 'comp-10',
+  'lomba-guru': 'comp-10',
+  'baris-berbaris': 'comp-11',
+  'pbb-banser': 'comp-11',
+  'banser-ansor': 'comp-11',
 };
 
 export function normalizeCompId(id?: string): string {
@@ -80,19 +93,19 @@ export function resolveCompetition(
     if (matched) return matched;
   }
 
-  // 4. Substring / keyword match
+  // 4. Substring / keyword match for all 11 competitions
   const searchStr = `${competitionId || ''} ${competitionTitle || ''}`.toLowerCase();
-  if (searchStr.includes('poster')) return competitionsList.find((c) => c.id === 'comp-3' || c.title.toLowerCase().includes('poster'));
-  if (searchStr.includes('video')) return competitionsList.find((c) => c.id === 'comp-2' || c.title.toLowerCase().includes('video'));
-  if (searchStr.includes('orasi') || searchStr.includes('speaking')) return competitionsList.find((c) => c.id === 'comp-5' || c.title.toLowerCase().includes('orasi'));
-  if (searchStr.includes('tahfidz') || searchStr.includes('tartil')) return competitionsList.find((c) => c.id === 'comp-10' || c.title.toLowerCase().includes('tahfidz'));
-  if (searchStr.includes('hadrah') || searchStr.includes('banjari') || searchStr.includes('sholawat')) return competitionsList.find((c) => c.id === 'comp-11' || c.title.toLowerCase().includes('hadrah'));
   if (searchStr.includes('tradisional') || searchStr.includes('dolanan')) return competitionsList.find((c) => c.id === 'comp-1' || c.title.toLowerCase().includes('tradisional'));
+  if (searchStr.includes('video')) return competitionsList.find((c) => c.id === 'comp-2' || c.title.toLowerCase().includes('video'));
+  if (searchStr.includes('poster')) return competitionsList.find((c) => c.id === 'comp-3' || c.title.toLowerCase().includes('poster'));
   if (searchStr.includes('bola') || searchStr.includes('santri cup')) return competitionsList.find((c) => c.id === 'comp-4' || c.title.toLowerCase().includes('bola'));
-  if (searchStr.includes('podcast') || searchStr.includes('ipnu')) return competitionsList.find((c) => c.id === 'comp-6' || c.title.toLowerCase().includes('podcast'));
+  if (searchStr.includes('orasi') || searchStr.includes('speaking')) return competitionsList.find((c) => c.id === 'comp-5' || c.title.toLowerCase().includes('orasi') || c.title.toLowerCase().includes('speaking'));
+  if (searchStr.includes('podcast') || searchStr.includes('siniar') || searchStr.includes('ipnu')) return competitionsList.find((c) => c.id === 'comp-6' || c.title.toLowerCase().includes('podcast'));
   if (searchStr.includes('women') || searchStr.includes('fatayat') || searchStr.includes('creativepreneur')) return competitionsList.find((c) => c.id === 'comp-7' || c.title.toLowerCase().includes('creativepreneur'));
-  if (searchStr.includes('outbound') || searchStr.includes('muslimat')) return competitionsList.find((c) => c.id === 'comp-8' || c.title.toLowerCase().includes('outbound'));
-  if (searchStr.includes('silat') || searchStr.includes('pagar nusa')) return competitionsList.find((c) => c.id === 'comp-9' || c.title.toLowerCase().includes('silat'));
+  if (searchStr.includes('outbound') || searchStr.includes('muslimat') || searchStr.includes('ketahanan pangan')) return competitionsList.find((c) => c.id === 'comp-8' || c.title.toLowerCase().includes('outbound') || c.title.toLowerCase().includes('muslimat'));
+  if (searchStr.includes('silat') || searchStr.includes('pagar nusa') || searchStr.includes('pendekar')) return competitionsList.find((c) => c.id === 'comp-9' || c.title.toLowerCase().includes('silat'));
+  if (searchStr.includes('media pembelajaran') || searchStr.includes('guru') || searchStr.includes('asatidz')) return competitionsList.find((c) => c.id === 'comp-10' || c.title.toLowerCase().includes('guru') || c.title.toLowerCase().includes('media'));
+  if (searchStr.includes('banser') || searchStr.includes('ansor') || searchStr.includes('baris') || searchStr.includes('pbb')) return competitionsList.find((c) => c.id === 'comp-11' || c.title.toLowerCase().includes('banser') || c.title.toLowerCase().includes('ansor') || c.title.toLowerCase().includes('baris'));
 
   return undefined;
 }
@@ -364,6 +377,23 @@ export async function toggleJuryStatus(
   return true;
 }
 
+export function getAvailableCompetitions(): Competition[] {
+  try {
+    const raw = typeof window !== 'undefined'
+      ? (localStorage.getItem('hsn2026_custom_competitions_v1') || localStorage.getItem('hsn2026_custom_competitions'))
+      : null;
+    const custom = raw ? JSON.parse(raw) : [];
+    const combined = [...custom, ...COMPETITIONS.filter((c) => !custom.some((cust: any) => cust.id === c.id))];
+    const rawDeleted = typeof window !== 'undefined'
+      ? (localStorage.getItem('hsn2026_deleted_competitions_v1') || localStorage.getItem('hsn2026_deleted_competitions'))
+      : null;
+    const deleted = rawDeleted ? JSON.parse(rawDeleted) : [];
+    return combined.filter((c) => !deleted.includes(c.id));
+  } catch {
+    return COMPETITIONS;
+  }
+}
+
 // ==============================================================================
 // 5. JURY ASSIGNMENTS SERVICE
 // ==============================================================================
@@ -408,18 +438,33 @@ export async function getJuryAssignments(): Promise<JuryAssignment[]> {
     rawList = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, INITIAL_JURY_ASSIGNMENTS);
   }
 
+  // Ensure default assignments cover all initial competitions if local storage had only legacy subset
+  const missingInitial = INITIAL_JURY_ASSIGNMENTS.filter(
+    (initA) => !rawList.some((r) => r.juryId === initA.juryId && (r.competitionId === initA.competitionId || r.competitionTitle === initA.competitionTitle))
+  );
+  if (missingInitial.length > 0 && rawList.length < INITIAL_JURY_ASSIGNMENTS.length) {
+    rawList = [...rawList, ...missingInitial];
+  }
+
+  const allComps = getAvailableCompetitions();
+  const juries = getLocal<UserProfile[]>(STORAGE_PROFILES, INITIAL_JURY_PROFILES);
+
   // Self-heal and normalize legacy competition IDs in assignments
   const normalizedList = rawList.map((a) => {
-    const comp = resolveCompetition(COMPETITIONS, a.competitionId, a.competitionTitle);
+    const comp = resolveCompetition(allComps, a.competitionId, a.competitionTitle);
+    const jury = juries.find((j) => j.id === a.juryId);
     return {
       ...a,
       competitionId: comp ? comp.id : normalizeCompId(a.competitionId),
       competitionTitle: comp ? comp.title : (a.competitionTitle || a.competitionId),
-      competitionCategory: comp ? comp.category : a.competitionCategory,
+      competitionCategory: comp ? comp.category : (a.competitionCategory || comp?.category),
+      juryName: jury?.fullName || a.juryName,
+      juryEmail: jury?.email || a.juryEmail,
+      juryInstitution: jury?.institution || a.juryInstitution,
     };
   });
 
-  // Re-save normalized version if there were legacy IDs
+  // Re-save normalized version if there were legacy IDs or additions
   if (JSON.stringify(normalizedList) !== JSON.stringify(rawList)) {
     setLocal(STORAGE_ASSIGNMENTS, normalizedList);
   }
@@ -431,10 +476,22 @@ export async function assignJuryToCompetition(
   juryId: string,
   competitionId: string,
   adminName: string = 'Admin',
-  competitionTitle?: string
+  competitionTitle?: string,
+  competitionCategory?: string
 ): Promise<{ success: boolean; message?: string }> {
   const current = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, INITIAL_JURY_ASSIGNMENTS);
-  const exists = current.some((a) => a.juryId === juryId && a.competitionId === competitionId && a.isActive);
+  const allComps = getAvailableCompetitions();
+  const targetComp = resolveCompetition(allComps, competitionId, competitionTitle);
+  const effectiveCompId = targetComp ? targetComp.id : normalizeCompId(competitionId);
+  const effectiveCompTitle = targetComp ? targetComp.title : (competitionTitle || competitionId);
+  const effectiveCompCat = targetComp ? targetComp.category : (competitionCategory || undefined);
+
+  const exists = current.some((a) => {
+    if (a.juryId !== juryId || !a.isActive) return false;
+    if (a.competitionId === effectiveCompId) return true;
+    const res = resolveCompetition(allComps, a.competitionId, a.competitionTitle);
+    return res?.id === effectiveCompId;
+  });
 
   if (exists) {
     return { success: false, message: 'Juri ini telah ditugaskan pada cabang lomba tersebut.' };
@@ -446,12 +503,13 @@ export async function assignJuryToCompetition(
   const newAssignment: JuryAssignment = {
     id: `assign-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     juryId,
-    competitionId,
+    competitionId: effectiveCompId,
     isActive: true,
     juryName: matchedJury?.fullName,
     juryEmail: matchedJury?.email,
     juryInstitution: matchedJury?.institution,
-    competitionTitle,
+    competitionTitle: effectiveCompTitle,
+    competitionCategory: effectiveCompCat,
     createdAt: new Date().toISOString(),
   };
 
