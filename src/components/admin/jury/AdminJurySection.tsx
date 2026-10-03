@@ -5,6 +5,9 @@ import {
   Users, 
   User,
   LogIn,
+  Key,
+  Copy,
+  EyeOff,
   ClipboardList, 
   BarChart3, 
   CheckCircle2, 
@@ -131,6 +134,8 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
   }, [adminRole, currentAdminName, isSuperAdmin]);
 
   const canDeleteJuryItems = isSuperAdmin || isSekretariatAdmin || (currentAdminName?.toLowerCase() === 'admin');
+  const canManageJuryCredentials = canDeleteJuryItems;
+
   // Sub-tab Navigation
   const [subTab, setSubTab] = useState<
     'dashboard' | 'judges' | 'assignments' | 'criteria' | 'monitoring' | 'recap' | 'winners' | 'audit'
@@ -153,6 +158,52 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
   const [isJudgeModalOpen, setIsJudgeModalOpen] = useState(false);
   const [editingJudge, setEditingJudge] = useState<Partial<UserProfile> | null>(null);
   const [editingJudgeCompIds, setEditingJudgeCompIds] = useState<string[]>([]);
+  const [revealedPasswords, setRevealedPasswords] = useState<Record<string, boolean>>({});
+  const [isModalPasswordVisible, setIsModalPasswordVisible] = useState(false);
+
+  // Toggle tampilan sandi per juri
+  const togglePasswordVisibility = (juryId: string) => {
+    setRevealedPasswords((prev) => ({
+      ...prev,
+      [juryId]: !prev[juryId],
+    }));
+  };
+
+  // Salin kredensial lengkap juri untuk dikirim via WA / SMS
+  const handleCopyCredentials = (jury: UserProfile) => {
+    const username = jury.username || (jury.email.includes('@') ? jury.email.split('@')[0] : jury.email);
+    const password = jury.password || 'santri2026';
+    const portalUrl = typeof window !== 'undefined' ? `${window.location.origin}/juri` : '/juri';
+
+    const textToCopy = `*AKUN RESMI PORTAL PENILAIAN JURI HSN 2026*
+Nama Dewan Juri: ${jury.fullName}
+Lembaga: ${jury.institution || '-'}
+Portal Penilaian: ${portalUrl}
+Username / ID Login: ${username}
+Email Akun: ${jury.email}
+Password: ${password}
+---------------------------------
+Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di atas untuk menilai karya peserta.`;
+
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(textToCopy).then(() => {
+        setFeedbackToast({
+          message: `Kredensial login ${jury.fullName} berhasil disalin ke clipboard!`,
+          type: 'success',
+        });
+      }).catch(() => {
+        setFeedbackToast({
+          message: `User: ${username} | Pass: ${password}`,
+          type: 'info',
+        });
+      });
+    } else {
+      setFeedbackToast({
+        message: `User: ${username} | Pass: ${password}`,
+        type: 'info',
+      });
+    }
+  };
 
   // Subtab 3: Assignments State & Filters
   const [assignCompId, setAssignCompId] = useState<string>(competitions[0]?.id || '');
@@ -336,6 +387,8 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
         id: editingJudge.id,
         fullName: editingJudge.fullName,
         email: editingJudge.email,
+        username: editingJudge.username,
+        password: editingJudge.password,
         phone: editingJudge.phone,
         institution: editingJudge.institution,
         isActive: editingJudge.isActive ?? true,
@@ -950,20 +1003,20 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
         <div className="space-y-4">
           {/* Authorization Info Banner */}
           <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-white/[0.02] border border-white/10 text-xs">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {canDeleteJuryItems ? (
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Otoritas Hapus Juri: Aktif ({adminRole})</span>
+                  <span>Otoritas Kredensial & Hapus Juri: Aktif ({adminRole})</span>
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
                   <Lock className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Akses Hapus Terbatas (Khusus Super Admin & Divisi Sekretariat & Administrasi)</span>
+                  <span>Akses Terbatas (Khusus Super Admin & Divisi Sekretariat & Administrasi)</span>
                 </span>
               )}
-              <span className="text-white/60 text-[11px]">
-                Wewenang hapus akun dewan juri aktif untuk Super Admin dan Divisi Sekretariat & Administrasi.
+              <span className="text-white/70 text-[11px]">
+                Akses kredensial login (Username & Password) serta wewenang kelola akun dewan juri aktif untuk <strong>Super Admin</strong> dan <strong>Divisi Sekretariat & Administrasi</strong> (termasuk variasi ejaan Divisi Sekretarian & Administrasi).
               </span>
             </div>
           </div>
@@ -974,7 +1027,7 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                 <Search className="w-4 h-4 text-white/40 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Cari nama, email, atau lembaga juri..."
+                  placeholder="Cari nama, username, email, atau lembaga juri..."
                   value={judgeSearch}
                   onChange={(e) => setJudgeSearch(e.target.value)}
                   className="w-full pl-9 pr-4 py-2 rounded-xl bg-[#020e19] border border-white/15 text-xs text-white focus:outline-none focus:border-[#00D9F5]"
@@ -1006,11 +1059,14 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                 setEditingJudge({
                   fullName: '',
                   email: '',
+                  username: '',
+                  password: 'santri2026',
                   phone: '',
                   institution: 'MWC NU Poncokusumo',
                   isActive: true,
                 });
                 setEditingJudgeCompIds([]);
+                setIsModalPasswordVisible(false);
                 setIsJudgeModalOpen(true);
               }}
               className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] text-white font-bold text-xs flex items-center gap-1.5 shadow-md active:scale-95 w-fit shrink-0"
@@ -1026,6 +1082,14 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
               <thead className="bg-white/5 text-white/70 uppercase text-[10px] tracking-wider border-b border-white/10">
                 <tr>
                   <th className="p-3.5">Nama Dewan Juri</th>
+                  {canManageJuryCredentials && (
+                    <th className="p-3.5">
+                      <div className="flex items-center gap-1.5 text-emerald-400">
+                        <Key className="w-3.5 h-3.5 text-[#F2C96D]" />
+                        <span>Username & Password Login</span>
+                      </div>
+                    </th>
+                  )}
                   <th className="p-3.5">Email & Kontak</th>
                   <th className="p-3.5">Lembaga / Instansi</th>
                   <th className="p-3.5">Penugasan Lomba ({competitions.length} Cabang)</th>
@@ -1068,6 +1132,74 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                           <div className="font-bold text-white">{j.fullName}</div>
                           <span className="text-[10px] text-white/40 font-mono">ID: {j.id}</span>
                         </td>
+                        {canManageJuryCredentials && (
+                          <td className="p-3.5 whitespace-nowrap">
+                            <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-1.5 min-w-[230px]">
+                              {/* Username */}
+                              <div className="flex items-center justify-between gap-2 text-[11px]">
+                                <span className="text-white/50 text-[10px] font-bold uppercase tracking-wider">Username:</span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono text-emerald-300 font-bold selection:bg-emerald-500/30">
+                                    {j.username || (j.email.includes('@') ? j.email.split('@')[0] : j.email)}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const u = j.username || (j.email.includes('@') ? j.email.split('@')[0] : j.email);
+                                      navigator.clipboard?.writeText(u);
+                                      setFeedbackToast({ message: `Username "${u}" disalin!`, type: 'success' });
+                                    }}
+                                    className="p-1 rounded hover:bg-white/10 text-white/50 hover:text-white transition-colors"
+                                    title="Salin Username"
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Password */}
+                              <div className="flex items-center justify-between gap-2 text-[11px] pt-1.5 border-t border-white/5">
+                                <span className="text-white/50 text-[10px] font-bold uppercase tracking-wider">Password:</span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono text-[#F2C96D] font-bold">
+                                    {revealedPasswords[j.id] ? (j.password || 'santri2026') : '••••••••'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => togglePasswordVisibility(j.id)}
+                                    className="p-1 rounded hover:bg-white/10 text-white/50 hover:text-white transition-colors"
+                                    title={revealedPasswords[j.id] ? 'Sembunyikan Password' : 'Lihat Password'}
+                                  >
+                                    {revealedPasswords[j.id] ? <EyeOff className="w-3 h-3 text-[#F2C96D]" /> : <Eye className="w-3 h-3" />}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const p = j.password || 'santri2026';
+                                      navigator.clipboard?.writeText(p);
+                                      setFeedbackToast({ message: 'Password juri disalin!', type: 'success' });
+                                    }}
+                                    className="p-1 rounded hover:bg-white/10 text-white/50 hover:text-white transition-colors"
+                                    title="Salin Password"
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Tombol Salin Seluruh Akun */}
+                              <button
+                                type="button"
+                                onClick={() => handleCopyCredentials(j)}
+                                className="w-full mt-1 px-2.5 py-1 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 hover:text-emerald-100 text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all border border-emerald-500/25 active:scale-95 cursor-pointer shadow-sm"
+                                title="Salin Lengkap Username, Password & Tautan Portal untuk Dikirimkan ke Dewan Juri"
+                              >
+                                <Copy className="w-2.5 h-2.5" />
+                                <span>Salin Akun Login Juri</span>
+                              </button>
+                            </div>
+                          </td>
+                        )}
                         <td className="p-3.5">
                           <div className="font-mono text-white/80">{j.email}</div>
                           <div className="text-[11px] text-[#00D9F5]">{j.phone || '-'}</div>
@@ -1130,7 +1262,11 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                           <button
                             type="button"
                             onClick={() => {
-                              setEditingJudge(j);
+                              setEditingJudge({
+                                ...j,
+                                username: j.username || (j.email.includes('@') ? j.email.split('@')[0] : j.email),
+                                password: j.password || 'santri2026',
+                              });
                               const myActiveCompIds = Array.from(new Set(
                                 assignments
                                   .filter((a) => a.juryId === j.id && a.isActive)
@@ -1141,6 +1277,7 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                                   .filter((id): id is string => id !== null)
                               ));
                               setEditingJudgeCompIds(myActiveCompIds);
+                              setIsModalPasswordVisible(false);
                               setIsJudgeModalOpen(true);
                             }}
                             className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-white/70 hover:text-white"
@@ -1235,11 +1372,75 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                       type="email"
                       required
                       value={editingJudge.email || ''}
-                      onChange={(e) => setEditingJudge({ ...editingJudge, email: e.target.value })}
+                      onChange={(e) => {
+                        const newEmail = e.target.value;
+                        const prevEmail = editingJudge.email || '';
+                        const currentUsername = editingJudge.username || '';
+                        // Auto-fill username if empty or matching previous email prefix
+                        const nextUsername = (!currentUsername || currentUsername === prevEmail.split('@')[0])
+                          ? (newEmail.includes('@') ? newEmail.split('@')[0] : newEmail)
+                          : currentUsername;
+                        setEditingJudge({ ...editingJudge, email: newEmail, username: nextUsername });
+                      }}
                       placeholder="juri.nama@hsnponcokusumo.nu"
                       className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/15 text-white focus:border-[#00D9F5] outline-none"
                     />
                   </div>
+
+                  {/* USERNAME & PASSWORD LOGIN KHUSUS SUPER ADMIN & DIVISI SEKRETARIAT & ADMINISTRASI */}
+                  {canManageJuryCredentials && (
+                    <div className="p-3.5 rounded-2xl bg-[#006B4F]/15 border border-emerald-500/35 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                          <Key className="w-3.5 h-3.5 text-[#F2C96D]" />
+                          <span>Kredensial Login Dewan Juri</span>
+                        </span>
+                        <span className="text-[10px] font-bold text-[#F2C96D] bg-[#F2C96D]/15 px-2 py-0.5 rounded-md border border-[#F2C96D]/30">
+                          Super Admin & Sekretariat
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-white/80 text-[11px] font-semibold mb-1">
+                            Username Login Juri
+                          </label>
+                          <input
+                            type="text"
+                            value={editingJudge.username || ''}
+                            onChange={(e) => setEditingJudge({ ...editingJudge, username: e.target.value })}
+                            placeholder="Contoh: juri.fauzan"
+                            className="w-full px-3 py-2 rounded-xl bg-[#020e19] border border-emerald-500/40 text-emerald-200 text-xs font-mono focus:border-[#00D9F5] outline-none"
+                          />
+                          <span className="text-[10px] text-white/40 block mt-0.5">Dapat digunakan login juri selain email</span>
+                        </div>
+
+                        <div>
+                          <label className="block text-white/80 text-[11px] font-semibold mb-1">
+                            Password Login Juri
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={isModalPasswordVisible ? 'text' : 'password'}
+                              value={editingJudge.password || ''}
+                              onChange={(e) => setEditingJudge({ ...editingJudge, password: e.target.value })}
+                              placeholder="Default: santri2026"
+                              className="w-full px-3 py-2 pr-9 rounded-xl bg-[#020e19] border border-emerald-500/40 text-[#F2C96D] text-xs font-mono focus:border-[#00D9F5] outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setIsModalPasswordVisible(!isModalPasswordVisible)}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/50 hover:text-white"
+                              title={isModalPasswordVisible ? 'Sembunyikan Sandi' : 'Tampilkan Sandi'}
+                            >
+                              {isModalPasswordVisible ? <EyeOff className="w-3.5 h-3.5 text-[#F2C96D]" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                          <span className="text-[10px] text-white/40 block mt-0.5">Default sandi juri: santri2026</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-white/70 font-semibold mb-1">Nomor WhatsApp</label>

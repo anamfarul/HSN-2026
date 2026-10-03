@@ -314,7 +314,13 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
     } catch {}
   }
   const localList = getLocal<UserProfile[]>(STORAGE_PROFILES, INITIAL_JURY_PROFILES);
-  return localList.filter((p) => !deletedIds.has(p.id));
+  return localList
+    .filter((p) => !deletedIds.has(p.id))
+    .map((p) => ({
+      ...p,
+      username: p.username || (p.email.includes('@') ? p.email.split('@')[0] : p.email),
+      password: p.password || 'santri2026',
+    }));
 }
 
 export async function saveJuryProfile(
@@ -325,14 +331,20 @@ export async function saveJuryProfile(
   const id = profile.id || `jury-${Date.now()}`;
   const now = new Date().toISOString();
 
+  const cleanEmail = profile.email.trim().toLowerCase();
+  const cleanUsername = profile.username?.trim().toLowerCase() || (cleanEmail.includes('@') ? cleanEmail.split('@')[0] : cleanEmail);
+  const cleanPassword = profile.password?.trim() || 'santri2026';
+
   const finalProfile: UserProfile = {
     id,
     fullName: profile.fullName.trim(),
-    email: profile.email.trim().toLowerCase(),
+    email: cleanEmail,
     role: 'jury',
     institution: profile.institution?.trim() || 'MWC NU Poncokusumo',
     phone: profile.phone?.trim() || '',
     isActive: profile.isActive ?? true,
+    username: cleanUsername,
+    password: cleanPassword,
     createdAt: profile.createdAt || now,
     updatedAt: now,
   };
