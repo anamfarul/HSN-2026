@@ -4,6 +4,7 @@ import {
   Trophy, 
   Users, 
   User,
+  LogIn,
   ClipboardList, 
   BarChart3, 
   CheckCircle2, 
@@ -82,6 +83,7 @@ interface AdminJurySectionProps {
   currentAdminName: string;
   isSuperAdmin: boolean;
   adminRole?: string;
+  onOpenJuryPortal?: (juryId?: string) => void;
 }
 
 export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
@@ -90,6 +92,7 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
   currentAdminName,
   isSuperAdmin,
   adminRole = 'Sekretariat Utama HSN 2026',
+  onOpenJuryPortal,
 }) => {
   // Wewenang Akses Hapus (Super Admin & Divisi Sekretariat & Administrasi / Divisi Sekretarian)
   const isSekretariatAdmin = useMemo(() => {
@@ -257,6 +260,27 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
   useEffect(() => {
     loadAllData();
   }, [competitions, participants]);
+
+  // Real-time synchronization listener (connected directly to Portal Penilaian Juri)
+  useEffect(() => {
+    const handleJuryUpdated = () => {
+      loadAllData();
+      if (selectedCompId) {
+        getScoringCriteria(selectedCompId).then(setCriteriaList);
+      }
+    };
+    const handleStorage = (e: StorageEvent) => {
+      if (!e.key || e.key.includes('hsn2026_jury')) {
+        handleJuryUpdated();
+      }
+    };
+    window.addEventListener('hsn2026_jury_data_updated', handleJuryUpdated);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('hsn2026_jury_data_updated', handleJuryUpdated);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [selectedCompId, competitions, participants]);
 
   // Load criteria when selectedCompId changes
   useEffect(() => {
@@ -704,6 +728,72 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* INTEGRASI LANGSUNG: CMS PENILAIAN JURI ⇄ PORTAL PENILAIAN JURI */}
+      <div className="rounded-3xl p-5 bg-gradient-to-r from-[#006B4F]/40 via-[#021c27] to-[#031525] border border-emerald-500/40 shadow-2xl relative overflow-hidden">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative z-10">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#006B4F] to-[#00D9F5] flex items-center justify-center text-[#F2C96D] shadow-xl shrink-0 border border-white/20">
+              <Award className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-black uppercase tracking-wider text-emerald-400">
+                  CMS PENILAIAN JURI TERHUBUNG KE PORTAL JURI
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  Live Sync Aktif
+                </span>
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-white/10 text-[#00D9F5] border border-[#00D9F5]/30">
+                  Route: /juri
+                </span>
+              </div>
+              <p className="text-xs text-[#DDE7E8]/85 mt-1 max-w-2xl leading-relaxed">
+                Manajemen akun juri, penugasan cabang lomba, dan rubrik kriteria terhubung langsung secara real-time. Setiap skor yang dikirim juri di <strong className="text-white">Portal Penilaian Juri</strong> otomatis terupdate di tab Monitoring & Rekapitulasi CMS.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 shrink-0 flex-wrap sm:flex-nowrap">
+            {/* Salin Tautan Portal */}
+            <button
+              type="button"
+              onClick={() => {
+                const url = typeof window !== 'undefined' ? `${window.location.origin}/juri` : '/juri';
+                navigator.clipboard?.writeText(url).then(() => {
+                  setFeedbackToast({
+                    message: `Tautan Portal Juri disalin: ${url}`,
+                    type: 'success',
+                  });
+                }).catch(() => {
+                  setFeedbackToast({
+                    message: 'Akses Portal Juri: /juri',
+                    type: 'info',
+                  });
+                });
+              }}
+              className="px-3.5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-white/90 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 active:scale-95 shadow-sm"
+              title="Salin Tautan Portal Juri untuk Diberikan kepada Dewan Juri"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-[#F2C96D]" />
+              <span className="hidden sm:inline">Salin Link Portal</span>
+              <span className="sm:hidden">Salin Link</span>
+            </button>
+
+            {/* Buka Portal Penilaian Juri */}
+            <button
+              type="button"
+              onClick={() => onOpenJuryPortal?.()}
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#D9B45B] via-[#F2C96D] to-[#00D9F5] text-[#031525] font-black text-xs uppercase tracking-wider shadow-xl hover:shadow-[#00D9F5]/30 hover:scale-105 active:scale-95 transition-all flex items-center gap-2 border border-white/30"
+              title="Buka Portal Penilaian Juri (/juri)"
+            >
+              <ExternalLink className="w-4 h-4 stroke-[2.5]" />
+              <span>Buka Portal Juri</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Sub-Tabs Navigation Bar */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-2 border-b border-white/10 text-xs">
         {[
@@ -1026,6 +1116,17 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                           </span>
                         </td>
                         <td className="p-3.5 text-right space-x-1.5 whitespace-nowrap">
+                          {/* Tombol Buka Portal Juri & Masuk Langsung sbg Juri Ini */}
+                          <button
+                            type="button"
+                            onClick={() => onOpenJuryPortal?.(j.id)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 hover:text-emerald-100 text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
+                            title={`Buka Portal Penilaian Juri dan Masuk Otomatis sebagai: ${j.fullName}`}
+                          >
+                            <LogIn className="w-3.5 h-3.5 text-[#F2C96D]" />
+                            <span className="hidden xl:inline">Masuk Portal Juri</span>
+                            <span className="xl:hidden">Portal</span>
+                          </button>
                           <button
                             type="button"
                             onClick={() => {
@@ -1260,6 +1361,20 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                       <div />
                     )}
                     <div className="flex items-center gap-2">
+                      {editingJudge.id && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsJudgeModalOpen(false);
+                            onOpenJuryPortal?.(editingJudge.id);
+                          }}
+                          className="px-3.5 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95"
+                          title="Buka Portal Penilaian Juri dan Masuk Otomatis sebagai Dewan Juri ini"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>Masuk Portal Juri</span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => setIsJudgeModalOpen(false)}
@@ -1635,31 +1750,41 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                                       </div>
                                     </div>
                                   </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (!canDeleteJuryItems) {
-                                        setFeedbackToast({
-                                          message: 'Akses Ditolak: Fitur hapus penugasan juri hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.',
-                                          type: 'error',
-                                        });
-                                        return;
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => onOpenJuryPortal?.(a.juryId)}
+                                      className="p-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 hover:text-emerald-100 transition-all shadow-sm active:scale-95 cursor-pointer"
+                                      title={`Buka & Uji Penilaian di Portal Juri sebagai: ${juryFullName}`}
+                                    >
+                                      <LogIn className="w-3.5 h-3.5 text-[#F2C96D]" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (!canDeleteJuryItems) {
+                                          setFeedbackToast({
+                                            message: 'Akses Ditolak: Fitur hapus penugasan juri hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.',
+                                            type: 'error',
+                                          });
+                                          return;
+                                        }
+                                        handleRemoveAssignment(a.id);
+                                      }}
+                                      className={`p-1.5 rounded-lg border transition-all shrink-0 ${
+                                        canDeleteJuryItems
+                                          ? 'bg-rose-500/15 hover:bg-rose-500/30 border-rose-500/40 text-rose-300 hover:text-rose-100 shadow-sm active:scale-95 cursor-pointer'
+                                          : 'bg-white/5 hover:bg-rose-500/10 border-white/10 text-white/30 hover:text-rose-300 cursor-pointer'
+                                      }`}
+                                      title={
+                                        canDeleteJuryItems
+                                          ? `Hapus penugasan ${juryFullName} (Wewenang Super Admin & Divisi Sekretariat & Administrasi)`
+                                          : 'Hapus penugasan khusus Super Admin & Divisi Sekretariat & Administrasi'
                                       }
-                                      handleRemoveAssignment(a.id);
-                                    }}
-                                    className={`p-1.5 rounded-lg border transition-all shrink-0 ${
-                                      canDeleteJuryItems
-                                        ? 'bg-rose-500/15 hover:bg-rose-500/30 border-rose-500/40 text-rose-300 hover:text-rose-100 shadow-sm active:scale-95 cursor-pointer'
-                                        : 'bg-white/5 hover:bg-rose-500/10 border-white/10 text-white/30 hover:text-rose-300 cursor-pointer'
-                                    }`}
-                                    title={
-                                      canDeleteJuryItems
-                                        ? `Hapus penugasan ${juryFullName} (Wewenang Super Admin & Divisi Sekretariat & Administrasi)`
-                                        : 'Hapus penugasan khusus Super Admin & Divisi Sekretariat & Administrasi'
-                                    }
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
                                 </div>
                               );
                             })}
@@ -2494,6 +2619,7 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                                 <th className="p-3 text-center">Terkunci</th>
                                 <th className="p-3 text-center">Progres Pengisian</th>
                                 <th className="p-3 text-center">Status</th>
+                                <th className="p-3 text-right">Aksi / Portal</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-white/5 bg-[#020e19]">
@@ -2561,6 +2687,17 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                                       >
                                         {percent === 100 ? 'Selesai 100%' : done > 0 ? 'Sedang Menilai' : 'Belum Mulai'}
                                       </span>
+                                    </td>
+                                    <td className="p-3 text-right whitespace-nowrap">
+                                      <button
+                                        type="button"
+                                        onClick={() => onOpenJuryPortal?.(a.juryId)}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 hover:text-emerald-100 text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
+                                        title={`Buka Portal Penilaian Juri sebagai: ${a.juryName || a.juryId}`}
+                                      >
+                                        <LogIn className="w-3 h-3 text-[#F2C96D]" />
+                                        <span>Portal Juri</span>
+                                      </button>
                                     </td>
                                   </tr>
                                 );
@@ -2663,7 +2800,16 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                                 </span>
                               </div>
                             </td>
-                            <td className="p-3.5 text-center">
+                            <td className="p-3.5 text-center whitespace-nowrap space-x-1.5">
+                              <button
+                                type="button"
+                                onClick={() => onOpenJuryPortal?.(a.juryId)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 hover:text-emerald-100 text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
+                                title={`Buka Portal Penilaian Juri sebagai: ${a.juryName || a.juryId}`}
+                              >
+                                <LogIn className="w-3 h-3 text-[#F2C96D]" />
+                                <span>Portal</span>
+                              </button>
                               {compObj && (
                                 <button
                                   type="button"

@@ -128,8 +128,20 @@ export function resolveCompetition(
 }
 
 // ==============================================================================
-// 1. LOCAL STORAGE HELPERS
+// 1. LOCAL STORAGE HELPERS & REAL-TIME EVENT DISPATCHER
 // ==============================================================================
+export function notifyJuryDataChanged(key?: string, data?: any): void {
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(
+        new CustomEvent('hsn2026_jury_data_updated', {
+          detail: { key, data, timestamp: Date.now() },
+        })
+      );
+    } catch {}
+  }
+}
+
 function getLocal<T>(key: string, defaultVal: T): T {
   try {
     const raw = localStorage.getItem(key);
@@ -143,6 +155,7 @@ function getLocal<T>(key: string, defaultVal: T): T {
 function setLocal<T>(key: string, val: T): void {
   try {
     localStorage.setItem(key, JSON.stringify(val));
+    notifyJuryDataChanged(key, val);
   } catch {}
 }
 

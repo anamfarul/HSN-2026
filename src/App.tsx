@@ -41,8 +41,10 @@ import {
 import { saveRegisteredAdminUsers, isUserDeleted } from './data/initialUsers';
 import { 
   syncJuryAssignmentsOnCompetitionUpdate, 
-  syncJuryAssignmentsOnCompetitionDelete 
+  syncJuryAssignmentsOnCompetitionDelete,
+  getJuryProfiles
 } from './lib/juryService';
+import { loginAsJuryDirectly } from './lib/juryAuthService';
 import { Sparkles, MessageCircle, Shield, UploadCloud } from 'lucide-react';
 
 const DELETED_COMPETITIONS_KEY = 'hsn2026_deleted_competitions_v1';
@@ -131,6 +133,7 @@ export default function App() {
   // Modal states
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
+  const [adminInitialTab, setAdminInitialTab] = useState<'participants' | 'competitions' | 'works' | 'jury_scoring' | 'documents' | 'stats' | 'users' | 'deployment' | 'supabase'>('participants');
   const [isWorkModalOpen, setIsWorkModalOpen] = useState(false);
   const [selectedRegNumberForWork, setSelectedRegNumberForWork] = useState<string | undefined>(undefined);
   
@@ -413,6 +416,11 @@ export default function App() {
     return (
       <JuryPortalView
         onBackToMain={handleCloseJury}
+        onOpenCMS={() => {
+          handleCloseJury();
+          setAdminInitialTab('jury_scoring');
+          setIsAdminModalOpen(true);
+        }}
         competitions={competitions}
         participants={participants}
       />
@@ -575,7 +583,21 @@ export default function App() {
       {/* Admin CMS Modal Dialog */}
       <AdminDashboardModal
         isOpen={isAdminModalOpen}
+        initialTab={adminInitialTab}
         onClose={() => setIsAdminModalOpen(false)}
+        onOpenJuryPortal={async (juryId) => {
+          if (juryId) {
+            try {
+              const allJuries = await getJuryProfiles();
+              const target = allJuries.find((j) => j.id === juryId);
+              if (target) {
+                loginAsJuryDirectly(target);
+              }
+            } catch {}
+          }
+          setIsAdminModalOpen(false);
+          handleOpenJury();
+        }}
         participants={participants}
         onUpdateParticipantStatus={handleUpdateParticipantStatus}
         onDeleteParticipant={handleDeleteParticipant}

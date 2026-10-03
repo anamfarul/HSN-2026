@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ShieldCheck, 
+  Shield,
   Lock, 
   LogIn, 
   LogOut, 
@@ -60,12 +61,14 @@ import {
 
 interface JuryPortalViewProps {
   onBackToMain: () => void;
+  onOpenCMS?: () => void;
   competitions: Competition[];
   participants: ParticipantRegistration[];
 }
 
 export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
   onBackToMain,
+  onOpenCMS,
   competitions,
   participants,
 }) => {
@@ -133,6 +136,29 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
       getScoringCriteria(selectedCompId).then(setCriteria);
     }
   }, [selectedCompId]);
+
+  // Real-time synchronization listener (connected directly to CMS Penilaian Juri)
+  useEffect(() => {
+    const handleJuryUpdated = () => {
+      if (session?.profile?.id) {
+        refreshJuryData(session.profile.id);
+      }
+      if (selectedCompId) {
+        getScoringCriteria(selectedCompId).then(setCriteria);
+      }
+    };
+    const handleStorage = (e: StorageEvent) => {
+      if (!e.key || e.key.includes('hsn2026_jury')) {
+        handleJuryUpdated();
+      }
+    };
+    window.addEventListener('hsn2026_jury_data_updated', handleJuryUpdated);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('hsn2026_jury_data_updated', handleJuryUpdated);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [session, selectedCompId]);
 
   // Handle Login
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -411,17 +437,30 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
         <div className="absolute bottom-10 left-1/4 w-96 h-96 bg-[#00D9F5]/15 rounded-full blur-[140px] pointer-events-none" />
 
         {/* Top Header */}
-        <div className="max-w-7xl mx-auto w-full flex items-center justify-between z-10 pt-2">
-          <button
-            onClick={onBackToMain}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold text-white transition-all shadow-sm"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Kembali ke Website Festival</span>
-          </button>
+        <div className="max-w-7xl mx-auto w-full flex items-center justify-between z-10 pt-2 gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onBackToMain}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold text-white transition-all shadow-sm"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Kembali ke Beranda</span>
+            </button>
+            {onOpenCMS && (
+              <button
+                onClick={onOpenCMS}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#006B4F]/60 to-[#008F72]/60 hover:from-[#006B4F] hover:to-[#008F72] border border-emerald-400/50 text-xs font-bold text-emerald-200 hover:text-white transition-all shadow-md active:scale-95"
+                title="Buka CMS Penilaian Juri Panitia (Kelola Juri, Kriteria, & Rekapitulasi)"
+              >
+                <Shield className="w-4 h-4 text-[#F2C96D]" />
+                <span className="hidden sm:inline">CMS Penilaian Juri</span>
+                <span className="sm:hidden">CMS</span>
+              </button>
+            )}
+          </div>
           <div className="flex items-center gap-2 text-xs text-[#F2C96D] font-bold">
             <ShieldCheck className="w-4 h-4" />
-            <span>PORTAL RESMI DEWAN JURI HSN 2026</span>
+            <span className="hidden sm:inline">PORTAL RESMI DEWAN JURI HSN 2026</span>
           </div>
         </div>
 
@@ -593,6 +632,18 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            {onOpenCMS && (
+              <button
+                onClick={onOpenCMS}
+                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#006B4F]/50 to-[#008F72]/50 hover:from-[#006B4F] hover:to-[#008F72] border border-emerald-400/50 text-emerald-200 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+                title="Buka CMS Penilaian Juri Panitia (Kelola Juri, Kriteria & Rekap Nilai)"
+              >
+                <Shield className="w-3.5 h-3.5 text-[#F2C96D]" />
+                <span className="hidden sm:inline">CMS Penilaian Juri</span>
+                <span className="sm:hidden">CMS</span>
+              </button>
+            )}
+
             {/* Institution Badge */}
             <div className="hidden md:flex flex-col text-right">
               <span className="text-[10px] text-white/50 font-bold uppercase">Lembaga</span>

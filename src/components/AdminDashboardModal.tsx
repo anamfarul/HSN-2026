@@ -89,6 +89,8 @@ interface AdminDashboardModalProps {
   onOpenWorkModalForParticipant?: (regNumber: string) => void;
   isSupabaseLive?: boolean;
   onRefreshAllFromSupabase?: () => Promise<void>;
+  onOpenJuryPortal?: (juryId?: string) => void;
+  initialTab?: 'participants' | 'competitions' | 'works' | 'jury_scoring' | 'documents' | 'stats' | 'users' | 'deployment' | 'supabase';
 }
 
 export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
@@ -108,6 +110,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   onOpenWorkModalForParticipant,
   isSupabaseLive,
   onRefreshAllFromSupabase,
+  onOpenJuryPortal,
+  initialTab,
 }) => {
   // Authentication state - check stored session
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -213,6 +217,13 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     (p) => !!(p.workSubmissionType || p.workFileUrl || p.workDriveUrl || p.workSubmittedAt)
   ).length;
   
+  // Set tab awal jika ditentukan dari pemanggil (misal: dibuka dari Portal Juri -> jury_scoring)
+  useEffect(() => {
+    if (isOpen && initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
+
   // Jika login selain super admin, pastikan tidak dapat mengakses tab users atau deployment
   useEffect(() => {
     if (!isSuperAdmin && (activeTab === 'users' || activeTab === 'deployment')) {
@@ -1699,6 +1710,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
               currentAdminName={adminUser || 'Admin'}
               isSuperAdmin={isSuperAdmin}
               adminRole={adminRole}
+              onOpenJuryPortal={onOpenJuryPortal}
             />
           )}
 

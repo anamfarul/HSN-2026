@@ -1,6 +1,7 @@
 import { getSupabaseClient, isSupabaseConnected } from './supabaseClient';
 import { UserProfile, UserRole } from '../types';
 import { INITIAL_JURY_PROFILES } from '../data/initialJuryData';
+import { getJuryProfiles } from './juryService';
 
 const JURY_SESSION_KEY = 'hsn2026_jury_session';
 const JURY_PROFILE_KEY = 'hsn2026_jury_profile';
@@ -52,6 +53,21 @@ export function clearJurySession() {
   localStorage.removeItem(JURY_PROFILE_KEY);
   sessionStorage.removeItem(JURY_SESSION_KEY);
   sessionStorage.removeItem(JURY_PROFILE_KEY);
+}
+
+/**
+ * Login langsung sebagai dewan juri terpilih (simulasi dari CMS Panitia)
+ */
+export function loginAsJuryDirectly(profile: UserProfile, rememberMe: boolean = true): JuryAuthSession {
+  const session: JuryAuthSession = {
+    user: {
+      id: profile.id,
+      email: profile.email,
+    },
+    profile,
+  };
+  saveJurySession(session, rememberMe);
+  return session;
 }
 
 /**
@@ -130,16 +146,16 @@ export async function signInJury(
 
   // 2. Failsafe / Staging Demo Fallback
   // Izinkan akun juri awal terdaftar dengan sandi demo 'santri2026' atau 'juri123'
-  const fallbackJuries: UserProfile[] = (() => {
-    try {
-      const raw = localStorage.getItem('hsn2026_jury_profiles_list');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return INITIAL_JURY_PROFILES;
-  })();
+  // Mengambil daftar akun juri yang sah & tersinkronisasi dari CMS Penilaian Juri
+  let fallbackJuries: UserProfile[] = [];
+  try {
+    fallbackJuries = await getJuryProfiles();
+  } catch {
+    fallbackJuries = INITIAL_JURY_PROFILES;
+  }
+  if (!fallbackJuries || fallbackJuries.length === 0) {
+    fallbackJuries = INITIAL_JURY_PROFILES;
+  }
 
   const matchedJury = fallbackJuries.find(
     (j) => j.email.toLowerCase() === cleanEmail || j.phone?.replace(/[^0-9]/g, '') === cleanEmail.replace(/[^0-9]/g, '')
