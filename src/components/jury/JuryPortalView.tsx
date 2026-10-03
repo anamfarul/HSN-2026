@@ -54,7 +54,8 @@ import {
   saveScoreDraft, 
   submitFinalScore, 
   calculateJuryTotal, 
-  validateCriteriaWeights 
+  validateCriteriaWeights,
+  resolveCompetition
 } from '../../lib/juryService';
 
 interface JuryPortalViewProps {

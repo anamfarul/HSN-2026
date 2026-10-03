@@ -19,13 +19,28 @@ import {
 } from '../data/initialJuryData';
 import { COMPETITIONS } from '../data/initialData';
 
-// Storage keys for local fallback
-const STORAGE_PROFILES = 'hsn2026_jury_profiles_list';
-const STORAGE_CRITERIA = 'hsn2026_scoring_criteria_list';
-const STORAGE_ASSIGNMENTS = 'hsn2026_jury_assignments_list';
-const STORAGE_SCORES = 'hsn2026_jury_scores_list';
-const STORAGE_RESULTS = 'hsn2026_competition_results_list';
-const STORAGE_AUDIT = 'hsn2026_jury_audit_logs_list';
+// Storage keys for local fallback (v5: strictly synchronized with CMS Panitia Cabang Lomba)
+const STORAGE_PROFILES = 'hsn2026_jury_profiles_v4';
+const STORAGE_CRITERIA = 'hsn2026_scoring_criteria_v4';
+const STORAGE_ASSIGNMENTS = 'hsn2026_jury_assignments_v5';
+const STORAGE_SCORES = 'hsn2026_jury_scores_v4';
+const STORAGE_RESULTS = 'hsn2026_competition_results_v4';
+const STORAGE_AUDIT = 'hsn2026_jury_audit_logs_v4';
+
+// Cleanup any old legacy storage keys to eliminate outdated / mismatched competitions
+if (typeof window !== 'undefined') {
+  try {
+    const legacyKeys = [
+      'hsn2026_jury_assignments_list',
+      'hsn2026_jury_assignments',
+      'hsn2026_jury_assignments_v1',
+      'hsn2026_jury_assignments_v2',
+      'hsn2026_jury_assignments_v3',
+      'hsn2026_jury_assignments_v4',
+    ];
+    legacyKeys.forEach((k) => localStorage.removeItem(k));
+  } catch {}
+}
 
 // ==============================================================================
 // 0. COMPETITION ID NORMALIZATION & RESOLVER HELPER
@@ -70,6 +85,7 @@ export function resolveCompetition(
   competitionId?: string,
   competitionTitle?: string
 ): Competition | undefined {
+  if (!competitionsList || competitionsList.length === 0) return undefined;
   if (!competitionId && !competitionTitle) return undefined;
   
   const normId = competitionId ? normalizeCompId(competitionId) : undefined;
@@ -89,23 +105,9 @@ export function resolveCompetition(
   // 3. Exact title match
   if (competitionTitle) {
     const cleanTitle = competitionTitle.toLowerCase().trim();
-    const matched = competitionsList.find((c) => c.title.toLowerCase() === cleanTitle);
+    const matched = competitionsList.find((c) => c.title.toLowerCase().trim() === cleanTitle);
     if (matched) return matched;
   }
-
-  // 4. Substring / keyword match for all 11 competitions
-  const searchStr = `${competitionId || ''} ${competitionTitle || ''}`.toLowerCase();
-  if (searchStr.includes('tradisional') || searchStr.includes('dolanan')) return competitionsList.find((c) => c.id === 'comp-1' || c.title.toLowerCase().includes('tradisional'));
-  if (searchStr.includes('video')) return competitionsList.find((c) => c.id === 'comp-2' || c.title.toLowerCase().includes('video'));
-  if (searchStr.includes('poster')) return competitionsList.find((c) => c.id === 'comp-3' || c.title.toLowerCase().includes('poster'));
-  if (searchStr.includes('bola') || searchStr.includes('santri cup')) return competitionsList.find((c) => c.id === 'comp-4' || c.title.toLowerCase().includes('bola'));
-  if (searchStr.includes('orasi') || searchStr.includes('speaking')) return competitionsList.find((c) => c.id === 'comp-5' || c.title.toLowerCase().includes('orasi') || c.title.toLowerCase().includes('speaking'));
-  if (searchStr.includes('podcast') || searchStr.includes('siniar') || searchStr.includes('ipnu')) return competitionsList.find((c) => c.id === 'comp-6' || c.title.toLowerCase().includes('podcast'));
-  if (searchStr.includes('women') || searchStr.includes('fatayat') || searchStr.includes('creativepreneur')) return competitionsList.find((c) => c.id === 'comp-7' || c.title.toLowerCase().includes('creativepreneur'));
-  if (searchStr.includes('outbound') || searchStr.includes('muslimat') || searchStr.includes('ketahanan pangan')) return competitionsList.find((c) => c.id === 'comp-8' || c.title.toLowerCase().includes('outbound') || c.title.toLowerCase().includes('muslimat'));
-  if (searchStr.includes('silat') || searchStr.includes('pagar nusa') || searchStr.includes('pendekar')) return competitionsList.find((c) => c.id === 'comp-9' || c.title.toLowerCase().includes('silat'));
-  if (searchStr.includes('media pembelajaran') || searchStr.includes('guru') || searchStr.includes('asatidz')) return competitionsList.find((c) => c.id === 'comp-10' || c.title.toLowerCase().includes('guru') || c.title.toLowerCase().includes('media'));
-  if (searchStr.includes('banser') || searchStr.includes('ansor') || searchStr.includes('baris') || searchStr.includes('pbb')) return competitionsList.find((c) => c.id === 'comp-11' || c.title.toLowerCase().includes('banser') || c.title.toLowerCase().includes('ansor') || c.title.toLowerCase().includes('baris'));
 
   return undefined;
 }
@@ -397,7 +399,7 @@ export function getAvailableCompetitions(): Competition[] {
 // ==============================================================================
 // 5. JURY ASSIGNMENTS SERVICE
 // ==============================================================================
-export async function getJuryAssignments(): Promise<JuryAssignment[]> {
+export async function getJuryAssignments(customCompetitions?: Competition[]): Promise<JuryAssignment[]> {
   let rawList: JuryAssignment[] = [];
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
@@ -438,38 +440,108 @@ export async function getJuryAssignments(): Promise<JuryAssignment[]> {
     rawList = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, INITIAL_JURY_ASSIGNMENTS);
   }
 
-  // Ensure default assignments cover all initial competitions if local storage had only legacy subset
-  const missingInitial = INITIAL_JURY_ASSIGNMENTS.filter(
-    (initA) => !rawList.some((r) => r.juryId === initA.juryId && (r.competitionId === initA.competitionId || r.competitionTitle === initA.competitionTitle))
-  );
-  if (missingInitial.length > 0 && rawList.length < INITIAL_JURY_ASSIGNMENTS.length) {
-    rawList = [...rawList, ...missingInitial];
-  }
-
-  const allComps = getAvailableCompetitions();
+  // Active competitions authoritative list from CMS Panitia
+  const allComps = customCompetitions && customCompetitions.length > 0 ? customCompetitions : getAvailableCompetitions();
+  const validCompMap = new Map(allComps.map((c) => [c.id, c]));
   const juries = getLocal<UserProfile[]>(STORAGE_PROFILES, INITIAL_JURY_PROFILES);
 
-  // Self-heal and normalize legacy competition IDs in assignments
-  const normalizedList = rawList.map((a) => {
-    const comp = resolveCompetition(allComps, a.competitionId, a.competitionTitle);
-    const jury = juries.find((j) => j.id === a.juryId);
-    return {
-      ...a,
-      competitionId: comp ? comp.id : normalizeCompId(a.competitionId),
-      competitionTitle: comp ? comp.title : (a.competitionTitle || a.competitionId),
-      competitionCategory: comp ? comp.category : (a.competitionCategory || comp?.category),
-      juryName: jury?.fullName || a.juryName,
-      juryEmail: jury?.email || a.juryEmail,
-      juryInstitution: jury?.institution || a.juryInstitution,
-    };
-  });
+  // Self-heal and strictly sanitize assignments: ONLY keep assignments that belong to valid competitions in CMS Panitia!
+  let normalizedList: JuryAssignment[] = rawList
+    .map((a) => {
+      // 1. Direct ID match first
+      let comp = validCompMap.get(a.competitionId);
+      // 2. Alias match if not found
+      if (!comp && a.competitionId) {
+        const aliasId = COMPETITION_ID_ALIASES[a.competitionId.toLowerCase()];
+        if (aliasId) comp = validCompMap.get(aliasId);
+      }
+      // 3. Fallback resolve
+      if (!comp) {
+        comp = resolveCompetition(allComps, a.competitionId, a.competitionTitle);
+      }
+      // If competition does not exist in CMS Panitia, drop this assignment!
+      if (!comp) return null;
 
-  // Re-save normalized version if there were legacy IDs or additions
-  if (JSON.stringify(normalizedList) !== JSON.stringify(rawList)) {
-    setLocal(STORAGE_ASSIGNMENTS, normalizedList);
+      const jury = juries.find((j) => j.id === a.juryId);
+      return {
+        ...a,
+        competitionId: comp.id,
+        competitionTitle: comp.title,
+        competitionCategory: comp.category,
+        juryName: jury?.fullName || a.juryName,
+        juryEmail: jury?.email || a.juryEmail,
+        juryInstitution: jury?.institution || a.juryInstitution,
+      };
+    })
+    .filter((a): a is NonNullable<typeof a> => a !== null);
+
+  // Strictly deduplicate assignments by juryId + competitionId to avoid ghost duplicates
+  const uniqueAssignMap = new Map<string, JuryAssignment>();
+  for (const a of normalizedList) {
+    const key = `${a.juryId}:${a.competitionId}`;
+    if (!uniqueAssignMap.has(key)) {
+      uniqueAssignMap.set(key, a);
+    }
+  }
+  normalizedList = Array.from(uniqueAssignMap.values());
+
+  // Only replenish from INITIAL_JURY_ASSIGNMENTS on first run if local storage was totally empty
+  if (normalizedList.length === 0) {
+    allComps.forEach((comp) => {
+      const initMatches = INITIAL_JURY_ASSIGNMENTS.filter((initA) => {
+        return initA.competitionId === comp.id || resolveCompetition(allComps, initA.competitionId, initA.competitionTitle)?.id === comp.id;
+      });
+      if (initMatches.length > 0) {
+        initMatches.forEach((m) => {
+          normalizedList.push({
+            ...m,
+            competitionId: comp.id,
+            competitionTitle: comp.title,
+            competitionCategory: comp.category,
+          });
+        });
+      }
+    });
   }
 
+  // Re-save sanitized and synchronized assignments to local storage
+  setLocal(STORAGE_ASSIGNMENTS, normalizedList);
+
   return normalizedList;
+}
+
+export function syncJuryAssignmentsOnCompetitionUpdate(updatedComp: Competition): void {
+  try {
+    const current = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, []);
+    const updated = current.map((a) => {
+      if (
+        a.competitionId === updatedComp.id ||
+        resolveCompetition([updatedComp], a.competitionId, a.competitionTitle)?.id === updatedComp.id
+      ) {
+        return {
+          ...a,
+          competitionId: updatedComp.id,
+          competitionTitle: updatedComp.title,
+          competitionCategory: updatedComp.category,
+        };
+      }
+      return a;
+    });
+    setLocal(STORAGE_ASSIGNMENTS, updated);
+  } catch {}
+}
+
+export function syncJuryAssignmentsOnCompetitionDelete(deletedCompId: string): void {
+  try {
+    const current = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, []);
+    const updated = current.filter((a) => a.competitionId !== deletedCompId);
+    setLocal(STORAGE_ASSIGNMENTS, updated);
+
+    const supabase = getSupabaseClient();
+    if (isSupabaseConnected() && supabase) {
+      Promise.resolve(supabase.from('jury_assignments').delete().eq('competition_id', deletedCompId)).catch(() => {});
+    }
+  } catch {}
 }
 
 export async function assignJuryToCompetition(
@@ -477,20 +549,23 @@ export async function assignJuryToCompetition(
   competitionId: string,
   adminName: string = 'Admin',
   competitionTitle?: string,
-  competitionCategory?: string
+  competitionCategory?: string,
+  customCompetitions?: Competition[]
 ): Promise<{ success: boolean; message?: string }> {
-  const current = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, INITIAL_JURY_ASSIGNMENTS);
-  const allComps = getAvailableCompetitions();
-  const targetComp = resolveCompetition(allComps, competitionId, competitionTitle);
-  const effectiveCompId = targetComp ? targetComp.id : normalizeCompId(competitionId);
-  const effectiveCompTitle = targetComp ? targetComp.title : (competitionTitle || competitionId);
-  const effectiveCompCat = targetComp ? targetComp.category : (competitionCategory || undefined);
+  const allComps = customCompetitions && customCompetitions.length > 0 ? customCompetitions : getAvailableCompetitions();
+  const targetComp = allComps.find((c) => c.id === competitionId) || resolveCompetition(allComps, competitionId, competitionTitle);
+  if (!targetComp) {
+    return { success: false, message: 'Cabang lomba tidak ditemukan di CMS Panitia.' };
+  }
+  const effectiveCompId = targetComp.id;
+  const effectiveCompTitle = targetComp.title;
+  const effectiveCompCat = targetComp.category;
+
+  const current = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, INITIAL_JURY_ASSIGNMENTS)
+    .filter((a) => allComps.some((c) => c.id === a.competitionId));
 
   const exists = current.some((a) => {
-    if (a.juryId !== juryId || !a.isActive) return false;
-    if (a.competitionId === effectiveCompId) return true;
-    const res = resolveCompetition(allComps, a.competitionId, a.competitionTitle);
-    return res?.id === effectiveCompId;
+    return a.juryId === juryId && a.competitionId === effectiveCompId && a.isActive;
   });
 
   if (exists) {
@@ -513,7 +588,7 @@ export async function assignJuryToCompetition(
     createdAt: new Date().toISOString(),
   };
 
-  const updated = [...current, newAssignment];
+  const updated = [...current.filter((a) => !(a.juryId === juryId && a.competitionId === effectiveCompId)), newAssignment];
   setLocal(STORAGE_ASSIGNMENTS, updated);
 
   createAuditLog({
@@ -521,7 +596,7 @@ export async function assignJuryToCompetition(
     entityType: 'jury_assignment',
     entityId: newAssignment.id,
     newValue: newAssignment,
-    notes: `Juri ${matchedJury?.fullName || juryId} ditugaskan pada lomba ${competitionTitle || competitionId} oleh: ${adminName}`,
+    notes: `Juri ${matchedJury?.fullName || juryId} ditugaskan pada lomba ${effectiveCompTitle} oleh: ${adminName}`,
   });
 
   const supabase = getSupabaseClient();
@@ -529,7 +604,7 @@ export async function assignJuryToCompetition(
     try {
       await supabase.from('jury_assignments').upsert({
         jury_id: juryId,
-        competition_id: competitionId,
+        competition_id: effectiveCompId,
         is_active: true,
       }, { onConflict: 'jury_id,competition_id' });
     } catch {}
@@ -1285,7 +1360,7 @@ export async function getScoringProgressSummary(
   competitions: Competition[],
   participants: ParticipantRegistration[]
 ): Promise<JuryScoringProgress[]> {
-  const assignments = await getJuryAssignments();
+  const assignments = await getJuryAssignments(competitions);
   const allScores = await getJuryScores();
   const allResults = await getCompetitionResults();
 

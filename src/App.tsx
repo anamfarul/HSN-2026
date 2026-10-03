@@ -39,6 +39,10 @@ import {
   saveSupabaseCredentials
 } from './lib/supabaseClient';
 import { saveRegisteredAdminUsers, isUserDeleted } from './data/initialUsers';
+import { 
+  syncJuryAssignmentsOnCompetitionUpdate, 
+  syncJuryAssignmentsOnCompetitionDelete 
+} from './lib/juryService';
 import { Sparkles, MessageCircle, Shield, UploadCloud } from 'lucide-react';
 
 const DELETED_COMPETITIONS_KEY = 'hsn2026_deleted_competitions_v1';
@@ -378,6 +382,7 @@ export default function App() {
       const nextCustom = custom.filter((c) => c.id !== id);
       localStorage.setItem(CUSTOM_COMPETITIONS_KEY, JSON.stringify(nextCustom));
     } catch {}
+    syncJuryAssignmentsOnCompetitionDelete(id);
     setCompetitions((prev) => prev.filter((c) => c.id !== id));
     // Bersihkan peserta yang terdaftar pada lomba ini di state lokal
     setParticipants((prev) => prev.filter((p) => p.competitionId !== id));
@@ -397,6 +402,7 @@ export default function App() {
       }
       localStorage.setItem(CUSTOM_COMPETITIONS_KEY, JSON.stringify(nextCustom));
     } catch {}
+    syncJuryAssignmentsOnCompetitionUpdate(updatedComp);
     setCompetitions((prev) =>
       prev.map((c) => (c.id === updatedComp.id ? updatedComp : c))
     );

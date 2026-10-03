@@ -44,6 +44,7 @@ NOTIFY pgrst, 'reload schema';
 -- ==============================================================================
 DO $$ BEGIN
     CREATE TYPE category_generation_enum AS ENUM (
+      'PAUD/RA/TK',
       'PAUD/TK',
       'SD/MI',
       'SMP/MTs',
@@ -51,6 +52,9 @@ DO $$ BEGIN
       'IPNU/IPPNU',
       'FATAYAT',
       'MUSLIMAT',
+      'PAGAR NUSA',
+      'GURU',
+      'ANSOR',
       'UMUM'
     );
 EXCEPTION
@@ -424,7 +428,7 @@ VALUES
   'comp-1',
   'LMB-PAUD-01',
   'Permainan Tradisional Santri Nusantara',
-  'PAUD/TK',
+  'PAUD/RA/TK',
   'Anak Usia 4-6 Tahun (PAUD/TK/RA)',
   'Kompetisi regu dolanan tradisional (engklek, bakiak santri ceria, dakon nusantara) yang menanamkan keakraban dan keceriaan alami.',
   '["Setiap lembaga mengirimkan maksimal 2 tim beranggotakan 4 anak", "Peserta mengenakan busana muslim/muslimah santri santun atau adat nusantara", "Penilaian meliputi kekompakan, kegembiraan, ketepatan, dan etika kesantunan", "Keputusan dewan juri bersifat mutlak dan tidak dapat diganggu gugat"]'::jsonb,
@@ -554,6 +558,57 @@ VALUES
   'Area Agro Wisata Pesona Poncokusumo',
   'Panitia Cabang Muslimat (0811-2233-4455)',
   'Users',
+  true
+),
+(
+  'comp-9',
+  'LMB-PN-01',
+  'Kejuaraan Seni Pencak Silat Santri Pagar Nusa',
+  'PAGAR NUSA',
+  'Pendekar, Santri, dan Kontingen Rayon Pagar Nusa',
+  'Kompetisi jurus tunggal baku santri nusantara dan ketangkasan seni bela diri tangan kosong maupun bersenjata.',
+  '["Peserta adalah anggota resmi Pagar Nusa atau santri utusan pesantren/rayon", "Mengenakan seragam resmi kebesaran Pagar Nusa lengkap dengan sabuk hijau", "Kategori tanding: Jurus Tunggal Baku Santri Nusantara & Seni Bela Diri Santri", "Keputusan wasit dan dewan juri bersifat mutlak berlandaskan sportivitas dan kejujuran"]'::jsonb,
+  '{"first": "Trofi Juara I Pendekar Santri + Piagam + Uang Pembinaan", "second": "Trofi Juara II Pendekar Santri + Piagam + Uang Pembinaan", "third": "Trofi Juara III Pendekar Santri + Piagam + Uang Pembinaan"}'::jsonb,
+  'Gratis',
+  '10 Oktober 2026',
+  '12 Oktober 2026',
+  'Gelanggang Olahraga Pesantren Poncokusumo',
+  '0812-3456-7890 (Koordinator Pagar Nusa)',
+  'Shield',
+  true
+),
+(
+  'comp-10',
+  'LMB-GRU-01',
+  'Lomba Inovasi Media Pembelajaran Kreatif Guru & Asatidz',
+  'GURU',
+  'Guru Madrasah/Sekolah Islam & Asatidz Pesantren',
+  'Ajang kreasi media dan model pembelajaran digital/interaktif yang inovatif, aplikatif, dan kontekstual untuk santri.',
+  '["Peserta merupakan pendidik aktif di lingkungan madrasah, sekolah, atau pesantren", "Karya media pembelajaran merupakan karya orisinal dan belum pernah menjuarai lomba serupa", "Format karya berupa media digital interaktif, video pembelajaran, atau alat peraga edukatif", "Menyerahkan modul ajar/RPP singkat dan link/demonstrasi media pembelajaran saat pendaftaran"]'::jsonb,
+  '{"first": "Piala Bergilir LP Ma''arif + Piagam Penghargaan + Uang Pembinaan", "second": "Trofi Juara II + Piagam Penghargaan + Uang Pembinaan", "third": "Trofi Juara III + Piagam Penghargaan + Uang Pembinaan"}'::jsonb,
+  'Gratis',
+  '10 Oktober 2026',
+  '12 Oktober 2026',
+  'Aula LP Ma''arif NU Poncokusumo',
+  '0813-9876-5432 (Koordinator Lomba Guru)',
+  'GraduationCap',
+  true
+),
+(
+  'comp-11',
+  'LMB-ANS-01',
+  'Festival Ketangkasan Baris Berbaris & Disiplin Banser Ansor',
+  'ANSOR',
+  'Kader GP Ansor, Satkoryon Banser & Pemuda Nahdliyin',
+  'Kompetisi keterampilan baris berbaris (PBB), formasi variasi, ketangkasan lapangan, dan kekompakan yel-yel kebangsaan.',
+  '["Peserta beregu/peleton mewakili Ranting GP Ansor atau Satkorkel Banser", "Mengenakan seragam resmi PDL Banser lengkap atau seragam resmi GP Ansor", "Materi lomba meliputi PBB statis, dinamis, formasi variasi kreasi, dan yel-yel kekompakan", "Penilaian mengutamakan ketepatan aba-aba, kerapian barisan, kekompakan, dan semangat juang"]'::jsonb,
+  '{"first": "Piala Bergilir PAC GP Ansor + Piagam Kehormatan + Uang Pembinaan", "second": "Trofi Juara II + Piagam Kehormatan + Uang Pembinaan", "third": "Trofi Juara III + Piagam Kehormatan + Uang Pembinaan"}'::jsonb,
+  'Gratis',
+  '10 Oktober 2026',
+  '12 Oktober 2026',
+  'Lapangan Utama Poncokusumo',
+  '0812-9876-1934 (Koordinator Lomba Ansor/Banser)',
+  'Flame',
   true
 )
 ON CONFLICT (id) DO UPDATE SET

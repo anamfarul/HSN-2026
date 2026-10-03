@@ -149,13 +149,35 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
     try {
       const [jList, aList, sList, lList, progList] = await Promise.all([
         getJuryProfiles(),
-        getJuryAssignments(),
+        getJuryAssignments(competitions),
         getJuryScores(),
         getJuryAuditLogs(),
         getScoringProgressSummary(competitions, participants),
       ]);
       setJuries(jList);
-      setAssignments(aList);
+
+      // Strictly ensure that all assignments in state match actual competitions in CMS Panitia
+      const strictlyValidAssignments: JuryAssignment[] = [];
+      const seenKey = new Set<string>();
+
+      for (const a of aList) {
+        if (!a.isActive) continue;
+        const comp = competitions.find((c) => c.id === a.competitionId) || resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+        if (!comp) continue;
+
+        const key = `${a.juryId}:${comp.id}`;
+        if (!seenKey.has(key)) {
+          seenKey.add(key);
+          strictlyValidAssignments.push({
+            ...a,
+            competitionId: comp.id,
+            competitionTitle: comp.title,
+            competitionCategory: comp.category,
+          });
+        }
+      }
+
+      setAssignments(strictlyValidAssignments);
       setAllScores(sList);
       setAuditLogs(lList);
       setProgressList(progList);
@@ -238,20 +260,21 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
 
       // 1. Add newly checked competitions
       for (const compId of editingJudgeCompIds) {
+        const compObj = competitions.find((c) => c.id === compId);
+        if (!compObj) continue;
         const alreadyAssigned = currentAssigned.some((a) => {
           if (a.competitionId === compId) return true;
-          const r = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+          const r = competitions.find((c) => c.id === a.competitionId) || resolveCompetition(competitions, a.competitionId, a.competitionTitle);
           return r?.id === compId;
         });
         if (!alreadyAssigned) {
-          const compObj = competitions.find((c) => c.id === compId);
-          await assignJuryToCompetition(savedJuryId, compId, currentAdminName, compObj?.title, compObj?.category);
+          await assignJuryToCompetition(savedJuryId, compObj.id, currentAdminName, compObj.title, compObj.category, competitions);
         }
       }
 
       // 2. Remove unchecked competitions
       for (const a of currentAssigned) {
-        const resolvedComp = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+        const resolvedComp = competitions.find((c) => c.id === a.competitionId) || resolveCompetition(competitions, a.competitionId, a.competitionTitle);
         const effId = resolvedComp ? resolvedComp.id : a.competitionId;
         if (!editingJudgeCompIds.includes(effId)) {
           await removeJuryAssignment(a.id, currentAdminName);
@@ -276,7 +299,8 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
       targetComp ? targetComp.id : cId,
       currentAdminName,
       targetComp?.title,
-      targetComp?.category
+      targetComp?.category,
+      competitions
     );
     if (!res.success) {
       alert(res.message);
@@ -311,7 +335,8 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
         effectiveCompId,
         currentAdminName,
         targetComp?.title,
-        targetComp?.category
+        targetComp?.category,
+        competitions
       );
     }
     await loadAllData();
@@ -687,22 +712,33 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                         <td className="p-3.5 text-white/80">{j.institution || '-'}</td>
                         <td className="p-3.5">
                           <div className="flex flex-wrap gap-1.5">
-                            {myAssigns.length > 0 ? (
-                              myAssigns.map((a) => {
-                                const compObj = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
-                                return (
-                                  <span
-                                    key={a.id}
-                                    className="px-2.5 py-0.5 rounded-full text-[10px] bg-[#006B4F]/30 border border-emerald-500/40 text-emerald-300 font-semibold truncate max-w-[220px]"
-                                    title={compObj ? `[${compObj.category}] ${compObj.title}` : a.competitionTitle || a.competitionId}
-                                  >
-                                    {compObj ? `[${compObj.category}] ${compObj.title}` : a.competitionTitle || a.competitionId}
-                                  </span>
-                                );
-                              })
-                            ) : (
-                              <span className="text-white/30 text-[11px] italic">Belum ditugaskan</span>
-                            )}
+                            {(() => {
+                              // Only display assignments strictly matching valid competitions in CMS Panitia (deduplicated)
+                              const seenCompIds = new Set<string>();
+                              const validAssigns: { assignment: JuryAssignment; comp: Competition }[] = [];
+
+                              for (const a of myAssigns) {
+                                const compObj = competitions.find((c) => c.id === a.competitionId) || resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+                                if (compObj && !seenCompIds.has(compObj.id)) {
+                                  seenCompIds.add(compObj.id);
+                                  validAssigns.push({ assignment: a, comp: compObj });
+                                }
+                              }
+
+                              if (validAssigns.length === 0) {
+                                return <span className="text-white/30 text-[11px] italic">Belum ditugaskan</span>;
+                              }
+
+                              return validAssigns.map(({ assignment, comp }) => (
+                                <span
+                                  key={assignment.id}
+                                  className="px-2.5 py-0.5 rounded-full text-[10px] bg-[#006B4F]/30 border border-emerald-500/40 text-emerald-300 font-semibold truncate max-w-[220px]"
+                                  title={`[${comp.category}] ${comp.title}`}
+                                >
+                                  [{comp.category}] {comp.title}
+                                </span>
+                              ));
+                            })()}
                           </div>
                         </td>
                         <td className="p-3.5 text-center">
@@ -721,12 +757,15 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                             type="button"
                             onClick={() => {
                               setEditingJudge(j);
-                              const myActiveCompIds = assignments
-                                .filter((a) => a.juryId === j.id && a.isActive)
-                                .map((a) => {
-                                  const resolved = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
-                                  return resolved ? resolved.id : a.competitionId;
-                                });
+                              const myActiveCompIds = Array.from(new Set(
+                                assignments
+                                  .filter((a) => a.juryId === j.id && a.isActive)
+                                  .map((a) => {
+                                    const resolved = competitions.find((c) => c.id === a.competitionId) || resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+                                    return resolved ? resolved.id : null;
+                                  })
+                                  .filter((id): id is string => id !== null)
+                              ));
                               setEditingJudgeCompIds(myActiveCompIds);
                               setIsJudgeModalOpen(true);
                             }}
@@ -1283,34 +1322,52 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                           <td className="p-3.5 text-white/80">{j.institution || '-'}</td>
                           <td className="p-3.5">
                             <div className="flex flex-wrap gap-1.5">
-                              {myAssigns.length > 0 ? (
-                                myAssigns.map((a) => {
-                                  const compObj = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
-                                  return (
-                                    <span
-                                      key={a.id}
-                                      className="px-2.5 py-1 rounded-full text-[10px] bg-[#006B4F]/30 border border-emerald-500/40 text-emerald-300 font-semibold flex items-center gap-1.5"
+                              {(() => {
+                                const seenCompIds = new Set<string>();
+                                const validAssigns: { assignment: JuryAssignment; comp: Competition }[] = [];
+
+                                for (const a of myAssigns) {
+                                  const compObj = competitions.find((c) => c.id === a.competitionId) || resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+                                  if (compObj && !seenCompIds.has(compObj.id)) {
+                                    seenCompIds.add(compObj.id);
+                                    validAssigns.push({ assignment: a, comp: compObj });
+                                  }
+                                }
+
+                                if (validAssigns.length === 0) {
+                                  return <span className="text-white/30 text-[11px] italic">Belum ditugaskan</span>;
+                                }
+
+                                return validAssigns.map(({ assignment, comp }) => (
+                                  <span
+                                    key={assignment.id}
+                                    className="px-2.5 py-1 rounded-full text-[10px] bg-[#006B4F]/30 border border-emerald-500/40 text-emerald-300 font-semibold flex items-center gap-1.5"
+                                    title={`[${comp.category}] ${comp.title}`}
+                                  >
+                                    <span>[{comp.category}] {comp.title}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveAssignment(assignment.id)}
+                                      className="hover:text-rose-400 transition-colors"
+                                      title="Hapus penugasan cabang ini"
                                     >
-                                      <span>{compObj ? `[${compObj.category}] ${compObj.title}` : a.competitionTitle || a.competitionId}</span>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleRemoveAssignment(a.id)}
-                                        className="hover:text-rose-400 transition-colors"
-                                        title="Hapus penugasan cabang ini"
-                                      >
-                                        <X className="w-3 h-3" />
-                                      </button>
-                                    </span>
-                                  );
-                                })
-                              ) : (
-                                <span className="text-white/30 text-[11px] italic">Belum ditugaskan</span>
-                              )}
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </span>
+                                ));
+                              })()}
                             </div>
                           </td>
                           <td className="p-3.5 text-center font-mono font-bold text-white">
                             <span className="px-2.5 py-0.5 rounded-full bg-white/10 text-white">
-                              {myAssigns.length}
+                              {(() => {
+                                const seen = new Set<string>();
+                                myAssigns.forEach((a) => {
+                                  const c = competitions.find((comp) => comp.id === a.competitionId) || resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+                                  if (c) seen.add(c.id);
+                                });
+                                return seen.size;
+                              })()}
                             </span>
                           </td>
                           <td className="p-3.5 text-right">
@@ -2049,9 +2106,7 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                                   <span className="text-[10px] text-[#00D9F5] block uppercase font-bold">[{compObj.category}]</span>
                                   <span>{compObj.title}</span>
                                 </div>
-                              ) : (
-                                a.competitionTitle || a.competitionId
-                              )}
+                              ) : null}
                             </td>
                             <td className="p-3.5">
                               <span className="font-semibold text-white">{a.juryName || a.juryId}</span>
