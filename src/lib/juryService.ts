@@ -379,6 +379,41 @@ export async function toggleJuryStatus(
   return true;
 }
 
+export async function deleteJuryProfile(
+  juryId: string,
+  adminName: string = 'Admin'
+): Promise<boolean> {
+  const list = getLocal<UserProfile[]>(STORAGE_PROFILES, INITIAL_JURY_PROFILES);
+  const target = list.find((p) => p.id === juryId);
+  const updated = list.filter((p) => p.id !== juryId);
+  setLocal(STORAGE_PROFILES, updated);
+
+  // Bersihkan seluruh penugasan juri ini dari penyimpanan lokal
+  const assignments = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, []);
+  const updatedAssignments = assignments.filter((a) => a.juryId !== juryId);
+  setLocal(STORAGE_ASSIGNMENTS, updatedAssignments);
+
+  if (target) {
+    createAuditLog({
+      action: 'DELETE_JURY_PROFILE',
+      entityType: 'jury_profile',
+      entityId: juryId,
+      oldValue: target,
+      notes: `Akun dewan juri ${target.fullName} (${target.email}) dihapus permanen oleh: ${adminName}`,
+    });
+  }
+
+  const supabase = getSupabaseClient();
+  if (isSupabaseConnected() && supabase) {
+    try {
+      await supabase.from('jury_assignments').delete().eq('jury_id', juryId);
+      await supabase.from('profiles').delete().eq('id', juryId);
+    } catch {}
+  }
+
+  return true;
+}
+
 export function getAvailableCompetitions(): Competition[] {
   try {
     const raw = typeof window !== 'undefined'
@@ -643,6 +678,60 @@ export async function removeJuryAssignment(
   return true;
 }
 
+export async function removeAllAssignmentsForCompetition(
+  competitionId: string,
+  adminName: string = 'Admin'
+): Promise<boolean> {
+  const current = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, []);
+  const removed = current.filter((a) => a.competitionId === competitionId);
+  const updated = current.filter((a) => a.competitionId !== competitionId);
+  setLocal(STORAGE_ASSIGNMENTS, updated);
+
+  createAuditLog({
+    action: 'CLEAR_COMPETITION_ASSIGNMENTS',
+    entityType: 'jury_assignment',
+    entityId: competitionId,
+    oldValue: removed,
+    notes: `Seluruh penugasan juri (${removed.length} dewan juri) pada lomba ${competitionId} dihapus oleh: ${adminName}`,
+  });
+
+  const supabase = getSupabaseClient();
+  if (isSupabaseConnected() && supabase) {
+    try {
+      await supabase.from('jury_assignments').delete().eq('competition_id', competitionId);
+    } catch {}
+  }
+
+  return true;
+}
+
+export async function removeAllAssignmentsForJudge(
+  juryId: string,
+  adminName: string = 'Admin'
+): Promise<boolean> {
+  const current = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, []);
+  const removed = current.filter((a) => a.juryId === juryId);
+  const updated = current.filter((a) => a.juryId !== juryId);
+  setLocal(STORAGE_ASSIGNMENTS, updated);
+
+  createAuditLog({
+    action: 'CLEAR_JURY_ASSIGNMENTS',
+    entityType: 'jury_assignment',
+    entityId: juryId,
+    oldValue: removed,
+    notes: `Seluruh penugasan cabang lomba (${removed.length} cabang lomba) untuk juri ${juryId} dihapus oleh: ${adminName}`,
+  });
+
+  const supabase = getSupabaseClient();
+  if (isSupabaseConnected() && supabase) {
+    try {
+      await supabase.from('jury_assignments').delete().eq('jury_id', juryId);
+    } catch {}
+  }
+
+  return true;
+}
+
 // ==============================================================================
 // 6. SCORING CRITERIA SERVICE
 // ==============================================================================
@@ -755,21 +844,21 @@ export async function deleteScoringCriterion(
 ): Promise<boolean> {
   const list = getLocal<ScoringCriterion[]>(STORAGE_CRITERIA, INITIAL_SCORING_CRITERIA);
   const target = list.find((c) => c.id === criterionId);
-  // Soft delete (is_active = false) to prevent breaking existing scores
-  const updated = list.map((c) => (c.id === criterionId ? { ...c, isActive: false } : c));
+  const updated = list.filter((c) => c.id !== criterionId);
   setLocal(STORAGE_CRITERIA, updated);
 
   createAuditLog({
-    action: 'DEACTIVATE_CRITERION',
+    action: 'DELETE_CRITERION',
     entityType: 'scoring_criterion',
     entityId: criterionId,
-    notes: `Kriteria "${target?.criterionName || criterionId}" dinonaktifkan oleh: ${adminName}`,
+    oldValue: target,
+    notes: `Kriteria "${target?.criterionName || criterionId}" dihapus permanen oleh: ${adminName}`,
   });
 
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
     try {
-      await supabase.from('scoring_criteria').update({ is_active: false }).eq('id', criterionId);
+      await supabase.from('scoring_criteria').delete().eq('id', criterionId);
     } catch {}
   }
   return true;

@@ -1698,6 +1698,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
               participants={participants}
               currentAdminName={adminUser || 'Admin'}
               isSuperAdmin={isSuperAdmin}
+              adminRole={adminRole}
             />
           )}
 
