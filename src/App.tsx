@@ -20,6 +20,7 @@ import { Footer } from './components/Footer';
 import { RegistrationModal } from './components/RegistrationModal';
 import { AdminDashboardModal } from './components/AdminDashboardModal';
 import { WorkSubmissionModal } from './components/WorkSubmissionModal';
+import { JuryPortalView } from './components/jury/JuryPortalView';
 
 import { COMPETITIONS, DOWNLOAD_DOCUMENTS, INITIAL_STATS } from './data/initialData';
 import { Competition, CategoryGeneration, ParticipantRegistration } from './types';
@@ -128,6 +129,34 @@ export default function App() {
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [isWorkModalOpen, setIsWorkModalOpen] = useState(false);
   const [selectedRegNumberForWork, setSelectedRegNumberForWork] = useState<string | undefined>(undefined);
+  
+  // Portal Juri View State & URL Path Route Detector (/juri)
+  const [isJuryPortalOpen, setIsJuryPortalOpen] = useState(() => {
+    return typeof window !== 'undefined' && window.location.pathname.startsWith('/juri');
+  });
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const isJuri = typeof window !== 'undefined' && window.location.pathname.startsWith('/juri');
+      setIsJuryPortalOpen(isJuri);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const handleOpenJury = () => {
+    setIsJuryPortalOpen(true);
+    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/juri')) {
+      window.history.pushState({}, '', '/juri');
+    }
+  };
+
+  const handleCloseJury = () => {
+    setIsJuryPortalOpen(false);
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/juri')) {
+      window.history.pushState({}, '', '/');
+    }
+  };
   
   // Registration selection context
   const [registerCategory, setRegisterCategory] = useState<CategoryGeneration>('SMP/MTs');
@@ -374,6 +403,16 @@ export default function App() {
     updateCompetitionInSupabase(updatedComp).catch(console.warn);
   };
 
+  if (isJuryPortalOpen) {
+    return (
+      <JuryPortalView
+        onBackToMain={handleCloseJury}
+        competitions={competitions}
+        participants={participants}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#031525] text-[#DDE7E8] selection:bg-[#00D9F5]/30 selection:text-white font-sans relative">
       {/* Navigation Header */}
@@ -385,6 +424,7 @@ export default function App() {
           if (el) el.scrollIntoView({ behavior: 'smooth' });
         }}
         onOpenUploadWork={() => handleOpenUploadWork()}
+        onOpenJury={handleOpenJury}
       />
 
       {/* Main Content Layout */}
@@ -456,10 +496,22 @@ export default function App() {
         onOpenAdmin={() => setIsAdminModalOpen(true)}
         onOpenRegister={handleOpenRegister}
         onOpenUploadWork={() => handleOpenUploadWork()}
+        onOpenJury={handleOpenJury}
       />
 
       {/* Floating Quick Action Buttons */}
       <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-3 pointer-events-none">
+        {/* Portal Juri Floating Button */}
+        <button
+          onClick={handleOpenJury}
+          className="pointer-events-auto p-3 rounded-full bg-[#006B4F]/90 border border-emerald-400/40 text-emerald-300 hover:text-white hover:bg-[#008F72] shadow-xl backdrop-blur-md transition-all hover:scale-110 active:scale-95 group"
+          title="Buka Portal Penilaian Juri (/juri)"
+          aria-label="Buka Portal Juri"
+        >
+          <Sparkles className="w-5 h-5 text-[#F2C96D]" />
+          <span className="sr-only">Portal Juri</span>
+        </button>
+
         {/* Admin CMS Floating Button */}
         <button
           onClick={() => setIsAdminModalOpen(true)}

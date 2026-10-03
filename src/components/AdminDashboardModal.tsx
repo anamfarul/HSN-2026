@@ -8,6 +8,7 @@ import { AdminDeploymentTab } from './AdminDeploymentTab';
 import { AdminSupabaseTab } from './AdminSupabaseTab';
 import { AdminWorksTab } from './AdminWorksTab';
 import { AdminAddressStatsSection } from './AdminAddressStatsSection';
+import { AdminJurySection } from './admin/jury/AdminJurySection';
 import { generateParticipantReportPDF, printElementSafely } from '../lib/pdfGenerator';
 import { ROLE_DEFINITIONS } from '../data/rolesPermissions';
 import { normalizePanitiaRole } from '../data/initialUsers';
@@ -204,7 +205,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   // 2. Selain Super Admin dan Divisi Regristasi & Verifikator, menu AKSI & KELOLA peserta dinonaktifkan.
   const canVerifyParticipants = isSuperAdmin || isRegistrasiVerifikator;
 
-  const [activeTab, setActiveTab] = useState<'participants' | 'competitions' | 'works' | 'documents' | 'stats' | 'users' | 'deployment' | 'supabase'>('participants');
+  const [activeTab, setActiveTab] = useState<'participants' | 'competitions' | 'works' | 'jury_scoring' | 'documents' | 'stats' | 'users' | 'deployment' | 'supabase'>('participants');
   const [pdfReportBlobUrl, setPdfReportBlobUrl] = useState<string | null>(null);
 
   // Jumlah karya peserta yang telah masuk
@@ -754,6 +755,23 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 : 'bg-white/10 text-white/50'
             }`}>
               {participantsWithWorksCount}
+            </span>
+          </button>
+
+          {/* TAB BARU: PENILAIAN JURI */}
+          <button
+            id="admin-tab-btn-penilaian-juri"
+            onClick={() => setActiveTab('jury_scoring')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all relative ${
+              activeTab === 'jury_scoring'
+                ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-[#F2C96D] border border-[#D9B45B]/50 shadow'
+                : 'text-[#DDE7E8] hover:bg-white/5'
+            }`}
+          >
+            <Award className="w-3.5 h-3.5 text-[#F2C96D]" />
+            <span>PENILAIAN JURI</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black uppercase bg-[#00D9F5]/20 text-[#00D9F5] border border-[#00D9F5]/40">
+              CMS
             </span>
           </button>
 
@@ -1670,6 +1688,16 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
               onUpdateParticipantWork={onUpdateParticipantWork}
               onOpenWorkModalForParticipant={onOpenWorkModalForParticipant}
               canVerifyParticipants={canVerifyParticipants}
+            />
+          )}
+
+          {/* TAB: PENILAIAN JURI CMS */}
+          {activeTab === 'jury_scoring' && (
+            <AdminJurySection
+              competitions={competitions}
+              participants={participants}
+              currentAdminName={adminUser || 'Admin'}
+              isSuperAdmin={isSuperAdmin}
             />
           )}
 

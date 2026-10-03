@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, X, Download, UploadCloud } from 'lucide-react';
+import { Menu, X, Download, UploadCloud, Trophy } from 'lucide-react';
 
 interface NavbarProps {
   onOpenRegister?: () => void;
   onOpenAdmin?: () => void;
   onOpenDownload: () => void;
   onOpenUploadWork?: () => void;
+  onOpenJury?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -13,6 +14,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAdmin,
   onOpenDownload,
   onOpenUploadWork,
+  onOpenJury,
 }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -134,6 +136,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span>APLOUD KARYA</span>
               </button>
             )}
+
+            {/* Menu PORTAL JURI */}
+            {onOpenJury && (
+              <button
+                id="nav-btn-portal-juri"
+                onClick={onOpenJury}
+                className="ml-1 px-3 py-1.5 rounded-lg text-xs font-bold tracking-wider text-white bg-white/10 hover:bg-[#006B4F] border border-white/20 hover:border-[#00D9F5]/50 active:scale-95 transition-all flex items-center gap-1.5 shadow-sm"
+                title="Portal Penilaian Dewan Juri"
+              >
+                <Trophy className="w-3.5 h-3.5 text-[#F2C96D]" />
+                <span>PORTAL JURI</span>
+              </button>
+            )}
           </nav>
 
           {/* Mobile Menu Hamburger Button */}
@@ -177,6 +192,19 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <UploadCloud className="w-4 h-4 text-[#031525]" />
                 <span>APLOUD KARYA PESERTA</span>
+              </button>
+            )}
+
+            {onOpenJury && (
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onOpenJury();
+                }}
+                className="w-full py-2.5 px-4 rounded-xl text-xs font-bold uppercase tracking-wider text-white bg-[#006B4F] border border-emerald-400/40 flex items-center justify-center gap-2 shadow-md"
+              >
+                <Trophy className="w-4 h-4 text-[#F2C96D]" />
+                <span>PORTAL PENILAIAN JURI</span>
               </button>
             )}
 

@@ -5,9 +5,10 @@ interface FooterProps {
   onOpenAdmin: () => void;
   onOpenRegister: () => void;
   onOpenUploadWork?: () => void;
+  onOpenJury?: () => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ onOpenAdmin, onOpenRegister, onOpenUploadWork }) => {
+export const Footer: React.FC<FooterProps> = ({ onOpenAdmin, onOpenRegister, onOpenUploadWork, onOpenJury }) => {
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -204,6 +205,17 @@ export const Footer: React.FC<FooterProps> = ({ onOpenAdmin, onOpenRegister, onO
                   <span>Portal Admin CMS</span>
                 </button>
               </li>
+              {onOpenJury && (
+                <li>
+                  <button
+                    onClick={onOpenJury}
+                    className="text-left text-[#00D9F5] hover:underline flex items-center gap-1 font-semibold"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-[#F2C96D]" />
+                    <span>Portal Penilaian Juri</span>
+                  </button>
+                </li>
+              )}
             </ul>
           </div>
 
