@@ -26,6 +26,21 @@ const STORAGE_ASSIGNMENTS = 'hsn2026_jury_assignments_v5';
 const STORAGE_SCORES = 'hsn2026_jury_scores_v4';
 const STORAGE_RESULTS = 'hsn2026_competition_results_v4';
 const STORAGE_AUDIT = 'hsn2026_jury_audit_logs_v4';
+export const STORAGE_DELETED_PROFILES = 'hsn2026_deleted_jury_profiles_v1';
+export const STORAGE_DELETED_ASSIGNMENTS = 'hsn2026_deleted_jury_assignments_v1';
+export const STORAGE_DELETED_CRITERIA = 'hsn2026_deleted_scoring_criteria_v1';
+
+export function getDeletedProfileIds(): string[] {
+  return getLocal<string[]>(STORAGE_DELETED_PROFILES, []);
+}
+
+export function getDeletedAssignmentIds(): string[] {
+  return getLocal<string[]>(STORAGE_DELETED_ASSIGNMENTS, []);
+}
+
+export function getDeletedCriteriaIds(): string[] {
+  return getLocal<string[]>(STORAGE_DELETED_CRITERIA, []);
+}
 
 // Cleanup any old legacy storage keys to eliminate outdated / mismatched competitions
 if (typeof window !== 'undefined') {
@@ -258,6 +273,7 @@ export async function getJuryAuditLogs(): Promise<JuryAuditLog[]> {
 // 4. JURY PROFILES SERVICE
 // ==============================================================================
 export async function getJuryProfiles(): Promise<UserProfile[]> {
+  const deletedIds = new Set(getDeletedProfileIds());
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
     try {
@@ -268,21 +284,24 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
         .order('created_at', { ascending: true });
 
       if (!error && data && data.length > 0) {
-        return data.map((p) => ({
-          id: p.id,
-          fullName: p.full_name,
-          email: p.email,
-          role: p.role,
-          institution: p.institution,
-          phone: p.phone,
-          isActive: p.is_active,
-          createdAt: p.created_at,
-          updatedAt: p.updated_at,
-        }));
+        return data
+          .filter((p) => !deletedIds.has(p.id))
+          .map((p) => ({
+            id: p.id,
+            fullName: p.full_name,
+            email: p.email,
+            role: p.role,
+            institution: p.institution,
+            phone: p.phone,
+            isActive: p.is_active,
+            createdAt: p.created_at,
+            updatedAt: p.updated_at,
+          }));
       }
     } catch {}
   }
-  return getLocal<UserProfile[]>(STORAGE_PROFILES, INITIAL_JURY_PROFILES);
+  const localList = getLocal<UserProfile[]>(STORAGE_PROFILES, INITIAL_JURY_PROFILES);
+  return localList.filter((p) => !deletedIds.has(p.id));
 }
 
 export async function saveJuryProfile(
@@ -383,6 +402,10 @@ export async function deleteJuryProfile(
   juryId: string,
   adminName: string = 'Admin'
 ): Promise<boolean> {
+  const deletedProfiles = new Set(getDeletedProfileIds());
+  deletedProfiles.add(juryId);
+  setLocal(STORAGE_DELETED_PROFILES, Array.from(deletedProfiles));
+
   const list = getLocal<UserProfile[]>(STORAGE_PROFILES, INITIAL_JURY_PROFILES);
   const target = list.find((p) => p.id === juryId);
   const updated = list.filter((p) => p.id !== juryId);
@@ -390,8 +413,13 @@ export async function deleteJuryProfile(
 
   // Bersihkan seluruh penugasan juri ini dari penyimpanan lokal
   const assignments = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, []);
+  const removedAssignments = assignments.filter((a) => a.juryId === juryId);
   const updatedAssignments = assignments.filter((a) => a.juryId !== juryId);
   setLocal(STORAGE_ASSIGNMENTS, updatedAssignments);
+
+  const deletedAssignments = new Set(getDeletedAssignmentIds());
+  removedAssignments.forEach((a) => deletedAssignments.add(a.id));
+  setLocal(STORAGE_DELETED_ASSIGNMENTS, Array.from(deletedAssignments));
 
   if (target) {
     createAuditLog({
@@ -475,6 +503,11 @@ export async function getJuryAssignments(customCompetitions?: Competition[]): Pr
     rawList = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, INITIAL_JURY_ASSIGNMENTS);
   }
 
+  // Filter out any explicitly deleted assignments and profiles
+  const deletedAssignIds = new Set(getDeletedAssignmentIds());
+  const deletedJuryIds = new Set(getDeletedProfileIds());
+  rawList = rawList.filter((a) => !deletedAssignIds.has(a.id) && !deletedJuryIds.has(a.juryId));
+
   // Active competitions authoritative list from CMS Panitia
   const allComps = customCompetitions && customCompetitions.length > 0 ? customCompetitions : getAvailableCompetitions();
   const validCompMap = new Map(allComps.map((c) => [c.id, c]));
@@ -520,8 +553,9 @@ export async function getJuryAssignments(customCompetitions?: Competition[]): Pr
   }
   normalizedList = Array.from(uniqueAssignMap.values());
 
-  // Only replenish from INITIAL_JURY_ASSIGNMENTS on first run if local storage was totally empty
-  if (normalizedList.length === 0) {
+  // Only replenish from INITIAL_JURY_ASSIGNMENTS on first run if local storage was totally uninitialized
+  const hasInitializedStorage = typeof window !== 'undefined' && localStorage.getItem(STORAGE_ASSIGNMENTS) !== null;
+  if (!hasInitializedStorage && normalizedList.length === 0 && deletedAssignIds.size === 0) {
     allComps.forEach((comp) => {
       const initMatches = INITIAL_JURY_ASSIGNMENTS.filter((initA) => {
         return initA.competitionId === comp.id || resolveCompetition(allComps, initA.competitionId, initA.competitionTitle)?.id === comp.id;
@@ -653,6 +687,10 @@ export async function removeJuryAssignment(
   adminName: string = 'Admin',
   reason?: string
 ): Promise<boolean> {
+  const deletedAssignments = new Set(getDeletedAssignmentIds());
+  deletedAssignments.add(assignmentId);
+  setLocal(STORAGE_DELETED_ASSIGNMENTS, Array.from(deletedAssignments));
+
   const current = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, INITIAL_JURY_ASSIGNMENTS);
   const target = current.find((a) => a.id === assignmentId);
   const updated = current.filter((a) => a.id !== assignmentId);
@@ -682,10 +720,21 @@ export async function removeAllAssignmentsForCompetition(
   competitionId: string,
   adminName: string = 'Admin'
 ): Promise<boolean> {
+  const normTarget = normalizeCompId(competitionId).toLowerCase();
   const current = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, []);
-  const removed = current.filter((a) => a.competitionId === competitionId);
-  const updated = current.filter((a) => a.competitionId !== competitionId);
+  const isMatch = (a: JuryAssignment) => {
+    if (!a.competitionId) return false;
+    if (a.competitionId === competitionId) return true;
+    if (normalizeCompId(a.competitionId).toLowerCase() === normTarget) return true;
+    return false;
+  };
+  const removed = current.filter(isMatch);
+  const updated = current.filter((a) => !isMatch(a));
   setLocal(STORAGE_ASSIGNMENTS, updated);
+
+  const deletedAssignments = new Set(getDeletedAssignmentIds());
+  removed.forEach((a) => deletedAssignments.add(a.id));
+  setLocal(STORAGE_DELETED_ASSIGNMENTS, Array.from(deletedAssignments));
 
   createAuditLog({
     action: 'CLEAR_COMPETITION_ASSIGNMENTS',
@@ -710,9 +759,14 @@ export async function removeAllAssignmentsForJudge(
   adminName: string = 'Admin'
 ): Promise<boolean> {
   const current = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, []);
-  const removed = current.filter((a) => a.juryId === juryId);
-  const updated = current.filter((a) => a.juryId !== juryId);
+  const isMatch = (a: JuryAssignment) => a.juryId === juryId;
+  const removed = current.filter(isMatch);
+  const updated = current.filter((a) => !isMatch(a));
   setLocal(STORAGE_ASSIGNMENTS, updated);
+
+  const deletedAssignments = new Set(getDeletedAssignmentIds());
+  removed.forEach((a) => deletedAssignments.add(a.id));
+  setLocal(STORAGE_DELETED_ASSIGNMENTS, Array.from(deletedAssignments));
 
   createAuditLog({
     action: 'CLEAR_JURY_ASSIGNMENTS',
@@ -736,6 +790,7 @@ export async function removeAllAssignmentsForJudge(
 // 6. SCORING CRITERIA SERVICE
 // ==============================================================================
 export async function getScoringCriteria(competitionId?: string): Promise<ScoringCriterion[]> {
+  const deletedCriteria = new Set(getDeletedCriteriaIds());
   const normCompId = competitionId ? normalizeCompId(competitionId) : undefined;
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
@@ -746,27 +801,31 @@ export async function getScoringCriteria(competitionId?: string): Promise<Scorin
       }
       const { data, error } = await query;
       if (!error && data && data.length > 0) {
-        return data.map((d) => ({
-          id: d.id,
-          competitionId: normalizeCompId(d.competition_id),
-          criterionName: d.criterion_name,
-          description: d.description,
-          maxScore: Number(d.max_score) || 100,
-          weight: Number(d.weight) || 0,
-          sortOrder: d.sort_order,
-          isActive: d.is_active,
-          createdAt: d.created_at,
-          updatedAt: d.updated_at,
-        }));
+        return data
+          .filter((d) => !deletedCriteria.has(d.id))
+          .map((d) => ({
+            id: d.id,
+            competitionId: normalizeCompId(d.competition_id),
+            criterionName: d.criterion_name,
+            description: d.description,
+            maxScore: Number(d.max_score) || 100,
+            weight: Number(d.weight) || 0,
+            sortOrder: d.sort_order,
+            isActive: d.is_active,
+            createdAt: d.created_at,
+            updatedAt: d.updated_at,
+          }));
       }
     } catch {}
   }
 
   const all = getLocal<ScoringCriterion[]>(STORAGE_CRITERIA, INITIAL_SCORING_CRITERIA);
-  const normalizedAll = all.map((c) => ({
-    ...c,
-    competitionId: normalizeCompId(c.competitionId),
-  }));
+  const normalizedAll = all
+    .filter((c) => !deletedCriteria.has(c.id))
+    .map((c) => ({
+      ...c,
+      competitionId: normalizeCompId(c.competitionId),
+    }));
 
   if (normCompId) {
     return normalizedAll.filter((c) => c.competitionId === normCompId || c.competitionId === competitionId);
@@ -780,6 +839,13 @@ export async function saveScoringCriterion(
 ): Promise<{ success: boolean; data?: ScoringCriterion }> {
   const id = criterion.id || `crit-${Date.now()}`;
   const now = new Date().toISOString();
+
+  // If re-saved, remove from deleted list
+  const deletedCriteria = new Set(getDeletedCriteriaIds());
+  if (deletedCriteria.has(id)) {
+    deletedCriteria.delete(id);
+    setLocal(STORAGE_DELETED_CRITERIA, Array.from(deletedCriteria));
+  }
 
   const finalCrit: ScoringCriterion = {
     id,
@@ -842,6 +908,10 @@ export async function deleteScoringCriterion(
   criterionId: string,
   adminName: string = 'Admin'
 ): Promise<boolean> {
+  const deletedCriteria = new Set(getDeletedCriteriaIds());
+  deletedCriteria.add(criterionId);
+  setLocal(STORAGE_DELETED_CRITERIA, Array.from(deletedCriteria));
+
   const list = getLocal<ScoringCriterion[]>(STORAGE_CRITERIA, INITIAL_SCORING_CRITERIA);
   const target = list.find((c) => c.id === criterionId);
   const updated = list.filter((c) => c.id !== criterionId);

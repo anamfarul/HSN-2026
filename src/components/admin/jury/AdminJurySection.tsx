@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Trophy, 
   Users, 
@@ -70,6 +71,7 @@ import {
   getJuryAuditLogs, 
   getScoringProgressSummary,
   resolveCompetition,
+  normalizeCompId,
   ParticipantScoreRow
 } from '../../../lib/juryService';
 import { exportScoreRecapCSV, exportScoreRecapPDF, exportBeritaAcaraPDF } from '../../../lib/juryReportService';
@@ -89,7 +91,7 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
   isSuperAdmin,
   adminRole = 'Sekretariat Utama HSN 2026',
 }) => {
-  // Wewenang Akses Hapus (Super Admin & Divisi Sekretariat & Administrasi)
+  // Wewenang Akses Hapus (Super Admin & Divisi Sekretariat & Administrasi / Divisi Sekretarian)
   const isSekretariatAdmin = useMemo(() => {
     const rawRole = (adminRole || '').toLowerCase();
     const rawAdmin = (currentAdminName || '').toLowerCase();
@@ -98,17 +100,32 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
         ? (localStorage.getItem('hsn2026_admin_role') || sessionStorage.getItem('hsn2026_admin_role') || '')
         : ''
     ).toLowerCase();
+    const storedUser = (
+      typeof window !== 'undefined'
+        ? (localStorage.getItem('hsn2026_admin_user') || sessionStorage.getItem('hsn2026_admin_user') || '')
+        : ''
+    ).toLowerCase();
 
-    const checkStr = `${rawRole} ${rawAdmin} ${storedRole}`;
-    return (
-      checkStr.includes('sekretariat') ||
-      checkStr.includes('administrasi') ||
-      checkStr.includes('sekretarian') ||
+    const checkStr = `${rawRole} ${rawAdmin} ${storedRole} ${storedUser}`;
+
+    // Super Admin wewenang penuh
+    const isSuper =
+      isSuperAdmin ||
       checkStr.includes('super admin') ||
       checkStr.includes('superadmin') ||
-      checkStr.includes('admin')
-    );
-  }, [adminRole, currentAdminName]);
+      checkStr.includes('sekretariat utama') ||
+      checkStr.includes('gus ahmad') ||
+      checkStr.includes('admin');
+
+    // Divisi Sekretariat & Administrasi (atau variasi ejaan Sekretarian & Administrasi)
+    const isSekretariat =
+      checkStr.includes('sekretariat') ||
+      checkStr.includes('sekretarian') ||
+      checkStr.includes('administrasi') ||
+      checkStr.includes('nabila');
+
+    return isSuper || isSekretariat;
+  }, [adminRole, currentAdminName, isSuperAdmin]);
 
   const canDeleteJuryItems = isSuperAdmin || isSekretariatAdmin || (currentAdminName?.toLowerCase() === 'admin');
   // Sub-tab Navigation
@@ -170,6 +187,27 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
 
   // Subtab 8: Detail Modal
   const [viewScoreDetail, setViewScoreDetail] = useState<ParticipantScoreRow | null>(null);
+
+  // In-App Safe Delete Confirmation Modal & Toast State (replaces native window.confirm/alert in iframes)
+  const [deleteModal, setDeleteModal] = useState<{
+    isOpen: boolean;
+    type: 'judge' | 'assignment' | 'competition_assignments' | 'judge_assignments' | 'criterion';
+    id?: string;
+    title: string;
+    message: string;
+    highlightText?: string;
+    actionText?: string;
+    onConfirm: () => Promise<void> | void;
+  } | null>(null);
+
+  const [feedbackToast, setFeedbackToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    if (!feedbackToast) return;
+    const timer = setTimeout(() => setFeedbackToast(null), 3500);
+    return () => clearTimeout(timer);
+  }, [feedbackToast]);
 
   // Refresh all jury data
   const loadAllData = async () => {
@@ -317,24 +355,43 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
   };
 
   // Subtab 2 Handlers: Delete Judge (Super Admin & Divisi Sekretariat)
-  const handleDeleteJudge = async (judgeId: string, judgeName: string) => {
+  const handleDeleteJudge = (judgeId: string, judgeName: string) => {
     if (!canDeleteJuryItems) {
-      alert('Akses Ditolak: Fitur hapus dewan juri hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.');
-      return;
-    }
-    if (
-      !confirm(
-        `PERINGATAN: Yakin ingin menghapus dewan juri "${judgeName}" secara permanen?\n\nSeluruh data profil dan penugasan juri ini pada cabang lomba akan otomatis dihapus.`
-      )
-    ) {
+      setFeedbackToast({
+        message: 'Akses Ditolak: Fitur hapus dewan juri hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.',
+        type: 'error',
+      });
       return;
     }
 
-    await deleteJuryProfile(judgeId, currentAdminName);
-    setIsJudgeModalOpen(false);
-    setEditingJudge(null);
-    setEditingJudgeCompIds([]);
-    await loadAllData();
+    setDeleteModal({
+      isOpen: true,
+      type: 'judge',
+      id: judgeId,
+      title: 'Hapus Akun Dewan Juri',
+      message: `Apakah Anda yakin ingin menghapus akun dewan juri "${judgeName}" secara permanen?`,
+      highlightText: `Dewan Juri: ${judgeName} • Seluruh data profil dan penugasan juri ini pada cabang lomba akan otomatis dihapus.`,
+      actionText: 'Hapus Dewan Juri',
+      onConfirm: async () => {
+        setIsDeleting(true);
+        try {
+          await deleteJuryProfile(judgeId, currentAdminName);
+          setJuries((prev) => prev.filter((item) => item.id !== judgeId));
+          setAssignments((prev) => prev.filter((item) => item.juryId !== judgeId));
+          setIsJudgeModalOpen(false);
+          setEditingJudge(null);
+          setEditingJudgeCompIds([]);
+          setDeleteModal(null);
+          setFeedbackToast({
+            message: `Akun dewan juri "${judgeName}" berhasil dihapus.`,
+            type: 'success',
+          });
+          await loadAllData();
+        } finally {
+          setIsDeleting(false);
+        }
+      },
+    });
   };
 
   // Subtab 3 Handlers: Add & Remove Assignment
@@ -352,53 +409,121 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
       competitions
     );
     if (!res.success) {
-      alert(res.message);
+      setFeedbackToast({ message: res.message || 'Gagal menugaskan juri', type: 'error' });
       return;
     }
     if (!overrideJuryId) setAssignJuryId('');
+    setFeedbackToast({ message: `Dewan juri berhasil ditugaskan pada cabang lomba.`, type: 'success' });
     await loadAllData();
   };
 
-  const handleRemoveAssignment = async (id: string) => {
+  const handleRemoveAssignment = (id: string) => {
     if (!canDeleteJuryItems) {
-      alert('Akses Ditolak: Fitur hapus penugasan dewan juri hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.');
+      setFeedbackToast({
+        message: 'Akses Ditolak: Fitur hapus penugasan dewan juri hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.',
+        type: 'error',
+      });
       return;
     }
-    if (!confirm('Yakin ingin membatalkan dan menghapus penugasan dewan juri ini?')) return;
-    await removeJuryAssignment(id, currentAdminName);
-    await loadAllData();
+
+    const target = assignments.find((a) => a.id === id);
+    const juryName = target?.juryName || 'Dewan Juri';
+    const compTitle = target?.competitionTitle || 'Cabang Lomba';
+
+    setDeleteModal({
+      isOpen: true,
+      type: 'assignment',
+      id,
+      title: 'Hapus Penugasan Juri',
+      message: `Yakin ingin membatalkan dan menghapus penugasan dewan juri "${juryName}" pada cabang lomba "${compTitle}"?`,
+      highlightText: `Dewan Juri: ${juryName} • Lomba: ${compTitle}`,
+      actionText: 'Hapus Penugasan',
+      onConfirm: async () => {
+        setIsDeleting(true);
+        try {
+          await removeJuryAssignment(id, currentAdminName);
+          setAssignments((prev) => prev.filter((item) => item.id !== id));
+          setDeleteModal(null);
+          setFeedbackToast({
+            message: `Penugasan juri "${juryName}" pada ${compTitle} berhasil dihapus.`,
+            type: 'success',
+          });
+          await loadAllData();
+        } finally {
+          setIsDeleting(false);
+        }
+      },
+    });
   };
 
-  const handleClearCompetitionAssignments = async (comp: Competition) => {
+  const handleClearCompetitionAssignments = (comp: Competition) => {
     if (!canDeleteJuryItems) {
-      alert('Akses Ditolak: Fitur hapus penugasan juri hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.');
+      setFeedbackToast({
+        message: 'Akses Ditolak: Fitur hapus penugasan juri hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.',
+        type: 'error',
+      });
       return;
     }
-    if (
-      !confirm(
-        `Yakin ingin menghapus seluruh penugasan juri pada cabang lomba "[${comp.category}] ${comp.title}"?`
-      )
-    ) {
-      return;
-    }
-    await removeAllAssignmentsForCompetition(comp.id, currentAdminName);
-    await loadAllData();
+
+    setDeleteModal({
+      isOpen: true,
+      type: 'competition_assignments',
+      id: comp.id,
+      title: 'Hapus Semua Penugasan Cabang Lomba',
+      message: `Yakin ingin menghapus seluruh penugasan dewan juri pada cabang lomba "[${comp.category}] ${comp.title}"?`,
+      highlightText: `Cabang Lomba: [${comp.category}] ${comp.title}`,
+      actionText: 'Hapus Semua Penugasan',
+      onConfirm: async () => {
+        setIsDeleting(true);
+        try {
+          await removeAllAssignmentsForCompetition(comp.id, currentAdminName);
+          setAssignments((prev) => prev.filter((item) => item.competitionId !== comp.id && normalizeCompId(item.competitionId) !== normalizeCompId(comp.id)));
+          setDeleteModal(null);
+          setFeedbackToast({
+            message: `Seluruh penugasan juri pada cabang "${comp.title}" berhasil dihapus.`,
+            type: 'success',
+          });
+          await loadAllData();
+        } finally {
+          setIsDeleting(false);
+        }
+      },
+    });
   };
 
-  const handleClearJudgeAssignments = async (juryId: string, juryName: string) => {
+  const handleClearJudgeAssignments = (juryId: string, juryName: string) => {
     if (!canDeleteJuryItems) {
-      alert('Akses Ditolak: Fitur hapus penugasan juri hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.');
+      setFeedbackToast({
+        message: 'Akses Ditolak: Fitur hapus penugasan juri hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.',
+        type: 'error',
+      });
       return;
     }
-    if (
-      !confirm(
-        `Yakin ingin menghapus seluruh penugasan cabang lomba untuk dewan juri "${juryName}"?`
-      )
-    ) {
-      return;
-    }
-    await removeAllAssignmentsForJudge(juryId, currentAdminName);
-    await loadAllData();
+
+    setDeleteModal({
+      isOpen: true,
+      type: 'judge_assignments',
+      id: juryId,
+      title: 'Hapus Semua Penugasan Juri',
+      message: `Yakin ingin menghapus seluruh penugasan cabang lomba untuk dewan juri "${juryName}"?`,
+      highlightText: `Dewan Juri: ${juryName}`,
+      actionText: 'Hapus Semua Penugasan',
+      onConfirm: async () => {
+        setIsDeleting(true);
+        try {
+          await removeAllAssignmentsForJudge(juryId, currentAdminName);
+          setAssignments((prev) => prev.filter((item) => item.juryId !== juryId));
+          setDeleteModal(null);
+          setFeedbackToast({
+            message: `Seluruh penugasan untuk dewan juri "${juryName}" berhasil dihapus.`,
+            type: 'success',
+          });
+          await loadAllData();
+        } finally {
+          setIsDeleting(false);
+        }
+      },
+    });
   };
 
   const handleToggleAssignment = async (juryId: string, compId: string) => {
@@ -414,10 +539,13 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
 
     if (existing) {
       if (!canDeleteJuryItems) {
-        alert('Akses Ditolak: Fitur hapus penugasan dewan juri hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.');
+        setFeedbackToast({
+          message: 'Akses Ditolak: Fitur hapus penugasan dewan juri hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.',
+          type: 'error',
+        });
         return;
       }
-      await removeJuryAssignment(existing.id, currentAdminName);
+      handleRemoveAssignment(existing.id);
     } else {
       await assignJuryToCompetition(
         juryId,
@@ -427,8 +555,12 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
         targetComp?.category,
         competitions
       );
+      setFeedbackToast({
+        message: `Dewan juri berhasil ditugaskan pada ${targetComp?.title || compId}.`,
+        type: 'success',
+      });
+      await loadAllData();
     }
-    await loadAllData();
   };
 
   // Subtab 4 Handlers: Criteria
@@ -454,25 +586,47 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
     setEditingCriterion(null);
     const updated = await getScoringCriteria(selectedCompId);
     setCriteriaList(updated);
+    setFeedbackToast({ message: 'Parameter kriteria berhasil disimpan.', type: 'success' });
     loadAllData();
   };
 
-  const handleDeleteCriterion = async (id: string, name?: string) => {
+  const handleDeleteCriterion = (id: string, name?: string) => {
     if (!canDeleteJuryItems) {
-      alert('Akses Ditolak: Fitur hapus parameter kriteria hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.');
+      setFeedbackToast({
+        message: 'Akses Ditolak: Fitur hapus parameter kriteria hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.',
+        type: 'error',
+      });
       return;
     }
-    if (
-      !confirm(
-        `PERINGATAN: Yakin ingin menghapus parameter kriteria ${name ? `"${name}"` : ''} secara permanen?\n\nTindakan ini tidak dapat dibatalkan.`
-      )
-    ) {
-      return;
-    }
-    await deleteScoringCriterion(id, currentAdminName);
-    const updated = await getScoringCriteria(selectedCompId);
-    setCriteriaList(updated);
-    loadAllData();
+
+    setDeleteModal({
+      isOpen: true,
+      type: 'criterion',
+      id,
+      title: 'Hapus Parameter Kriteria Penilaian',
+      message: `Apakah Anda yakin ingin menghapus parameter kriteria ${name ? `"${name}"` : ''} secara permanen?`,
+      highlightText: `Parameter Kriteria: ${name || id} • Tindakan ini tidak dapat dibatalkan.`,
+      actionText: 'Hapus Parameter Kriteria',
+      onConfirm: async () => {
+        setIsDeleting(true);
+        try {
+          await deleteScoringCriterion(id, currentAdminName);
+          setCriteriaList((prev) => prev.filter((item) => item.id !== id));
+          setIsCriteriaModalOpen(false);
+          setEditingCriterion(null);
+          setDeleteModal(null);
+          setFeedbackToast({
+            message: `Parameter kriteria ${name ? `"${name}"` : ''} berhasil dihapus.`,
+            type: 'success',
+          });
+          const updated = await getScoringCriteria(selectedCompId);
+          setCriteriaList(updated);
+          await loadAllData();
+        } finally {
+          setIsDeleting(false);
+        }
+      },
+    });
   };
 
   // Subtab 6 Handlers: Reopen Score
@@ -910,25 +1064,31 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                           </button>
 
                           {/* Icon Menu Hapus Juri */}
-                          {canDeleteJuryItems ? (
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteJudge(j.id, j.fullName)}
-                              className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-rose-100 transition-colors"
-                              title={`Hapus Data Juri "${j.fullName}" (Wewenang Super Admin & Divisi Sekretariat & Administrasi)`}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              disabled
-                              className="p-1.5 rounded-lg bg-white/5 border border-white/5 text-white/20 cursor-not-allowed"
-                              title="Hapus juri hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!canDeleteJuryItems) {
+                                setFeedbackToast({
+                                  message: 'Akses Ditolak: Fitur hapus dewan juri hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.',
+                                  type: 'error',
+                                });
+                                return;
+                              }
+                              handleDeleteJudge(j.id, j.fullName);
+                            }}
+                            className={`p-1.5 rounded-lg border transition-all ${
+                              canDeleteJuryItems
+                                ? 'bg-rose-500/15 hover:bg-rose-500/30 border-rose-500/40 text-rose-300 hover:text-rose-100 shadow-sm active:scale-95 cursor-pointer'
+                                : 'bg-white/5 hover:bg-rose-500/10 border-white/10 text-white/30 hover:text-rose-300 cursor-pointer'
+                            }`}
+                            title={
+                              canDeleteJuryItems
+                                ? `Hapus Data Juri "${j.fullName}" (Wewenang Super Admin & Divisi Sekretariat & Administrasi)`
+                                : 'Hapus juri khusus untuk Super Admin dan Divisi Sekretariat & Administrasi'
+                            }
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </td>
                       </tr>
                     );
@@ -937,10 +1097,10 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
             </table>
           </div>
 
-          {/* Modal Form Tambah / Edit Juri */}
-          {isJudgeModalOpen && editingJudge && (
-            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-              <div className="max-w-md w-full rounded-3xl bg-[#031525] border border-white/20 p-6 shadow-2xl space-y-4 animate-scale-up">
+          {/* Modal Form Tambah / Edit Juri via Portal */}
+          {typeof document !== 'undefined' && isJudgeModalOpen && editingJudge && createPortal(
+            <div className="fixed inset-0 z-[99990] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" style={{ zIndex: 99990 }}>
+              <div className="max-w-md w-full rounded-3xl bg-[#031525] border border-white/20 p-6 shadow-2xl space-y-4 animate-scale-up text-white" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-between pb-3 border-b border-white/10">
                   <h4 className="text-sm font-bold text-white flex items-center gap-2">
                     <User className="w-4 h-4 text-[#00D9F5]" />
@@ -1069,27 +1229,33 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
 
                   <div className="flex items-center justify-between gap-2 pt-3 border-t border-white/10">
                     {editingJudge.id ? (
-                      canDeleteJuryItems ? (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteJudge(editingJudge.id!, editingJudge.fullName || 'Dewan Juri')}
-                          className="px-3.5 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-rose-100 text-xs font-bold flex items-center gap-1.5 transition-colors"
-                          title="Hapus akun dewan juri ini secara permanen"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Hapus Juri</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled
-                          className="px-3.5 py-2 rounded-xl bg-white/5 border border-white/5 text-white/20 text-xs font-bold flex items-center gap-1.5 cursor-not-allowed"
-                          title="Hapus juri hanya untuk Super Admin & Divisi Sekretariat & Administrasi"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Hapus Juri</span>
-                        </button>
-                      )
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!canDeleteJuryItems) {
+                            setFeedbackToast({
+                              message: 'Akses Ditolak: Fitur hapus dewan juri hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.',
+                              type: 'error',
+                            });
+                            return;
+                          }
+                          setIsJudgeModalOpen(false);
+                          handleDeleteJudge(editingJudge.id!, editingJudge.fullName || 'Dewan Juri');
+                        }}
+                        className={`px-3.5 py-2 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all ${
+                          canDeleteJuryItems
+                            ? 'bg-rose-500/15 hover:bg-rose-500/30 border-rose-500/40 text-rose-300 hover:text-rose-100 active:scale-95 cursor-pointer'
+                            : 'bg-white/5 hover:bg-rose-500/10 border-white/10 text-white/30 hover:text-rose-300 cursor-pointer'
+                        }`}
+                        title={
+                          canDeleteJuryItems
+                            ? 'Hapus akun dewan juri ini secara permanen'
+                            : 'Hapus juri khusus untuk Super Admin & Divisi Sekretariat & Administrasi'
+                        }
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Hapus Juri</span>
+                      </button>
                     ) : (
                       <div />
                     )}
@@ -1111,7 +1277,8 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                   </div>
                 </form>
               </div>
-            </div>
+            </div>,
+            document.body
           )}
         </div>
       )}
@@ -1397,27 +1564,32 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                         {/* Status Quorum Badge & Hapus Semua Penugasan */}
                         <div className="flex items-center gap-2 shrink-0">
                           {compAssigns.length > 0 && (
-                            canDeleteJuryItems ? (
-                              <button
-                                type="button"
-                                onClick={() => handleClearCompetitionAssignments(comp)}
-                                className="p-2 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-rose-100 text-[11px] font-bold flex items-center gap-1.5 transition-colors"
-                                title={`Hapus semua penugasan juri pada cabang ${comp.title} (Super Admin & Divisi Sekretariat & Administrasi)`}
-                              >
-                                <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                                <span className="hidden sm:inline">Hapus Semua Penugasan</span>
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                disabled
-                                className="p-2 px-3 rounded-xl bg-white/5 border border-white/5 text-white/20 text-[11px] font-bold flex items-center gap-1.5 cursor-not-allowed"
-                                title="Hapus penugasan hanya untuk Super Admin & Divisi Sekretariat & Administrasi"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">Hapus Semua Penugasan</span>
-                              </button>
-                            )
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!canDeleteJuryItems) {
+                                  setFeedbackToast({
+                                    message: 'Akses Ditolak: Fitur hapus penugasan juri hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.',
+                                    type: 'error',
+                                  });
+                                  return;
+                                }
+                                handleClearCompetitionAssignments(comp);
+                              }}
+                              className={`p-2 px-3 rounded-xl border text-[11px] font-bold flex items-center gap-1.5 transition-all ${
+                                canDeleteJuryItems
+                                  ? 'bg-rose-500/15 hover:bg-rose-500/30 border-rose-500/40 text-rose-300 hover:text-rose-100 shadow-sm active:scale-95 cursor-pointer'
+                                  : 'bg-white/5 hover:bg-rose-500/10 border-white/10 text-white/30 hover:text-rose-300 cursor-pointer'
+                              }`}
+                              title={
+                                canDeleteJuryItems
+                                  ? `Hapus semua penugasan juri pada cabang ${comp.title} (Super Admin & Divisi Sekretariat & Administrasi)`
+                                  : 'Hapus penugasan khusus Super Admin & Divisi Sekretariat & Administrasi'
+                              }
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                              <span className="hidden sm:inline">Hapus Semua Penugasan</span>
+                            </button>
                           )}
 
                           {compAssigns.length < 3 ? (
@@ -1463,25 +1635,31 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                                       </div>
                                     </div>
                                   </div>
-                                  {canDeleteJuryItems ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemoveAssignment(a.id)}
-                                      className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-rose-100 transition-colors shrink-0"
-                                      title={`Hapus penugasan ${juryFullName} (Wewenang Super Admin & Divisi Sekretariat & Administrasi)`}
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      disabled
-                                      className="p-1.5 rounded-lg bg-white/5 border border-white/5 text-white/20 cursor-not-allowed shrink-0"
-                                      title="Hapus penugasan juri hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (!canDeleteJuryItems) {
+                                        setFeedbackToast({
+                                          message: 'Akses Ditolak: Fitur hapus penugasan juri hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.',
+                                          type: 'error',
+                                        });
+                                        return;
+                                      }
+                                      handleRemoveAssignment(a.id);
+                                    }}
+                                    className={`p-1.5 rounded-lg border transition-all shrink-0 ${
+                                      canDeleteJuryItems
+                                        ? 'bg-rose-500/15 hover:bg-rose-500/30 border-rose-500/40 text-rose-300 hover:text-rose-100 shadow-sm active:scale-95 cursor-pointer'
+                                        : 'bg-white/5 hover:bg-rose-500/10 border-white/10 text-white/30 hover:text-rose-300 cursor-pointer'
+                                    }`}
+                                    title={
+                                      canDeleteJuryItems
+                                        ? `Hapus penugasan ${juryFullName} (Wewenang Super Admin & Divisi Sekretariat & Administrasi)`
+                                        : 'Hapus penugasan khusus Super Admin & Divisi Sekretariat & Administrasi'
+                                    }
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
                                 </div>
                               );
                             })}
@@ -1567,25 +1745,31 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                                     title={`[${comp.category}] ${comp.title}`}
                                   >
                                     <span>[{comp.category}] {comp.title}</span>
-                                    {canDeleteJuryItems ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleRemoveAssignment(assignment.id)}
-                                        className="hover:text-rose-300 hover:bg-rose-500/25 p-0.5 rounded transition-colors"
-                                        title={`Hapus penugasan cabang [${comp.category}] ${comp.title}`}
-                                      >
-                                        <Trash2 className="w-3 h-3 text-rose-400" />
-                                      </button>
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        disabled
-                                        className="text-white/20 p-0.5 cursor-not-allowed"
-                                        title="Hapus penugasan hanya untuk Super Admin & Divisi Sekretariat & Administrasi"
-                                      >
-                                        <Trash2 className="w-3 h-3" />
-                                      </button>
-                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (!canDeleteJuryItems) {
+                                          setFeedbackToast({
+                                            message: 'Akses Ditolak: Fitur hapus penugasan juri hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.',
+                                            type: 'error',
+                                          });
+                                          return;
+                                        }
+                                        handleRemoveAssignment(assignment.id);
+                                      }}
+                                      className={`p-1 rounded transition-all ${
+                                        canDeleteJuryItems
+                                          ? 'hover:text-rose-200 hover:bg-rose-500/30 text-rose-300 cursor-pointer active:scale-95'
+                                          : 'text-white/30 hover:text-rose-300 cursor-pointer'
+                                      }`}
+                                      title={
+                                        canDeleteJuryItems
+                                          ? `Hapus penugasan cabang [${comp.category}] ${comp.title} (Super Admin & Divisi Sekretariat & Administrasi)`
+                                          : 'Hapus penugasan khusus Super Admin & Divisi Sekretariat & Administrasi'
+                                      }
+                                    >
+                                      <Trash2 className="w-3 h-3 text-rose-400" />
+                                    </button>
                                   </span>
                                 ));
                               })()}
@@ -1628,26 +1812,32 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                                     </option>
                                   ))}
                               </select>
-                              {canDeleteJuryItems ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleClearJudgeAssignments(j.id, j.fullName)}
-                                  disabled={myAssigns.length === 0}
-                                  className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-rose-100 transition-colors disabled:opacity-20 disabled:cursor-not-allowed shrink-0"
-                                  title={`Hapus semua penugasan dewan juri "${j.fullName}" (Wewenang Super Admin & Divisi Sekretariat & Administrasi)`}
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  disabled
-                                  className="p-1.5 rounded-xl bg-white/5 border border-white/5 text-white/20 cursor-not-allowed shrink-0"
-                                  title="Hapus penugasan juri hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!canDeleteJuryItems) {
+                                    setFeedbackToast({
+                                      message: 'Akses Ditolak: Fitur hapus penugasan juri hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.',
+                                      type: 'error',
+                                    });
+                                    return;
+                                  }
+                                  handleClearJudgeAssignments(j.id, j.fullName);
+                                }}
+                                disabled={myAssigns.length === 0}
+                                className={`p-1.5 rounded-xl border transition-all disabled:opacity-20 disabled:cursor-not-allowed shrink-0 ${
+                                  canDeleteJuryItems
+                                    ? 'bg-rose-500/15 hover:bg-rose-500/30 border-rose-500/40 text-rose-300 hover:text-rose-100 active:scale-95 cursor-pointer'
+                                    : 'bg-white/5 hover:bg-rose-500/10 border-white/10 text-white/30 hover:text-rose-300 cursor-pointer'
+                                }`}
+                                title={
+                                  canDeleteJuryItems
+                                    ? `Hapus semua penugasan dewan juri "${j.fullName}" (Wewenang Super Admin & Divisi Sekretariat & Administrasi)`
+                                    : 'Hapus penugasan juri khusus Super Admin & Divisi Sekretariat & Administrasi'
+                                }
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -1881,25 +2071,31 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                       >
                         <Edit className="w-3.5 h-3.5" />
                       </button>
-                      {canDeleteJuryItems ? (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteCriterion(crit.id, crit.criterionName)}
-                          className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-rose-100 transition-colors"
-                          title={`Hapus Parameter Kriteria "${crit.criterionName}" (Wewenang Super Admin & Divisi Sekretariat & Administrasi)`}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled
-                          className="p-1.5 rounded-lg bg-white/5 border border-white/5 text-white/20 cursor-not-allowed"
-                          title="Hapus kriteria hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!canDeleteJuryItems) {
+                            setFeedbackToast({
+                              message: 'Akses Ditolak: Fitur hapus parameter kriteria hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.',
+                              type: 'error',
+                            });
+                            return;
+                          }
+                          handleDeleteCriterion(crit.id, crit.criterionName);
+                        }}
+                        className={`p-1.5 rounded-lg border transition-all ${
+                          canDeleteJuryItems
+                            ? 'bg-rose-500/15 hover:bg-rose-500/30 border-rose-500/40 text-rose-300 hover:text-rose-100 shadow-sm active:scale-95 cursor-pointer'
+                            : 'bg-white/5 hover:bg-rose-500/10 border-white/10 text-white/30 hover:text-rose-300 cursor-pointer'
+                        }`}
+                        title={
+                          canDeleteJuryItems
+                            ? `Hapus Parameter Kriteria "${crit.criterionName}" (Wewenang Super Admin & Divisi Sekretariat & Administrasi)`
+                            : 'Hapus parameter kriteria khusus Super Admin & Divisi Sekretariat & Administrasi'
+                        }
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -1907,10 +2103,10 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
             </table>
           </div>
 
-          {/* Modal Form Tambah / Edit Kriteria */}
-          {isCriteriaModalOpen && editingCriterion && (
-            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-              <div className="max-w-md w-full rounded-3xl bg-[#031525] border border-white/20 p-6 shadow-2xl space-y-4 animate-scale-up">
+          {/* Modal Form Tambah / Edit Kriteria via Portal */}
+          {typeof document !== 'undefined' && isCriteriaModalOpen && editingCriterion && createPortal(
+            <div className="fixed inset-0 z-[99990] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" style={{ zIndex: 99990 }}>
+              <div className="max-w-md w-full rounded-3xl bg-[#031525] border border-white/20 p-6 shadow-2xl space-y-4 animate-scale-up text-white" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-between pb-3 border-b border-white/10">
                   <h4 className="text-sm font-bold text-white flex items-center gap-2">
                     <Layers className="w-4 h-4 text-[#F2C96D]" />
@@ -1978,30 +2174,33 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
 
                   <div className="flex items-center justify-between gap-2 pt-3 border-t border-white/10">
                     {editingCriterion.id ? (
-                      canDeleteJuryItems ? (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            setIsCriteriaModalOpen(false);
-                            await handleDeleteCriterion(editingCriterion.id!, editingCriterion.criterionName);
-                          }}
-                          className="px-3.5 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-rose-100 text-xs font-bold flex items-center gap-1.5 transition-colors"
-                          title="Hapus parameter kriteria ini secara permanen"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Hapus Kriteria</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled
-                          className="px-3.5 py-2 rounded-xl bg-white/5 border border-white/5 text-white/20 text-xs font-bold flex items-center gap-1.5 cursor-not-allowed"
-                          title="Hapus kriteria hanya untuk Super Admin & Divisi Sekretariat & Administrasi"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Hapus Kriteria</span>
-                        </button>
-                      )
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!canDeleteJuryItems) {
+                            setFeedbackToast({
+                              message: 'Akses Ditolak: Fitur hapus parameter kriteria hanya dapat dilakukan oleh Super Admin dan Divisi Sekretariat & Administrasi.',
+                              type: 'error',
+                            });
+                            return;
+                          }
+                          setIsCriteriaModalOpen(false);
+                          handleDeleteCriterion(editingCriterion.id!, editingCriterion.criterionName);
+                        }}
+                        className={`px-3.5 py-2 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all ${
+                          canDeleteJuryItems
+                            ? 'bg-rose-500/15 hover:bg-rose-500/30 border-rose-500/40 text-rose-300 hover:text-rose-100 active:scale-95 cursor-pointer'
+                            : 'bg-white/5 hover:bg-rose-500/10 border-white/10 text-white/30 hover:text-rose-300 cursor-pointer'
+                        }`}
+                        title={
+                          canDeleteJuryItems
+                            ? 'Hapus parameter kriteria ini secara permanen'
+                            : 'Hapus parameter kriteria khusus untuk Super Admin & Divisi Sekretariat & Administrasi'
+                        }
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Hapus Kriteria</span>
+                      </button>
                     ) : (
                       <div />
                     )}
@@ -2023,7 +2222,8 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                   </div>
                 </form>
               </div>
-            </div>
+            </div>,
+            document.body
           )}
         </div>
       )}
@@ -3100,6 +3300,121 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
             </table>
           </div>
         </div>
+      )}
+
+      {/* In-App Feedback Toast Notification via Portal */}
+      {typeof document !== 'undefined' && feedbackToast && createPortal(
+        <div className="fixed top-6 right-6 z-[999999] animate-bounce-short pointer-events-auto" style={{ zIndex: 999999 }}>
+          <div
+            className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-2xl border text-xs font-bold backdrop-blur-md ${
+              feedbackToast.type === 'success'
+                ? 'bg-emerald-950/95 border-emerald-500/50 text-emerald-200'
+                : feedbackToast.type === 'error'
+                ? 'bg-rose-950/95 border-rose-500/50 text-rose-200'
+                : 'bg-cyan-950/95 border-cyan-500/50 text-cyan-200'
+            }`}
+          >
+            {feedbackToast.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : feedbackToast.type === 'error' ? (
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            ) : (
+              <Info className="w-4 h-4 text-cyan-400 shrink-0" />
+            )}
+            <span>{feedbackToast.message}</span>
+            <button
+              type="button"
+              onClick={() => setFeedbackToast(null)}
+              className="ml-2 text-white/50 hover:text-white p-0.5"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* In-App Safe Delete Confirmation Modal via Portal */}
+      {typeof document !== 'undefined' && deleteModal && createPortal(
+        <div 
+          className="fixed inset-0 z-[999999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in"
+          style={{ zIndex: 999999 }}
+          onClick={() => !isDeleting && setDeleteModal(null)}
+        >
+          <div 
+            className="max-w-md w-full rounded-3xl bg-[#031525] border border-rose-500/40 p-6 shadow-2xl space-y-4 animate-scale-up text-white"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 pb-3 border-b border-white/10">
+              <div className="w-10 h-10 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h4 className="text-sm font-bold text-white truncate">
+                  {deleteModal.title}
+                </h4>
+                <span className="text-[11px] text-rose-300 font-semibold block">
+                  Konfirmasi Wewenang Super Admin & Sekretariat
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => !isDeleting && setDeleteModal(null)}
+                disabled={isDeleting}
+                className="p-1.5 rounded-xl text-white/60 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-50"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5 text-xs text-white/80">
+              <p className="leading-relaxed">{deleteModal.message}</p>
+              {deleteModal.highlightText && (
+                <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 text-white font-mono text-[11px] leading-relaxed">
+                  {deleteModal.highlightText}
+                </div>
+              )}
+              <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-[11px] flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>Tindakan ini permanen dan akan langsung diperbarui di sistem.</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => setDeleteModal(null)}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (deleteModal.onConfirm) {
+                    await deleteModal.onConfirm();
+                  }
+                }}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-bold text-xs shadow-lg active:scale-95 transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+              >
+                {isDeleting ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Menghapus...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{deleteModal.actionText || 'Ya, Hapus Sekarang'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
