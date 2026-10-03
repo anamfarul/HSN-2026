@@ -44,10 +44,10 @@ export const INITIAL_JURY_PROFILES: UserProfile[] = [
 ];
 
 export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
-  // 1. Poster Digital Santri (Total 100%)
+  // 1. Poster Digital Santri (comp-3 - SMP/MTs) - Total 100%
   {
     id: 'crit-poster-1',
-    competitionId: 'lomba-poster-santri',
+    competitionId: 'comp-3',
     criterionName: 'Kesesuaian dengan Tema',
     description: 'Relevansi pesan visual terhadap tema Hari Santri Nasional 2026 & nilai Islam Nusantara',
     maxScore: 100,
@@ -57,7 +57,7 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
   },
   {
     id: 'crit-poster-2',
-    competitionId: 'lomba-poster-santri',
+    competitionId: 'comp-3',
     criterionName: 'Kreativitas dan Orisinalitas',
     description: 'Keunikan konsep desain, keaslian visual, dan tidak menjiplak template siap pakai',
     maxScore: 100,
@@ -67,7 +67,7 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
   },
   {
     id: 'crit-poster-3',
-    competitionId: 'lomba-poster-santri',
+    competitionId: 'comp-3',
     criterionName: 'Komposisi Visual & Estetika',
     description: 'Keseimbangan tata letak (layout), harmoni palet warna, tipografi, dan hierarki informasi',
     maxScore: 100,
@@ -77,7 +77,7 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
   },
   {
     id: 'crit-poster-4',
-    competitionId: 'lomba-poster-santri',
+    competitionId: 'comp-3',
     criterionName: 'Kejelasan Pesan & Daya Gugah',
     description: 'Daya tarik pesan dakwah yang mudah dipahami dan memberi inspirasi kepada audiens',
     maxScore: 100,
@@ -87,7 +87,7 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
   },
   {
     id: 'crit-poster-5',
-    competitionId: 'lomba-poster-santri',
+    competitionId: 'comp-3',
     criterionName: 'Kualitas Teknis Grafis',
     description: 'Ketajaman resolusi (high definition), kerapian vektor/raster, dan kepatuhan format file',
     maxScore: 100,
@@ -96,10 +96,10 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
     isActive: true,
   },
 
-  // 2. Video Kreatif Santri (Total 100%)
+  // 2. Video Konten Kreatif (comp-2 - SD/MI) - Total 100%
   {
     id: 'crit-video-1',
-    competitionId: 'lomba-video-santri',
+    competitionId: 'comp-2',
     criterionName: 'Kesesuaian Tema',
     description: 'Relevansi narasi dengan nilai-nilai pesantren dan visi santri masa depan',
     maxScore: 100,
@@ -109,7 +109,7 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
   },
   {
     id: 'crit-video-2',
-    competitionId: 'lomba-video-santri',
+    competitionId: 'comp-2',
     criterionName: 'Kreativitas Ide & Storytelling',
     description: 'Keunikan alur kisah, originalitas sinematografi, dan daya tarik narasi',
     maxScore: 100,
@@ -119,7 +119,7 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
   },
   {
     id: 'crit-video-3',
-    competitionId: 'lomba-video-santri',
+    competitionId: 'comp-2',
     criterionName: 'Alur & Kekuatan Pesan Emosional',
     description: 'Kekuatan pesan dakwah santri yang menyentuh, membangun, dan membangkitkan kebanggaan NU',
     maxScore: 100,
@@ -129,7 +129,7 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
   },
   {
     id: 'crit-video-4',
-    competitionId: 'lomba-video-santri',
+    competitionId: 'comp-2',
     criterionName: 'Kualitas Audio Visual & Editing',
     description: 'Kejernihan audio/voiceover, keselarasan transisi, color grading, dan kestabilan kamera',
     maxScore: 100,
@@ -139,7 +139,7 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
   },
   {
     id: 'crit-video-5',
-    competitionId: 'lomba-video-santri',
+    competitionId: 'comp-2',
     criterionName: 'Orisinalitas Karya & Hak Cipta',
     description: 'Footage rekaman asli dan penggunaan musik latar bebas royalti / berlisensi sah',
     maxScore: 100,
@@ -148,10 +148,10 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
     isActive: true,
   },
 
-  // 3. Orasi Santri & Public Speaking (Total 100%)
+  // 3. Public Speaking & Orasi Santri (comp-5 - SMA/MA/SMK) - Total 100%
   {
     id: 'crit-orasi-1',
-    competitionId: 'lomba-orasi-santri',
+    competitionId: 'comp-5',
     criterionName: 'Penguasaan Materi & Dalil',
     description: 'Kedalaman gagasan santri, kekuatan argumentasi, ketepatan sitasi dalil Al-Qur’an/Hadits',
     maxScore: 100,
@@ -161,7 +161,7 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
   },
   {
     id: 'crit-orasi-2',
-    competitionId: 'lomba-orasi-santri',
+    competitionId: 'comp-5',
     criterionName: 'Sistematika Penyampaian',
     description: 'Keruntutan logika dari pembuka, isi argumen, hingga simpulan ajakan resolusi santri',
     maxScore: 100,
@@ -171,7 +171,7 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
   },
   {
     id: 'crit-orasi-3',
-    competitionId: 'lomba-orasi-santri',
+    competitionId: 'comp-5',
     criterionName: 'Ketepatan Bahasa & Kosakata',
     description: 'Tata bahasa Indonesia yang baik, pengayaan istilah pesantren, dan retorika berbobot',
     maxScore: 100,
@@ -181,7 +181,7 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
   },
   {
     id: 'crit-orasi-4',
-    competitionId: 'lomba-orasi-santri',
+    competitionId: 'comp-5',
     criterionName: 'Intonasi, Vokal, & Artikulasi',
     description: 'Kejelasan pelafalan, dinamika tinggi-rendah nada, dan ketegasan suara orator',
     maxScore: 100,
@@ -191,7 +191,7 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
   },
   {
     id: 'crit-orasi-5',
-    competitionId: 'lomba-orasi-santri',
+    competitionId: 'comp-5',
     criterionName: 'Gestur, Ekspresi, & Percaya Diri',
     description: 'Kewibawaan panggung, kontak mata, bahasa tubuh santun namun membakar semangat juang',
     maxScore: 100,
@@ -201,7 +201,7 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
   },
   {
     id: 'crit-orasi-6',
-    competitionId: 'lomba-orasi-santri',
+    competitionId: 'comp-5',
     criterionName: 'Ketepatan Waktu Durasi',
     description: 'Kepatuhan batas durasi orasi maksimal 7 menit tanpa pemotongan waktu mendadak',
     maxScore: 100,
@@ -210,10 +210,10 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
     isActive: true,
   },
 
-  // 4. Tahfidz Juz 'Amma (Total 100%)
+  // 4. Musabaqah Tahfidz & Tartil (comp-10 - UMUM) - Total 100%
   {
     id: 'crit-tahfidz-1',
-    competitionId: 'lomba-tahfidz-anak',
+    competitionId: 'comp-10',
     criterionName: 'Kelancaran Hafalan (Tahfidz)',
     description: 'Kelancaran sambung ayat, ketepatan maqra’, dan ketiadaan salah harakat / tarku ayat',
     maxScore: 100,
@@ -223,7 +223,7 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
   },
   {
     id: 'crit-tahfidz-2',
-    competitionId: 'lomba-tahfidz-anak',
+    competitionId: 'comp-10',
     criterionName: 'Tajwid & Makharijul Huruf',
     description: 'Ketepatan hukum nun mati, mim mati, mad, ghunnah, sifatul huruf, dan makhraj',
     maxScore: 100,
@@ -233,7 +233,7 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
   },
   {
     id: 'crit-tahfidz-3',
-    competitionId: 'lomba-tahfidz-anak',
+    competitionId: 'comp-10',
     criterionName: 'Fasohah & Adab Santri',
     description: 'Keindahan waqaf-ibtida’, kesantunan duduk, kerapian busana muslim, dan adab tilawah',
     maxScore: 100,
@@ -243,7 +243,7 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
   },
   {
     id: 'crit-tahfidz-4',
-    competitionId: 'lomba-tahfidz-anak',
+    competitionId: 'comp-10',
     criterionName: 'Irama & Keindahan Suara',
     description: 'Lagu/nagham dasar tilawah yang merdu, stabil, dan syahdu',
     maxScore: 100,
@@ -252,10 +252,10 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
     isActive: true,
   },
 
-  // 5. Festival Hadrah Kontemporer (Total 100%)
+  // 5. Festival Sholawat Hadrah Al-Banjari (comp-11 - UMUM) - Total 100%
   {
     id: 'crit-hadrah-1',
-    competitionId: 'lomba-hadrah-banjari',
+    competitionId: 'comp-11',
     criterionName: 'Kekompakan & Akurasi Pukulan',
     description: 'Kerapian ketukan terbang dasar, golong, anakan, variasi pecahan, dan tempo ritmis',
     maxScore: 100,
@@ -265,7 +265,7 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
   },
   {
     id: 'crit-hadrah-2',
-    competitionId: 'lomba-hadrah-banjari',
+    competitionId: 'comp-11',
     criterionName: 'Kualitas Vokal & Harmoni Backing',
     description: 'Kejernihan nada vokal utama (solis), stabilitas suara tinggi, dan harmoni koor shalawat',
     maxScore: 100,
@@ -275,7 +275,7 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
   },
   {
     id: 'crit-hadrah-3',
-    competitionId: 'lomba-hadrah-banjari',
+    competitionId: 'comp-11',
     criterionName: 'Adab Panggung & Kesantunan Santri',
     description: 'Kerapian seragam khas santri, tata krama penghormatan, dan penjiwaan cinta Rasulullah SAW',
     maxScore: 100,
@@ -285,7 +285,7 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
   },
   {
     id: 'crit-hadrah-4',
-    competitionId: 'lomba-hadrah-banjari',
+    competitionId: 'comp-11',
     criterionName: 'Kreativitas Variasi Lagu & Aransemen',
     description: 'Kekayaan variasi jidat, transisi antar maqam, dan kreasi aransemen banjari',
     maxScore: 100,
@@ -296,76 +296,90 @@ export const INITIAL_SCORING_CRITERIA: ScoringCriterion[] = [
 ];
 
 export const INITIAL_JURY_ASSIGNMENTS: JuryAssignment[] = [
+  // Lomba 1: Kompetisi Desain Poster Digital (comp-3)
   {
     id: 'assign-001',
     juryId: 'jury-001',
-    competitionId: 'lomba-poster-santri',
+    competitionId: 'comp-3',
     isActive: true,
     juryName: 'Ust. Ahmad Fauzan, M.Pd.',
-    competitionTitle: 'Lomba Poster Digital Santri',
+    competitionTitle: 'Kompetisi Desain Poster Digital',
+    competitionCategory: 'SMP/MTs',
   },
   {
     id: 'assign-002',
     juryId: 'jury-002',
-    competitionId: 'lomba-poster-santri',
+    competitionId: 'comp-3',
     isActive: true,
     juryName: 'Ning Hj. Lutfiah Zahra, S.Sn.',
-    competitionTitle: 'Lomba Poster Digital Santri',
+    competitionTitle: 'Kompetisi Desain Poster Digital',
+    competitionCategory: 'SMP/MTs',
   },
   {
     id: 'assign-003',
     juryId: 'jury-004',
-    competitionId: 'lomba-poster-santri',
+    competitionId: 'comp-3',
     isActive: true,
     juryName: 'Ust. M. Rofiqul A’la, S.Kom.',
-    competitionTitle: 'Lomba Poster Digital Santri',
+    competitionTitle: 'Kompetisi Desain Poster Digital',
+    competitionCategory: 'SMP/MTs',
   },
+
+  // Lomba 2: Lomba Video Konten Kreatif Hari Santri (comp-2)
   {
     id: 'assign-004',
     juryId: 'jury-001',
-    competitionId: 'lomba-video-santri',
+    competitionId: 'comp-2',
     isActive: true,
     juryName: 'Ust. Ahmad Fauzan, M.Pd.',
-    competitionTitle: 'Lomba Video Kreatif Profil Santri',
+    competitionTitle: 'Lomba Video Konten Kreatif Hari Santri',
+    competitionCategory: 'SD/MI',
   },
   {
     id: 'assign-005',
     juryId: 'jury-002',
-    competitionId: 'lomba-video-santri',
+    competitionId: 'comp-2',
     isActive: true,
     juryName: 'Ning Hj. Lutfiah Zahra, S.Sn.',
-    competitionTitle: 'Lomba Video Kreatif Profil Santri',
+    competitionTitle: 'Lomba Video Konten Kreatif Hari Santri',
+    competitionCategory: 'SD/MI',
   },
   {
     id: 'assign-006',
     juryId: 'jury-004',
-    competitionId: 'lomba-video-santri',
+    competitionId: 'comp-2',
     isActive: true,
     juryName: 'Ust. M. Rofiqul A’la, S.Kom.',
-    competitionTitle: 'Lomba Video Kreatif Profil Santri',
+    competitionTitle: 'Lomba Video Konten Kreatif Hari Santri',
+    competitionCategory: 'SD/MI',
   },
+
+  // Lomba 3: Public Speaking & Orasi Santri Kebangsaan (comp-5)
   {
     id: 'assign-007',
     juryId: 'jury-003',
-    competitionId: 'lomba-orasi-santri',
+    competitionId: 'comp-5',
     isActive: true,
     juryName: 'K.H. Dr. Ridwan Asy’ari, M.Hum.',
-    competitionTitle: 'Lomba Orasi Santri & Public Speaking',
+    competitionTitle: 'Public Speaking & Orasi Santri Kebangsaan',
+    competitionCategory: 'SMA/MA/SMK',
   },
   {
     id: 'assign-008',
     juryId: 'jury-001',
-    competitionId: 'lomba-orasi-santri',
+    competitionId: 'comp-5',
     isActive: true,
     juryName: 'Ust. Ahmad Fauzan, M.Pd.',
-    competitionTitle: 'Lomba Orasi Santri & Public Speaking',
+    competitionTitle: 'Public Speaking & Orasi Santri Kebangsaan',
+    competitionCategory: 'SMA/MA/SMK',
   },
   {
     id: 'assign-009',
     juryId: 'jury-002',
-    competitionId: 'lomba-orasi-santri',
+    competitionId: 'comp-5',
     isActive: true,
     juryName: 'Ning Hj. Lutfiah Zahra, S.Sn.',
-    competitionTitle: 'Lomba Orasi Santri & Public Speaking',
+    competitionTitle: 'Public Speaking & Orasi Santri Kebangsaan',
+    competitionCategory: 'SMA/MA/SMK',
   },
 ];

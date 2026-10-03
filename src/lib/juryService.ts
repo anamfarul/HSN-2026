@@ -17,6 +17,7 @@ import {
   INITIAL_SCORING_CRITERIA,
   INITIAL_JURY_ASSIGNMENTS,
 } from '../data/initialJuryData';
+import { COMPETITIONS } from '../data/initialData';
 
 // Storage keys for local fallback
 const STORAGE_PROFILES = 'hsn2026_jury_profiles_list';
@@ -25,6 +26,76 @@ const STORAGE_ASSIGNMENTS = 'hsn2026_jury_assignments_list';
 const STORAGE_SCORES = 'hsn2026_jury_scores_list';
 const STORAGE_RESULTS = 'hsn2026_competition_results_list';
 const STORAGE_AUDIT = 'hsn2026_jury_audit_logs_list';
+
+// ==============================================================================
+// 0. COMPETITION ID NORMALIZATION & RESOLVER HELPER
+// ==============================================================================
+export const COMPETITION_ID_ALIASES: Record<string, string> = {
+  'lomba-poster-santri': 'comp-3',
+  'comp-poster-digital': 'comp-3',
+  'poster-digital': 'comp-3',
+  'lomba-video-santri': 'comp-2',
+  'comp-video-kreatif': 'comp-2',
+  'video-kreatif': 'comp-2',
+  'lomba-orasi-santri': 'comp-5',
+  'orasi-santri': 'comp-5',
+  'lomba-tahfidz-anak': 'comp-10',
+  'tahfidz': 'comp-10',
+  'lomba-hadrah-banjari': 'comp-11',
+  'hadrah': 'comp-11',
+  'lomba-dolanan-santri': 'comp-1',
+};
+
+export function normalizeCompId(id?: string): string {
+  if (!id) return '';
+  const clean = id.trim().toLowerCase();
+  return COMPETITION_ID_ALIASES[clean] || id;
+}
+
+export function resolveCompetition(
+  competitionsList: Competition[],
+  competitionId?: string,
+  competitionTitle?: string
+): Competition | undefined {
+  if (!competitionId && !competitionTitle) return undefined;
+  
+  const normId = competitionId ? normalizeCompId(competitionId) : undefined;
+
+  // 1. Direct ID match
+  if (normId) {
+    const matched = competitionsList.find((c) => c.id.toLowerCase() === normId.toLowerCase());
+    if (matched) return matched;
+  }
+
+  // 2. Direct code match (e.g. LMB-SMP-01)
+  if (competitionId) {
+    const matched = competitionsList.find((c) => c.code?.toLowerCase() === competitionId.toLowerCase());
+    if (matched) return matched;
+  }
+
+  // 3. Exact title match
+  if (competitionTitle) {
+    const cleanTitle = competitionTitle.toLowerCase().trim();
+    const matched = competitionsList.find((c) => c.title.toLowerCase() === cleanTitle);
+    if (matched) return matched;
+  }
+
+  // 4. Substring / keyword match
+  const searchStr = `${competitionId || ''} ${competitionTitle || ''}`.toLowerCase();
+  if (searchStr.includes('poster')) return competitionsList.find((c) => c.id === 'comp-3' || c.title.toLowerCase().includes('poster'));
+  if (searchStr.includes('video')) return competitionsList.find((c) => c.id === 'comp-2' || c.title.toLowerCase().includes('video'));
+  if (searchStr.includes('orasi') || searchStr.includes('speaking')) return competitionsList.find((c) => c.id === 'comp-5' || c.title.toLowerCase().includes('orasi'));
+  if (searchStr.includes('tahfidz') || searchStr.includes('tartil')) return competitionsList.find((c) => c.id === 'comp-10' || c.title.toLowerCase().includes('tahfidz'));
+  if (searchStr.includes('hadrah') || searchStr.includes('banjari') || searchStr.includes('sholawat')) return competitionsList.find((c) => c.id === 'comp-11' || c.title.toLowerCase().includes('hadrah'));
+  if (searchStr.includes('tradisional') || searchStr.includes('dolanan')) return competitionsList.find((c) => c.id === 'comp-1' || c.title.toLowerCase().includes('tradisional'));
+  if (searchStr.includes('bola') || searchStr.includes('santri cup')) return competitionsList.find((c) => c.id === 'comp-4' || c.title.toLowerCase().includes('bola'));
+  if (searchStr.includes('podcast') || searchStr.includes('ipnu')) return competitionsList.find((c) => c.id === 'comp-6' || c.title.toLowerCase().includes('podcast'));
+  if (searchStr.includes('women') || searchStr.includes('fatayat') || searchStr.includes('creativepreneur')) return competitionsList.find((c) => c.id === 'comp-7' || c.title.toLowerCase().includes('creativepreneur'));
+  if (searchStr.includes('outbound') || searchStr.includes('muslimat')) return competitionsList.find((c) => c.id === 'comp-8' || c.title.toLowerCase().includes('outbound'));
+  if (searchStr.includes('silat') || searchStr.includes('pagar nusa')) return competitionsList.find((c) => c.id === 'comp-9' || c.title.toLowerCase().includes('silat'));
+
+  return undefined;
+}
 
 // ==============================================================================
 // 1. LOCAL STORAGE HELPERS
@@ -297,6 +368,7 @@ export async function toggleJuryStatus(
 // 5. JURY ASSIGNMENTS SERVICE
 // ==============================================================================
 export async function getJuryAssignments(): Promise<JuryAssignment[]> {
+  let rawList: JuryAssignment[] = [];
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
     try {
@@ -315,7 +387,7 @@ export async function getJuryAssignments(): Promise<JuryAssignment[]> {
         .eq('is_active', true);
 
       if (!error && data && data.length > 0) {
-        return data.map((d: any) => ({
+        rawList = data.map((d: any) => ({
           id: d.id,
           juryId: d.jury_id,
           competitionId: d.competition_id,
@@ -331,7 +403,28 @@ export async function getJuryAssignments(): Promise<JuryAssignment[]> {
       }
     } catch {}
   }
-  return getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, INITIAL_JURY_ASSIGNMENTS);
+
+  if (rawList.length === 0) {
+    rawList = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, INITIAL_JURY_ASSIGNMENTS);
+  }
+
+  // Self-heal and normalize legacy competition IDs in assignments
+  const normalizedList = rawList.map((a) => {
+    const comp = resolveCompetition(COMPETITIONS, a.competitionId, a.competitionTitle);
+    return {
+      ...a,
+      competitionId: comp ? comp.id : normalizeCompId(a.competitionId),
+      competitionTitle: comp ? comp.title : (a.competitionTitle || a.competitionId),
+      competitionCategory: comp ? comp.category : a.competitionCategory,
+    };
+  });
+
+  // Re-save normalized version if there were legacy IDs
+  if (JSON.stringify(normalizedList) !== JSON.stringify(rawList)) {
+    setLocal(STORAGE_ASSIGNMENTS, normalizedList);
+  }
+
+  return normalizedList;
 }
 
 export async function assignJuryToCompetition(
@@ -421,18 +514,19 @@ export async function removeJuryAssignment(
 // 6. SCORING CRITERIA SERVICE
 // ==============================================================================
 export async function getScoringCriteria(competitionId?: string): Promise<ScoringCriterion[]> {
+  const normCompId = competitionId ? normalizeCompId(competitionId) : undefined;
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
     try {
       let query = supabase.from('scoring_criteria').select('*').order('sort_order', { ascending: true });
-      if (competitionId) {
-        query = query.eq('competition_id', competitionId);
+      if (normCompId) {
+        query = query.or(`competition_id.eq.${normCompId},competition_id.eq.${competitionId}`);
       }
       const { data, error } = await query;
       if (!error && data && data.length > 0) {
         return data.map((d) => ({
           id: d.id,
-          competitionId: d.competition_id,
+          competitionId: normalizeCompId(d.competition_id),
           criterionName: d.criterion_name,
           description: d.description,
           maxScore: Number(d.max_score) || 100,
@@ -447,10 +541,15 @@ export async function getScoringCriteria(competitionId?: string): Promise<Scorin
   }
 
   const all = getLocal<ScoringCriterion[]>(STORAGE_CRITERIA, INITIAL_SCORING_CRITERIA);
-  if (competitionId) {
-    return all.filter((c) => c.competitionId === competitionId);
+  const normalizedAll = all.map((c) => ({
+    ...c,
+    competitionId: normalizeCompId(c.competitionId),
+  }));
+
+  if (normCompId) {
+    return normalizedAll.filter((c) => c.competitionId === normCompId || c.competitionId === competitionId);
   }
-  return all;
+  return normalizedAll;
 }
 
 export async function saveScoringCriterion(
@@ -1136,13 +1235,22 @@ export async function getScoringProgressSummary(
     const compParts = participants.filter(
       (p) => p.competitionId === comp.id || p.competitionTitle?.toLowerCase() === comp.title.toLowerCase()
     );
-    const assignedJuries = assignments.filter((a) => a.competitionId === comp.id && a.isActive);
+    const assignedJuries = assignments.filter((a) => {
+      if (!a.isActive) return false;
+      if (a.competitionId === comp.id) return true;
+      const res = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+      return res?.id === comp.id;
+    });
 
     const totalParticipants = compParts.length;
     const totalAssignedJuries = assignedJuries.length;
     const expectedScores = totalParticipants * totalAssignedJuries;
 
-    const compScores = allScores.filter((s) => s.competitionId === comp.id);
+    const compScores = allScores.filter((s) => {
+      if (s.competitionId === comp.id) return true;
+      const norm = normalizeCompId(s.competitionId);
+      return norm === comp.id;
+    });
     const completedScores = compScores.filter((s) => s.status === 'submitted' || s.status === 'locked').length;
     const draftScores = compScores.filter((s) => s.status === 'draft').length;
 

@@ -65,6 +65,7 @@ import {
   publishCompetitionResults, 
   getJuryAuditLogs, 
   getScoringProgressSummary,
+  resolveCompetition,
   ParticipantScoreRow
 } from '../../../lib/juryService';
 import { exportScoreRecapCSV, exportScoreRecapPDF, exportBeritaAcaraPDF } from '../../../lib/juryReportService';
@@ -98,10 +99,12 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
   // Selected Competition Filter for tabs like Criteria, Recap, Winners
   const [selectedCompId, setSelectedCompId] = useState<string>(competitions[0]?.id || '');
 
-  // Subtab 2: Manage Judges State
+  // Subtab 2: Manage Judges State & Competition Filter
   const [judgeSearch, setJudgeSearch] = useState('');
+  const [judgeCompFilter, setJudgeCompFilter] = useState<string>('ALL');
   const [isJudgeModalOpen, setIsJudgeModalOpen] = useState(false);
   const [editingJudge, setEditingJudge] = useState<Partial<UserProfile> | null>(null);
+  const [editingJudgeCompIds, setEditingJudgeCompIds] = useState<string[]>([]);
 
   // Subtab 3: Assignments State
   const [assignCompId, setAssignCompId] = useState<string>(competitions[0]?.id || '');
@@ -111,6 +114,11 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
   const [criteriaList, setCriteriaList] = useState<ScoringCriterion[]>([]);
   const [isCriteriaModalOpen, setIsCriteriaModalOpen] = useState(false);
   const [editingCriterion, setEditingCriterion] = useState<Partial<ScoringCriterion> | null>(null);
+
+  // Subtab 5: Monitoring Penilaian Filter & View State
+  const [monitoringCompFilter, setMonitoringCompFilter] = useState<string>('ALL');
+  const [monitoringSearch, setMonitoringSearch] = useState<string>('');
+  const [monitoringViewMode, setMonitoringViewMode] = useState<'grouped' | 'table'>('grouped');
 
   // Subtab 6: Recap State
   const [recapData, setRecapData] = useState<{
@@ -208,7 +216,7 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
     e.preventDefault();
     if (!editingJudge?.fullName || !editingJudge.email) return;
 
-    await saveJuryProfile(
+    const res = await saveJuryProfile(
       {
         id: editingJudge.id,
         fullName: editingJudge.fullName,
@@ -220,8 +228,37 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
       currentAdminName
     );
 
+    const savedJuryId = res.data?.id || editingJudge.id;
+    if (savedJuryId) {
+      // Sync competition assignments for this judge
+      const currentAssigned = assignments.filter((a) => a.juryId === savedJuryId && a.isActive);
+
+      // 1. Add newly checked competitions
+      for (const compId of editingJudgeCompIds) {
+        const alreadyAssigned = currentAssigned.some((a) => {
+          if (a.competitionId === compId) return true;
+          const r = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+          return r?.id === compId;
+        });
+        if (!alreadyAssigned) {
+          const compObj = competitions.find((c) => c.id === compId);
+          await assignJuryToCompetition(savedJuryId, compId, currentAdminName, compObj?.title);
+        }
+      }
+
+      // 2. Remove unchecked competitions
+      for (const a of currentAssigned) {
+        const resolvedComp = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+        const effId = resolvedComp ? resolvedComp.id : a.competitionId;
+        if (!editingJudgeCompIds.includes(effId)) {
+          await removeJuryAssignment(a.id, currentAdminName);
+        }
+      }
+    }
+
     setIsJudgeModalOpen(false);
     setEditingJudge(null);
+    setEditingJudgeCompIds([]);
     loadAllData();
   };
 
@@ -512,16 +549,36 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
       {/* ============================================================================== */}
       {subTab === 'judges' && (
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="w-4 h-4 text-white/40 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Cari nama, email, atau lembaga juri..."
-                value={judgeSearch}
-                onChange={(e) => setJudgeSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 rounded-xl bg-[#020e19] border border-white/15 text-xs text-white focus:outline-none focus:border-[#00D9F5]"
-              />
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="w-4 h-4 text-white/40 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Cari nama, email, atau lembaga juri..."
+                  value={judgeSearch}
+                  onChange={(e) => setJudgeSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 rounded-xl bg-[#020e19] border border-white/15 text-xs text-white focus:outline-none focus:border-[#00D9F5]"
+                />
+              </div>
+
+              {/* Filter Cabang Lomba (Exact same competitions list) */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <label className="text-[11px] font-bold text-white/60 shrink-0">Cabang Lomba:</label>
+                <select
+                  value={judgeCompFilter}
+                  onChange={(e) => setJudgeCompFilter(e.target.value)}
+                  className="px-3 py-2 rounded-xl bg-[#020e19] border border-white/15 text-xs text-white focus:border-[#00D9F5] outline-none max-w-[240px] truncate"
+                >
+                  <option value="ALL">Semua Cabang Lomba ({competitions.length})</option>
+                  <option value="UNASSIGNED">Belum Ditugaskan</option>
+                  {competitions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      [{c.category}] {c.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <button
@@ -534,9 +591,10 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                   institution: 'MWC NU Poncokusumo',
                   isActive: true,
                 });
+                setEditingJudgeCompIds([]);
                 setIsJudgeModalOpen(true);
               }}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] text-white font-bold text-xs flex items-center gap-1.5 shadow-md active:scale-95 w-fit"
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] text-white font-bold text-xs flex items-center gap-1.5 shadow-md active:scale-95 w-fit shrink-0"
             >
               <Plus className="w-4 h-4" />
               <span>Tambah Dewan Juri</span>
@@ -551,7 +609,7 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                   <th className="p-3.5">Nama Dewan Juri</th>
                   <th className="p-3.5">Email & Kontak</th>
                   <th className="p-3.5">Lembaga / Instansi</th>
-                  <th className="p-3.5">Penugasan Lomba</th>
+                  <th className="p-3.5">Penugasan Lomba ({competitions.length} Cabang)</th>
                   <th className="p-3.5 text-center">Status</th>
                   <th className="p-3.5 text-right">Aksi</th>
                 </tr>
@@ -559,13 +617,28 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
               <tbody className="divide-y divide-white/5">
                 {juries
                   .filter((j) => {
-                    if (!judgeSearch) return true;
-                    const q = judgeSearch.toLowerCase();
-                    return (
-                      j.fullName.toLowerCase().includes(q) ||
-                      j.email.toLowerCase().includes(q) ||
-                      (j.institution || '').toLowerCase().includes(q)
-                    );
+                    if (judgeSearch) {
+                      const q = judgeSearch.toLowerCase();
+                      const match =
+                        j.fullName.toLowerCase().includes(q) ||
+                        j.email.toLowerCase().includes(q) ||
+                        (j.institution || '').toLowerCase().includes(q);
+                      if (!match) return false;
+                    }
+                    if (judgeCompFilter === 'UNASSIGNED') {
+                      const myActive = assignments.filter((a) => a.juryId === j.id && a.isActive);
+                      return myActive.length === 0;
+                    }
+                    if (judgeCompFilter !== 'ALL') {
+                      const myActive = assignments.filter((a) => a.juryId === j.id && a.isActive);
+                      const isAssigned = myActive.some((a) => {
+                        if (a.competitionId === judgeCompFilter) return true;
+                        const r = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+                        return r?.id === judgeCompFilter;
+                      });
+                      return isAssigned;
+                    }
+                    return true;
                   })
                   .map((j) => {
                     const myAssigns = assignments.filter((a) => a.juryId === j.id && a.isActive);
@@ -582,16 +655,20 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                         </td>
                         <td className="p-3.5 text-white/80">{j.institution || '-'}</td>
                         <td className="p-3.5">
-                          <div className="flex flex-wrap gap-1">
+                          <div className="flex flex-wrap gap-1.5">
                             {myAssigns.length > 0 ? (
-                              myAssigns.map((a) => (
-                                <span
-                                  key={a.id}
-                                  className="px-2 py-0.5 rounded-full text-[10px] bg-white/10 text-white font-medium truncate max-w-[150px]"
-                                >
-                                  {a.competitionTitle || a.competitionId}
-                                </span>
-                              ))
+                              myAssigns.map((a) => {
+                                const compObj = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+                                return (
+                                  <span
+                                    key={a.id}
+                                    className="px-2.5 py-0.5 rounded-full text-[10px] bg-[#006B4F]/30 border border-emerald-500/40 text-emerald-300 font-semibold truncate max-w-[220px]"
+                                    title={compObj ? `[${compObj.category}] ${compObj.title}` : a.competitionTitle || a.competitionId}
+                                  >
+                                    {compObj ? `[${compObj.category}] ${compObj.title}` : a.competitionTitle || a.competitionId}
+                                  </span>
+                                );
+                              })
                             ) : (
                               <span className="text-white/30 text-[11px] italic">Belum ditugaskan</span>
                             )}
@@ -613,10 +690,17 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                             type="button"
                             onClick={() => {
                               setEditingJudge(j);
+                              const myActiveCompIds = assignments
+                                .filter((a) => a.juryId === j.id && a.isActive)
+                                .map((a) => {
+                                  const resolved = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+                                  return resolved ? resolved.id : a.competitionId;
+                                });
+                              setEditingJudgeCompIds(myActiveCompIds);
                               setIsJudgeModalOpen(true);
                             }}
                             className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-white/70 hover:text-white"
-                            title="Edit Data Juri"
+                            title="Edit Data Juri & Cabang Lomba"
                           >
                             <Edit className="w-3.5 h-3.5" />
                           </button>
@@ -650,7 +734,7 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                 <div className="flex items-center justify-between pb-3 border-b border-white/10">
                   <h4 className="text-sm font-bold text-white flex items-center gap-2">
                     <User className="w-4 h-4 text-[#00D9F5]" />
-                    <span>{editingJudge.id ? 'Edit Profil Dewan Juri' : 'Tambah Dewan Juri Baru'}</span>
+                    <span>{editingJudge.id ? 'Edit Profil & Penugasan Juri' : 'Tambah Dewan Juri Baru'}</span>
                   </h4>
                   <button
                     type="button"
@@ -708,7 +792,55 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
                     />
                   </div>
 
-                  <div className="flex items-center gap-2 pt-2">
+                  {/* Penugasan Cabang Lomba (Sinkron dengan CMS Lomba) */}
+                  <div className="pt-2 border-t border-white/10">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-white/80 font-bold">
+                        Tugaskan ke Cabang Lomba ({editingJudgeCompIds.length} Dipilih)
+                      </label>
+                      <span className="text-[10px] text-[#F2C96D] font-mono">
+                        {competitions.length} Cabang Tersedia
+                      </span>
+                    </div>
+                    <div className="max-h-40 overflow-y-auto space-y-1.5 p-2 rounded-xl bg-[#020e19] border border-white/15">
+                      {competitions.map((comp) => {
+                        const isChecked = editingJudgeCompIds.includes(comp.id);
+                        return (
+                          <label
+                            key={comp.id}
+                            className={`flex items-start gap-2 p-1.5 rounded-lg cursor-pointer transition-colors ${
+                              isChecked
+                                ? 'bg-[#006B4F]/25 border border-emerald-500/40 text-white'
+                                : 'hover:bg-white/5 text-white/70'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setEditingJudgeCompIds([...editingJudgeCompIds, comp.id]);
+                                } else {
+                                  setEditingJudgeCompIds(editingJudgeCompIds.filter((id) => id !== comp.id));
+                                }
+                              }}
+                              className="mt-0.5 w-3.5 h-3.5 accent-[#006B4F] shrink-0"
+                            />
+                            <div className="text-[11px] leading-tight">
+                              <span className="font-bold text-white block">
+                                [{comp.category}] {comp.title}
+                              </span>
+                              <span className="text-[10px] text-white/50 block">
+                                {comp.targetAudience || 'Peserta Terdaftar'}
+                              </span>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1">
                     <input
                       type="checkbox"
                       id="judge_active_chk"
@@ -1105,90 +1237,465 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
       {/* ============================================================================== */}
       {/* SUBTAB 5: MONITORING PENILAIAN JURI */}
       {/* ============================================================================== */}
-      {subTab === 'monitoring' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-bold text-white flex items-center gap-2">
-              <Eye className="w-4 h-4 text-[#00D9F5]" />
-              <span>Matriks Progres Pengisian Skor Dewan Juri</span>
-            </h4>
-          </div>
+      {subTab === 'monitoring' && (() => {
+        // Filter competitions for monitoring using exact same competitions prop
+        const monitoredCompetitions = competitions.filter((c) => {
+          if (monitoringCompFilter !== 'ALL' && c.id !== monitoringCompFilter) return false;
+          if (monitoringSearch.trim()) {
+            const q = monitoringSearch.toLowerCase();
+            const matchComp = c.title.toLowerCase().includes(q) || c.category.toLowerCase().includes(q);
+            const compAss = assignments.filter((a) => {
+              if (!a.isActive) return false;
+              if (a.competitionId === c.id) return true;
+              const r = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+              return r?.id === c.id;
+            });
+            const matchJury = compAss.some(
+              (a) => (a.juryName || '').toLowerCase().includes(q) || (a.juryInstitution || '').toLowerCase().includes(q)
+            );
+            if (!matchComp && !matchJury) return false;
+          }
+          return true;
+        });
 
-          <div className="rounded-3xl bg-[#020e19] border border-white/10 overflow-hidden shadow-xl">
-            <table className="w-full text-left text-xs text-[#DDE7E8]">
-              <thead className="bg-white/5 text-white/70 uppercase text-[10px] tracking-wider border-b border-white/10">
-                <tr>
-                  <th className="p-3.5">Cabang Lomba</th>
-                  <th className="p-3.5">Nama Dewan Juri</th>
-                  <th className="p-3.5 text-center">Total Peserta</th>
-                  <th className="p-3.5 text-center">Draf</th>
-                  <th className="p-3.5 text-center">Sudah Dikirim</th>
-                  <th className="p-3.5 text-center">Terkunci</th>
-                  <th className="p-3.5 text-center">Persentase</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {assignments
-                  .filter((a) => a.isActive)
-                  .map((a) => {
-                    const comp = competitions.find((c) => c.id === a.competitionId);
-                    const compParts = participants.filter(
-                      (p) =>
-                        p.competitionId === a.competitionId ||
-                        p.competitionTitle?.toLowerCase() === comp?.title.toLowerCase()
-                    );
-                    const totalParts = compParts.length;
+        // Summary calculations
+        const totalMonitoredComps = monitoredCompetitions.length;
+        const totalActiveJuryInComps = new Set(
+          assignments
+            .filter((a) => {
+              if (!a.isActive) return false;
+              return monitoredCompetitions.some(
+                (c) => c.id === a.competitionId || resolveCompetition(competitions, a.competitionId, a.competitionTitle)?.id === c.id
+              );
+            })
+            .map((a) => a.juryId)
+        ).size;
 
-                    const juryScoresList = allScores.filter(
-                      (s) => s.competitionId === a.competitionId && s.juryId === a.juryId
-                    );
-                    const draftCount = juryScoresList.filter((s) => s.status === 'draft').length;
-                    const submittedCount = juryScoresList.filter((s) => s.status === 'submitted').length;
-                    const lockedCount = juryScoresList.filter((s) => s.status === 'locked').length;
+        const submittedScoresCount = allScores.filter((s) => {
+          if (s.status !== 'submitted' && s.status !== 'locked') return false;
+          return monitoredCompetitions.some(
+            (c) => c.id === s.competitionId || resolveCompetition(competitions, s.competitionId)?.id === c.id
+          );
+        }).length;
 
-                    const done = submittedCount + lockedCount;
-                    const percent = totalParts > 0 ? Math.round((done / totalParts) * 100) : 0;
+        const draftScoresCount = allScores.filter((s) => {
+          if (s.status !== 'draft') return false;
+          return monitoredCompetitions.some(
+            (c) => c.id === s.competitionId || resolveCompetition(competitions, s.competitionId)?.id === c.id
+          );
+        }).length;
 
-                    return (
-                      <tr key={a.id} className="hover:bg-white/[0.02]">
-                        <td className="p-3.5 font-bold text-white">
-                          {comp?.title || a.competitionId}
-                        </td>
-                        <td className="p-3.5">
-                          <span className="font-semibold text-white">{a.juryName || a.juryId}</span>
-                          <span className="text-[10px] text-white/40 block">{a.juryInstitution}</span>
-                        </td>
-                        <td className="p-3.5 text-center font-mono text-white/70">{totalParts}</td>
-                        <td className="p-3.5 text-center">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300">
-                            {draftCount}
-                          </span>
-                        </td>
-                        <td className="p-3.5 text-center">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300">
-                            {submittedCount}
-                          </span>
-                        </td>
-                        <td className="p-3.5 text-center">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300">
-                            {lockedCount}
-                          </span>
-                        </td>
-                        <td className="p-3.5 text-center">
-                          <div className="flex items-center justify-center gap-1.5 font-mono font-bold">
-                            <span className={percent === 100 ? 'text-emerald-400' : 'text-[#F2C96D]'}>
-                              {percent}%
+        return (
+          <div className="space-y-6">
+            {/* Header Toolbar */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
+                {/* Cabang Lomba Selector (Exact same competitions list) */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <label className="text-xs font-bold text-white/70 shrink-0">Cabang Lomba:</label>
+                  <select
+                    value={monitoringCompFilter}
+                    onChange={(e) => setMonitoringCompFilter(e.target.value)}
+                    className="px-3.5 py-2 rounded-xl bg-[#020e19] border border-white/15 text-xs text-white focus:border-[#00D9F5] outline-none max-w-[280px] truncate"
+                  >
+                    <option value="ALL">Semua Cabang Lomba ({competitions.length} Cabang)</option>
+                    {competitions.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        [{c.category}] {c.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Search Filter */}
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="w-4 h-4 text-white/40 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Cari cabang lomba atau dewan juri..."
+                    value={monitoringSearch}
+                    onChange={(e) => setMonitoringSearch(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 rounded-xl bg-[#020e19] border border-white/15 text-xs text-white focus:outline-none focus:border-[#00D9F5]"
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons: View mode toggle & Refresh */}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center p-1 rounded-xl bg-[#020e19] border border-white/10 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setMonitoringViewMode('grouped')}
+                    className={`px-3 py-1 rounded-lg font-bold transition-all ${
+                      monitoringViewMode === 'grouped'
+                        ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-white shadow'
+                        : 'text-white/60 hover:text-white'
+                    }`}
+                  >
+                    Per Cabang Lomba
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMonitoringViewMode('table')}
+                    className={`px-3 py-1 rounded-lg font-bold transition-all ${
+                      monitoringViewMode === 'table'
+                        ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-white shadow'
+                        : 'text-white/60 hover:text-white'
+                    }`}
+                  >
+                    Matriks Seluruh Juri
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={loadAllData}
+                  className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-white flex items-center gap-1.5 transition-colors"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Segarkan</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Metrics Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3.5 rounded-2xl bg-[#020e19] border border-white/10">
+                <span className="text-[10px] text-white/50 block font-bold uppercase">Cabang Terpantau</span>
+                <span className="text-xl font-black text-white mt-0.5 block">{totalMonitoredComps} Cabang</span>
+                <span className="text-[10px] text-[#00D9F5]">Sesuai data CMS Lomba</span>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-[#020e19] border border-white/10">
+                <span className="text-[10px] text-white/50 block font-bold uppercase">Juri Bertugas</span>
+                <span className="text-xl font-black text-[#F2C96D] mt-0.5 block">{totalActiveJuryInComps} Dewan Juri</span>
+                <span className="text-[10px] text-white/60">Aktif dalam cabang</span>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-[#020e19] border border-white/10">
+                <span className="text-[10px] text-white/50 block font-bold uppercase">Skor Final Masuk</span>
+                <span className="text-xl font-black text-emerald-400 mt-0.5 block">{submittedScoresCount} Lembar</span>
+                <span className="text-[10px] text-emerald-300/80">Sudah dikirim/terkunci</span>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-[#020e19] border border-white/10">
+                <span className="text-[10px] text-white/50 block font-bold uppercase">Draf Penilaian</span>
+                <span className="text-xl font-black text-amber-400 mt-0.5 block">{draftScoresCount} Lembar</span>
+                <span className="text-[10px] text-amber-300/80">Belum disubmit juri</span>
+              </div>
+            </div>
+
+            {/* VIEW MODE 1: GROUPED PER CABANG LOMBA */}
+            {monitoringViewMode === 'grouped' ? (
+              <div className="space-y-5">
+                {monitoredCompetitions.map((comp) => {
+                  const compAssigns = assignments.filter((a) => {
+                    if (!a.isActive) return false;
+                    if (a.competitionId === comp.id) return true;
+                    const res = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+                    return res?.id === comp.id;
+                  });
+
+                  const compParts = participants.filter(
+                    (p) =>
+                      p.competitionId === comp.id ||
+                      p.competitionTitle?.toLowerCase() === comp.title.toLowerCase()
+                  );
+                  const totalParts = compParts.length;
+
+                  // Overall progress for this competition
+                  const expectedCount = totalParts * compAssigns.length;
+                  const compScoresList = allScores.filter((s) => {
+                    if (s.competitionId === comp.id) return true;
+                    const res = resolveCompetition(competitions, s.competitionId);
+                    return res?.id === comp.id;
+                  });
+                  const compFinalCount = compScoresList.filter((s) => s.status === 'submitted' || s.status === 'locked').length;
+                  const compProgressPercent = expectedCount > 0 ? Math.min(100, Math.round((compFinalCount / expectedCount) * 100)) : 0;
+
+                  return (
+                    <div
+                      key={comp.id}
+                      className="rounded-3xl bg-[#020e19] border border-white/10 p-5 sm:p-6 space-y-4 shadow-xl"
+                    >
+                      {/* Competition Header */}
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-white/10">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-[#006B4F] text-white tracking-wider">
+                              {comp.category}
+                            </span>
+                            <h4 className="text-base font-extrabold text-white">{comp.title}</h4>
+                            <span className="text-[11px] text-white/40 font-mono">({comp.code || comp.id})</span>
+                          </div>
+                          <p className="text-xs text-white/60 mt-1">
+                            Sasaran: <span className="text-white/80">{comp.targetAudience || 'Peserta Terdaftar'}</span> •{' '}
+                            Terdaftar: <strong className="text-[#F2C96D]">{totalParts} santri</strong> •{' '}
+                            Dewan Juri: <strong className="text-[#00D9F5]">{compAssigns.length} orang</strong>
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-3 shrink-0">
+                          {/* Progress Circle / Bar */}
+                          <div className="flex flex-col items-end">
+                            <span className="text-[10px] text-white/50 font-bold uppercase">Progres Pleno</span>
+                            <div className="flex items-center gap-2">
+                              <div className="w-24 h-2 rounded-full bg-white/10 overflow-hidden">
+                                <div
+                                  className="h-full bg-gradient-to-r from-[#00D9F5] to-emerald-400 rounded-full"
+                                  style={{ width: `${compProgressPercent}%` }}
+                                />
+                              </div>
+                              <span className="text-xs font-mono font-bold text-emerald-400">
+                                {compProgressPercent}%
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Quick Jump to Rekap */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedCompId(comp.id);
+                              setSubTab('recap');
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/15 border border-white/15 text-xs text-white flex items-center gap-1.5 transition-all shadow-sm"
+                            title="Buka Rekapitulasi Nilai Cabang Ini"
+                          >
+                            <FileText className="w-3.5 h-3.5 text-[#F2C96D]" />
+                            <span>Rekap Nilai</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Content: If No Jury Assigned Yet */}
+                      {compAssigns.length === 0 ? (
+                        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                          <div className="flex items-center gap-2.5 text-amber-200">
+                            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                            <span>
+                              Cabang lomba ini belum memiliki dewan juri yang ditugaskan.
                             </span>
                           </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-              </tbody>
-            </table>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAssignCompId(comp.id);
+                              setSubTab('assignments');
+                            }}
+                            className="px-3.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-xs flex items-center gap-1.5 transition-all w-fit shrink-0"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Tugaskan Juri Sekarang</span>
+                          </button>
+                        </div>
+                      ) : (
+                        /* Table of Juries in this Competition */
+                        <div className="overflow-x-auto rounded-2xl border border-white/5">
+                          <table className="w-full text-left text-xs text-[#DDE7E8]">
+                            <thead className="bg-white/5 text-white/70 uppercase text-[10px] tracking-wider border-b border-white/10">
+                              <tr>
+                                <th className="p-3">Nama Dewan Juri</th>
+                                <th className="p-3">Lembaga / Kontak</th>
+                                <th className="p-3 text-center">Total Peserta</th>
+                                <th className="p-3 text-center">Draf</th>
+                                <th className="p-3 text-center">Sudah Dikirim</th>
+                                <th className="p-3 text-center">Terkunci</th>
+                                <th className="p-3 text-center">Progres Pengisian</th>
+                                <th className="p-3 text-center">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5 bg-[#020e19]">
+                              {compAssigns.map((a) => {
+                                const juryScoresList = allScores.filter(
+                                  (s) =>
+                                    (s.competitionId === comp.id || resolveCompetition(competitions, s.competitionId)?.id === comp.id) &&
+                                    s.juryId === a.juryId
+                                );
+                                const draftCount = juryScoresList.filter((s) => s.status === 'draft').length;
+                                const submittedCount = juryScoresList.filter((s) => s.status === 'submitted').length;
+                                const lockedCount = juryScoresList.filter((s) => s.status === 'locked').length;
+
+                                const done = submittedCount + lockedCount;
+                                const percent = totalParts > 0 ? Math.round((done / totalParts) * 100) : 0;
+
+                                return (
+                                  <tr key={a.id} className="hover:bg-white/[0.02]">
+                                    <td className="p-3">
+                                      <div className="font-bold text-white">{a.juryName || a.juryId}</div>
+                                      <span className="text-[10px] text-white/40 font-mono">ID: {a.juryId}</span>
+                                    </td>
+                                    <td className="p-3">
+                                      <div className="text-white/80">{a.juryInstitution || '-'}</div>
+                                      <div className="text-[10px] text-[#00D9F5]">{a.juryEmail || '-'}</div>
+                                    </td>
+                                    <td className="p-3 text-center font-mono text-white/70 font-semibold">{totalParts}</td>
+                                    <td className="p-3 text-center">
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300">
+                                        {draftCount}
+                                      </span>
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300">
+                                        {submittedCount}
+                                      </span>
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300">
+                                        {lockedCount}
+                                      </span>
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      <div className="flex items-center justify-center gap-2">
+                                        <div className="w-16 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                                          <div
+                                            className="h-full bg-gradient-to-r from-[#00D9F5] to-emerald-400 rounded-full"
+                                            style={{ width: `${percent}%` }}
+                                          />
+                                        </div>
+                                        <span className={`font-mono font-bold ${percent === 100 ? 'text-emerald-400' : 'text-[#F2C96D]'}`}>
+                                          {percent}%
+                                        </span>
+                                      </div>
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      <span
+                                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                          percent === 100
+                                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                            : done > 0
+                                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                            : 'bg-white/10 text-white/50 border border-white/10'
+                                        }`}
+                                      >
+                                        {percent === 100 ? 'Selesai 100%' : done > 0 ? 'Sedang Menilai' : 'Belum Mulai'}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              /* VIEW MODE 2: FLAT TABLE OF ALL ASSIGNMENTS */
+              <div className="rounded-3xl bg-[#020e19] border border-white/10 overflow-hidden shadow-xl">
+                <table className="w-full text-left text-xs text-[#DDE7E8]">
+                  <thead className="bg-white/5 text-white/70 uppercase text-[10px] tracking-wider border-b border-white/10">
+                    <tr>
+                      <th className="p-3.5">Cabang Lomba</th>
+                      <th className="p-3.5">Nama Dewan Juri</th>
+                      <th className="p-3.5 text-center">Total Peserta</th>
+                      <th className="p-3.5 text-center">Draf</th>
+                      <th className="p-3.5 text-center">Sudah Dikirim</th>
+                      <th className="p-3.5 text-center">Terkunci</th>
+                      <th className="p-3.5 text-center">Persentase</th>
+                      <th className="p-3.5 text-center">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {assignments
+                      .filter((a) => {
+                        if (!a.isActive) return false;
+                        const compObj = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+                        const effectiveCompId = compObj ? compObj.id : a.competitionId;
+                        if (monitoringCompFilter !== 'ALL' && effectiveCompId !== monitoringCompFilter) return false;
+                        if (monitoringSearch.trim()) {
+                          const q = monitoringSearch.toLowerCase();
+                          const matchJury = (a.juryName || '').toLowerCase().includes(q) || (a.juryInstitution || '').toLowerCase().includes(q);
+                          const matchComp = (compObj?.title || a.competitionTitle || '').toLowerCase().includes(q);
+                          if (!matchJury && !matchComp) return false;
+                        }
+                        return true;
+                      })
+                      .map((a) => {
+                        const compObj = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+                        const effectiveCompId = compObj ? compObj.id : a.competitionId;
+                        const compParts = participants.filter(
+                          (p) =>
+                            p.competitionId === effectiveCompId ||
+                            p.competitionTitle?.toLowerCase() === compObj?.title.toLowerCase()
+                        );
+                        const totalParts = compParts.length;
+
+                        const juryScoresList = allScores.filter(
+                          (s) =>
+                            (s.competitionId === effectiveCompId || resolveCompetition(competitions, s.competitionId)?.id === effectiveCompId) &&
+                            s.juryId === a.juryId
+                        );
+                        const draftCount = juryScoresList.filter((s) => s.status === 'draft').length;
+                        const submittedCount = juryScoresList.filter((s) => s.status === 'submitted').length;
+                        const lockedCount = juryScoresList.filter((s) => s.status === 'locked').length;
+
+                        const done = submittedCount + lockedCount;
+                        const percent = totalParts > 0 ? Math.round((done / totalParts) * 100) : 0;
+
+                        return (
+                          <tr key={a.id} className="hover:bg-white/[0.02]">
+                            <td className="p-3.5 font-bold text-white">
+                              {compObj ? (
+                                <div>
+                                  <span className="text-[10px] text-[#00D9F5] block uppercase font-bold">[{compObj.category}]</span>
+                                  <span>{compObj.title}</span>
+                                </div>
+                              ) : (
+                                a.competitionTitle || a.competitionId
+                              )}
+                            </td>
+                            <td className="p-3.5">
+                              <span className="font-semibold text-white">{a.juryName || a.juryId}</span>
+                              <span className="text-[10px] text-white/40 block">{a.juryInstitution}</span>
+                            </td>
+                            <td className="p-3.5 text-center font-mono text-white/70 font-semibold">{totalParts}</td>
+                            <td className="p-3.5 text-center">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300">
+                                {draftCount}
+                              </span>
+                            </td>
+                            <td className="p-3.5 text-center">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300">
+                                {submittedCount}
+                              </span>
+                            </td>
+                            <td className="p-3.5 text-center">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300">
+                                {lockedCount}
+                              </span>
+                            </td>
+                            <td className="p-3.5 text-center">
+                              <div className="flex items-center justify-center gap-1.5 font-mono font-bold">
+                                <span className={percent === 100 ? 'text-emerald-400' : 'text-[#F2C96D]'}>
+                                  {percent}%
+                                </span>
+                              </div>
+                            </td>
+                            <td className="p-3.5 text-center">
+                              {compObj && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedCompId(compObj.id);
+                                    setSubTab('recap');
+                                  }}
+                                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-white/80 hover:text-white"
+                                  title="Lihat Rekap Nilai"
+                                >
+                                  <FileText className="w-3.5 h-3.5 text-[#F2C96D]" />
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ============================================================================== */}
       {/* SUBTAB 6: REKAP NILAI (SCORE RECAPITULATION) */}

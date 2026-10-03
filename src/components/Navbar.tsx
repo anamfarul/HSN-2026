@@ -6,7 +6,6 @@ interface NavbarProps {
   onOpenAdmin?: () => void;
   onOpenDownload: () => void;
   onOpenUploadWork?: () => void;
-  onOpenJury?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -14,7 +13,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAdmin,
   onOpenDownload,
   onOpenUploadWork,
-  onOpenJury,
 }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);

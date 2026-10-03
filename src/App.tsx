@@ -424,7 +424,6 @@ export default function App() {
           if (el) el.scrollIntoView({ behavior: 'smooth' });
         }}
         onOpenUploadWork={() => handleOpenUploadWork()}
-        onOpenJury={handleOpenJury}
       />
 
       {/* Main Content Layout */}
