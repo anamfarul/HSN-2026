@@ -36,6 +36,12 @@ export function getStoredJurySession(): JuryAuthSession | null {
 }
 
 export function saveJurySession(session: JuryAuthSession, remember: boolean = true) {
+  // Set default TTL: 24 jam untuk 'ingat saya', 8 jam untuk sesi biasa jika belum ditentukan
+  if (!session.expiresAt) {
+    const ttlMs = remember ? 24 * 60 * 60 * 1000 : 8 * 60 * 60 * 1000;
+    session.expiresAt = Date.now() + ttlMs;
+  }
+
   const serialized = JSON.stringify(session);
   const profileSerialized = JSON.stringify(session.profile);
 
@@ -53,6 +59,71 @@ export function clearJurySession() {
   localStorage.removeItem(JURY_PROFILE_KEY);
   sessionStorage.removeItem(JURY_SESSION_KEY);
   sessionStorage.removeItem(JURY_PROFILE_KEY);
+}
+
+/**
+ * Validasi status sesi juri aktif saat ini.
+ * Memeriksa kedaluwarsa waktu (expiresAt) serta keaktifan akun di database / CMS.
+ */
+export async function validateCurrentJurySession(): Promise<{
+  isValid: boolean;
+  status: 'valid' | 'expired' | 'unauthenticated' | 'inactive' | 'not_found';
+  message: string;
+  profile?: UserProfile;
+  session?: JuryAuthSession;
+}> {
+  const session = getStoredJurySession();
+  if (!session || !session.profile) {
+    return {
+      isValid: false,
+      status: 'unauthenticated',
+      message: 'Sesi belum aktif. Silakan lakukan otentikasi dewan juri.',
+    };
+  }
+
+  // Periksa apakah waktu sesi telah melewati batas kadaluwarsa
+  if (session.expiresAt && Date.now() > session.expiresAt) {
+    clearJurySession();
+    return {
+      isValid: false,
+      status: 'expired',
+      message: 'Sesi penilaian Anda telah kadaluwarsa demi keamanan sistem. Silakan login kembali.',
+    };
+  }
+
+  // Verifikasi keaktifan akun juri di CMS / Database lokal
+  try {
+    const allProfiles = await getJuryProfiles();
+    const liveProfile = allProfiles.find((j) => j.id === session.profile.id || j.email.toLowerCase() === session.profile.email.toLowerCase());
+    
+    if (liveProfile) {
+      if (!liveProfile.isActive) {
+        clearJurySession();
+        return {
+          isValid: false,
+          status: 'inactive',
+          message: 'Akun juri Anda dinonaktifkan oleh administrator panitia.',
+        };
+      }
+      return {
+        isValid: true,
+        status: 'valid',
+        message: 'Sesi juri aktif dan terverifikasi.',
+        profile: liveProfile,
+        session,
+      };
+    }
+  } catch (err) {
+    console.warn('Gagal memvalidasi profil juri live:', err);
+  }
+
+  return {
+    isValid: true,
+    status: 'valid',
+    message: 'Sesi juri aktif.',
+    profile: session.profile,
+    session,
+  };
 }
 
 /**

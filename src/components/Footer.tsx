@@ -1,14 +1,21 @@
 import React from 'react';
-import { ShieldCheck, Heart, ArrowUp, Sparkles, MapPin, Calendar } from 'lucide-react';
+import { ShieldCheck, Shield, Heart, ArrowUp, Sparkles, MapPin, Calendar } from 'lucide-react';
 
 interface FooterProps {
   onOpenAdmin: () => void;
   onOpenRegister: () => void;
   onOpenUploadWork?: () => void;
   onOpenJury?: () => void;
+  onOpenCMSJury?: () => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ onOpenAdmin, onOpenRegister, onOpenUploadWork, onOpenJury }) => {
+export const Footer: React.FC<FooterProps> = ({ 
+  onOpenAdmin, 
+  onOpenRegister, 
+  onOpenUploadWork, 
+  onOpenJury,
+  onOpenCMSJury 
+}) => {
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -199,17 +206,28 @@ export const Footer: React.FC<FooterProps> = ({ onOpenAdmin, onOpenRegister, onO
               <li>
                 <button
                   onClick={onOpenAdmin}
-                  className="text-left text-[#F2C96D] hover:underline flex items-center gap-1 font-semibold"
+                  className="text-left text-[#DDE7E8]/90 hover:text-[#00D9F5] hover:underline flex items-center gap-1.5 font-semibold transition-colors"
                 >
-                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#00D9F5]" />
                   <span>Portal Admin CMS</span>
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={onOpenCMSJury || onOpenAdmin}
+                  className="text-left text-[#F2C96D] hover:text-white hover:underline flex items-center gap-1.5 font-bold transition-colors"
+                  title="Buka CMS Penilaian Juri Panitia Langsung"
+                >
+                  <Shield className="w-3.5 h-3.5 text-[#F2C96D]" />
+                  <span>CMS Penilaian Juri</span>
                 </button>
               </li>
               {onOpenJury && (
                 <li>
                   <button
                     onClick={onOpenJury}
-                    className="text-left text-[#00D9F5] hover:underline flex items-center gap-1 font-semibold"
+                    className="text-left text-[#00D9F5] hover:text-white hover:underline flex items-center gap-1.5 font-bold transition-colors"
+                    title="Buka Portal Penilaian Juri (/juri)"
                   >
                     <Sparkles className="w-3.5 h-3.5 text-[#F2C96D]" />
                     <span>Portal Penilaian Juri</span>
@@ -250,7 +268,7 @@ export const Footer: React.FC<FooterProps> = ({ onOpenAdmin, onOpenRegister, onO
         <div className="pt-8 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#DDE7E8]/70">
           <p>© 2026 MWC NU Kecamatan Poncokusumo. All Rights Reserved.</p>
 
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={onOpenAdmin}
               className="hover:text-[#00D9F5] transition-colors"
@@ -258,6 +276,28 @@ export const Footer: React.FC<FooterProps> = ({ onOpenAdmin, onOpenRegister, onO
               CMS Admin
             </button>
             <span>•</span>
+            <button
+              onClick={onOpenCMSJury || onOpenAdmin}
+              className="text-[#F2C96D] hover:underline font-bold transition-colors flex items-center gap-1"
+              title="Buka CMS Penilaian Juri"
+            >
+              <Shield className="w-3 h-3 text-[#F2C96D]" />
+              <span>CMS Penilaian Juri</span>
+            </button>
+            <span>•</span>
+            {onOpenJury && (
+              <>
+                <button
+                  onClick={onOpenJury}
+                  className="text-[#00D9F5] hover:underline font-bold transition-colors flex items-center gap-1"
+                  title="Buka Portal Penilaian Juri"
+                >
+                  <Sparkles className="w-3 h-3 text-[#F2C96D]" />
+                  <span>Portal Penilaian Juri</span>
+                </button>
+                <span>•</span>
+              </>
+            )}
             <button
               onClick={scrollToTop}
               className="flex items-center gap-1 hover:text-white transition-colors"

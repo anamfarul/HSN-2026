@@ -506,7 +506,14 @@ export default function App() {
 
       {/* Footer */}
       <Footer
-        onOpenAdmin={() => setIsAdminModalOpen(true)}
+        onOpenAdmin={() => {
+          setAdminInitialTab('participants');
+          setIsAdminModalOpen(true);
+        }}
+        onOpenCMSJury={() => {
+          setAdminInitialTab('jury_scoring');
+          setIsAdminModalOpen(true);
+        }}
         onOpenRegister={handleOpenRegister}
         onOpenUploadWork={() => handleOpenUploadWork()}
         onOpenJury={handleOpenJury}
@@ -517,23 +524,26 @@ export default function App() {
         {/* Portal Juri Floating Button */}
         <button
           onClick={handleOpenJury}
-          className="pointer-events-auto p-3 rounded-full bg-[#006B4F]/90 border border-emerald-400/40 text-emerald-300 hover:text-white hover:bg-[#008F72] shadow-xl backdrop-blur-md transition-all hover:scale-110 active:scale-95 group"
+          className="pointer-events-auto px-3.5 py-2.5 rounded-full bg-[#006B4F]/95 border border-emerald-400/60 text-white hover:bg-[#008F72] shadow-2xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 group flex items-center gap-2"
           title="Buka Portal Penilaian Juri (/juri)"
           aria-label="Buka Portal Juri"
         >
-          <Sparkles className="w-5 h-5 text-[#F2C96D]" />
-          <span className="sr-only">Portal Juri</span>
+          <Sparkles className="w-4 h-4 text-[#F2C96D]" />
+          <span className="text-xs font-black tracking-wide hidden sm:inline">Portal Juri</span>
         </button>
 
         {/* Admin CMS Floating Button */}
         <button
-          onClick={() => setIsAdminModalOpen(true)}
-          className="pointer-events-auto p-3 rounded-full bg-[#020e19]/90 border border-white/20 text-[#F2C96D] hover:text-white hover:border-[#D9B45B] shadow-xl backdrop-blur-md transition-all hover:scale-110 group"
-          title="Buka CMS Panitia"
-          aria-label="Buka CMS Panitia"
+          onClick={() => {
+            setAdminInitialTab('jury_scoring');
+            setIsAdminModalOpen(true);
+          }}
+          className="pointer-events-auto px-3.5 py-2.5 rounded-full bg-[#020e19]/95 border border-[#F2C96D]/50 text-[#F2C96D] hover:text-white hover:border-[#D9B45B] hover:bg-[#031525] shadow-2xl backdrop-blur-md transition-all hover:scale-105 group flex items-center gap-1.5"
+          title="Buka CMS Penilaian Juri Panitia"
+          aria-label="Buka CMS Penilaian Juri"
         >
-          <Shield className="w-5 h-5" />
-          <span className="sr-only">CMS Panitia</span>
+          <Shield className="w-4 h-4 text-[#F2C96D]" />
+          <span className="text-xs font-bold hidden sm:inline">CMS Penilaian</span>
         </button>
 
         {/* Upload Karya Floating Quick Action Button */}

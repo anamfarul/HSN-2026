@@ -46,6 +46,7 @@ import {
   signOutJury, 
   getStoredJuryProfile, 
   getStoredJurySession, 
+  validateCurrentJurySession,
   JuryAuthSession 
 } from '../../lib/juryAuthService';
 import { 
@@ -88,6 +89,13 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+
+  // Status Validasi Sesi Juri Langsung
+  const [sessionValidationStatus, setSessionValidationStatus] = useState<
+    'checking' | 'valid' | 'expired' | 'unauthenticated' | 'inactive'
+  >('checking');
+  const [sessionValidationNotice, setSessionValidationNotice] = useState<string | null>(null);
+  const [showInternalAuthModal, setShowInternalAuthModal] = useState<boolean>(false);
 
   // Data State
   const [assignments, setAssignments] = useState<JuryAssignment[]>([]);
@@ -160,6 +168,58 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
     };
   }, [session, selectedCompId]);
 
+  // Validasi status juri langsung (cek apakah belum login atau sesi kadaluwarsa)
+  useEffect(() => {
+    let isMounted = true;
+    async function verifyJuryStatus() {
+      const result = await validateCurrentJurySession();
+      if (!isMounted) return;
+
+      if (!result.isValid) {
+        setSessionValidationStatus(result.status);
+        setSession(null);
+        setProfile(null);
+        if (result.status === 'expired') {
+          const msg = 'Sesi penilaian dewan juri telah kadaluwarsa demi keamanan sistem. Silakan lakukan otentikasi ulang untuk mengakses dashboard.';
+          setSessionValidationNotice(msg);
+          setLoginError(msg);
+          setShowInternalAuthModal(true);
+        } else if (result.status === 'inactive') {
+          const msg = 'Akun juri Anda dinonaktifkan oleh administrator panitia.';
+          setSessionValidationNotice(msg);
+          setLoginError(msg);
+        }
+      } else {
+        setSessionValidationStatus('valid');
+        setSessionValidationNotice(null);
+        if (result.profile) setProfile(result.profile);
+        if (result.session) setSession(result.session);
+      }
+    }
+    verifyJuryStatus();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Pemeriksaan integritas sesi sebelum melakukan aksi penilaian (pilih lomba, simpan draf, kirim final)
+  const ensureValidSession = async (): Promise<boolean> => {
+    const result = await validateCurrentJurySession();
+    if (!result.isValid) {
+      setSession(null);
+      setProfile(null);
+      setSessionValidationStatus(result.status);
+      const msg = result.status === 'expired'
+        ? 'Sesi Anda telah kadaluwarsa. Silakan lakukan otentikasi ulang sebelum melanjutkan penilaian.'
+        : result.message;
+      setSessionValidationNotice(msg);
+      setLoginError(msg);
+      setShowInternalAuthModal(true);
+      return false;
+    }
+    return true;
+  };
+
   // Handle Login
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -171,6 +231,9 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
       if (res.success && res.session) {
         setSession(res.session);
         setProfile(res.session.profile);
+        setSessionValidationStatus('valid');
+        setSessionValidationNotice(null);
+        setShowInternalAuthModal(false);
         setCurrentView('dashboard');
       } else {
         setLoginError(res.message || 'Login gagal. Periksa email dan kata sandi Anda.');
@@ -193,6 +256,9 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
     await signOutJury();
     setSession(null);
     setProfile(null);
+    setSessionValidationStatus('unauthenticated');
+    setSessionValidationNotice(null);
+    setShowInternalAuthModal(false);
     setCurrentView('dashboard');
     setSelectedCompId(null);
     setSelectedParticipantId(null);
@@ -242,7 +308,10 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
   }, [juryScores, profile, selectedParticipantId, selectedCompId, selectedParticipant]);
 
   // When opening scoring form, populate active scores
-  const openScoringForm = (partId: string) => {
+  const openScoringForm = async (partId: string) => {
+    const valid = await ensureValidSession();
+    if (!valid) return;
+
     setSelectedParticipantId(partId);
     setScoreFeedback(null);
     const existing = juryScores.find(
@@ -270,6 +339,9 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
 
   // Save Draft Handler
   const handleSaveDraft = async () => {
+    const valid = await ensureValidSession();
+    if (!valid) return;
+
     if (!profile || !selectedParticipant || !selectedCompId) return;
     setIsSubmittingScore(true);
     setScoreFeedback(null);
@@ -301,6 +373,9 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
 
   // Submit Final Score Handler
   const handleSubmitFinal = async () => {
+    const valid = await ensureValidSession();
+    if (!valid) return;
+
     if (!profile || !selectedParticipant || !selectedCompId) return;
     setIsSubmittingScore(true);
     setScoreFeedback(null);
@@ -482,7 +557,17 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
               </p>
             </div>
 
-            {loginError && (
+            {sessionValidationNotice && (
+              <div className="mb-5 p-3.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs flex items-start gap-2.5 animate-pulse">
+                <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                <div className="space-y-1 text-left">
+                  <span className="font-bold text-amber-300 block">Validasi Status Sesi Juri:</span>
+                  <span>{sessionValidationNotice}</span>
+                </div>
+              </div>
+            )}
+
+            {loginError && !sessionValidationNotice && (
               <div className="mb-5 p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2.5">
                 <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
                 <span>{loginError}</span>
@@ -584,17 +669,50 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
           </div>
         </div>
 
-        {/* Footer Contact Helpdesk */}
-        <div className="max-w-md mx-auto text-center text-[11px] text-white/50 z-10 pb-2">
-          Mengalami kendala akun dewan juri? Hubungi Panitia Sekretariat HSN di{' '}
-          <a
-            href="https://wa.me/6285731194085"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[#00D9F5] hover:underline"
-          >
-            0857-3119-4085
-          </a>
+        {/* Footer Link & Connection directly to CMS PENILAIAN JURI */}
+        <div className="max-w-xl mx-auto w-full z-10 pt-4 pb-2 space-y-3">
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-[#006B4F]/30 via-[#031525] to-[#021c27] border border-emerald-500/40 text-center flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xl backdrop-blur-md">
+            <div className="flex items-center gap-3 text-left">
+              <div className="w-10 h-10 rounded-xl bg-[#006B4F] flex items-center justify-center text-[#F2C96D] shrink-0 shadow-md">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-[#00D9F5]">
+                    SISTEM TERINTEGRASI PANITIA
+                  </span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                </div>
+                <div className="text-xs text-[#DDE7E8] font-medium">
+                  Portal Penilaian Juri ⇄ CMS Penilaian Juri
+                </div>
+              </div>
+            </div>
+
+            {onOpenCMS && (
+              <button
+                type="button"
+                onClick={onOpenCMS}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#006B4F] via-[#008F72] to-[#00D9F5] hover:opacity-95 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all shrink-0 border border-emerald-400/40"
+                title="Buka CMS Penilaian Juri Panitia (Kelola Juri, Kriteria & Rekap Nilai)"
+              >
+                <Shield className="w-4 h-4 text-[#F2C96D]" />
+                <span>Buka CMS Penilaian Juri</span>
+              </button>
+            )}
+          </div>
+
+          <div className="text-center text-[11px] text-white/50">
+            Mengalami kendala akun dewan juri? Hubungi Panitia Sekretariat HSN di{' '}
+            <a
+              href="https://wa.me/6285731194085"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#00D9F5] hover:underline font-semibold"
+            >
+              0857-3119-4085
+            </a>
+          </div>
         </div>
       </div>
     );
@@ -818,7 +936,9 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
 
                         <button
                           type="button"
-                          onClick={() => {
+                          onClick={async () => {
+                            const valid = await ensureValidSession();
+                            if (!valid) return;
                             setSelectedCompId(comp.id);
                             setCurrentView('competition');
                           }}
@@ -1524,6 +1644,169 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
           </div>
         )}
       </main>
+
+      {/* Footer Portal Juri (Terhubung langsung secara real-time ke CMS Penilaian Juri) */}
+      <footer className="mt-auto bg-[#031525] border-t border-white/10 px-4 sm:px-8 py-4">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="font-bold text-white">PORTAL PENILAIAN JURI HSN 2026</span>
+            </div>
+            <span className="text-white/30 hidden sm:inline">•</span>
+            <span className="text-[#DDE7E8]/70 hidden sm:inline">
+              Terhubung langsung secara real-time ke CMS Penilaian Juri
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            {onOpenCMS && (
+              <button
+                type="button"
+                onClick={onOpenCMS}
+                className="px-3.5 py-1.5 rounded-xl bg-[#006B4F]/50 hover:bg-[#006B4F] border border-emerald-500/50 text-emerald-200 hover:text-white font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+                title="Buka CMS Penilaian Juri Panitia (Kelola Juri, Kriteria & Rekap Nilai)"
+              >
+                <Shield className="w-3.5 h-3.5 text-[#F2C96D]" />
+                <span>Buka CMS Penilaian Juri</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={onBackToMain}
+              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 hover:text-white transition-all flex items-center gap-1"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Beranda Utama</span>
+            </button>
+          </div>
+        </div>
+      </footer>
+
+      {/* Dialog Otentikasi Internal Status Juri */}
+      {showInternalAuthModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+          <div className="max-w-md w-full rounded-3xl bg-[#031525] border border-[#00D9F5]/40 p-6 sm:p-7 shadow-2xl relative space-y-4 animate-scale-up">
+            <button
+              type="button"
+              onClick={() => {
+                setShowInternalAuthModal(false);
+                if (!session || !profile) {
+                  onBackToMain();
+                }
+              }}
+              className="absolute top-4 right-4 p-1.5 rounded-full bg-white/10 text-white/70 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="text-center">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-400 mx-auto flex items-center justify-center mb-2">
+                <Lock className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-black text-white">
+                Otentikasi Internal Dewan Juri
+              </h3>
+              <p className="text-xs text-[#DDE7E8]/70 mt-1">
+                {sessionValidationNotice || 'Sesi penilaian Anda belum terverifikasi atau telah kadaluwarsa. Silakan lakukan otentikasi akun dewan juri untuk melanjutkan.'}
+              </p>
+            </div>
+
+            {loginError && (
+              <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                <span>{loginError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleLoginSubmit} className="space-y-3 pt-1">
+              <div>
+                <label className="block text-xs font-semibold text-white/80 mb-1">
+                  Email Akun Juri
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  placeholder="juri.fauzan@hsnponcokusumo.nu"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-white text-xs outline-none focus:border-[#00D9F5]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-white/80 mb-1">
+                  Kata Sandi
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-3.5 py-2.5 pr-10 rounded-xl bg-[#020e19] border border-white/20 text-white text-xs outline-none focus:border-[#00D9F5]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white"
+                  >
+                    {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowInternalAuthModal(false);
+                    if (!session || !profile) {
+                      onBackToMain();
+                    }
+                  }}
+                  className="w-1/3 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold text-white transition-all"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isLoggingIn}
+                  className="w-2/3 py-2.5 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:opacity-90 text-xs font-bold text-white transition-all flex items-center justify-center gap-1.5 shadow-md"
+                >
+                  {isLoggingIn ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Verifikasi...</span>
+                    </>
+                  ) : (
+                    <>
+                      <LogIn className="w-3.5 h-3.5" />
+                      <span>Masuk Sesi</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+
+            {/* Failsafe Demo quick buttons */}
+            <div className="pt-2 border-t border-white/10 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginEmail('juri.fauzan@hsnponcokusumo.nu');
+                  setLoginPassword('santri2026');
+                }}
+                className="text-[11px] text-[#00D9F5] hover:underline"
+              >
+                Gunakan Akun Pengujian: Ust. Ahmad Fauzan (santri2026)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
