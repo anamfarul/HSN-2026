@@ -20,7 +20,7 @@ import {
 import { COMPETITIONS } from '../data/initialData';
 
 // Storage keys for local fallback (v5: strictly synchronized with CMS Panitia Cabang Lomba)
-const STORAGE_PROFILES = 'hsn2026_jury_profiles_v4';
+export const STORAGE_PROFILES = 'hsn2026_jury_profiles_v4';
 const STORAGE_CRITERIA = 'hsn2026_scoring_criteria_v4';
 const STORAGE_ASSIGNMENTS = 'hsn2026_jury_assignments_v5';
 const STORAGE_SCORES = 'hsn2026_jury_scores_v4';
@@ -287,6 +287,15 @@ export async function getJuryAuditLogs(): Promise<JuryAuditLog[]> {
 // ==============================================================================
 export async function getJuryProfiles(): Promise<UserProfile[]> {
   const deletedIds = new Set(getDeletedProfileIds());
+  const localList = getLocal<UserProfile[]>(STORAGE_PROFILES, INITIAL_JURY_PROFILES)
+    .filter((p) => !deletedIds.has(p.id))
+    .map((p) => ({
+      ...p,
+      username: p.username || (p.email.includes('@') ? p.email.split('@')[0] : p.email),
+      password: p.password || 'santri2026',
+    }));
+
+  let remoteProfiles: UserProfile[] = [];
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
     try {
@@ -297,30 +306,69 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
         .order('created_at', { ascending: true });
 
       if (!error && data && data.length > 0) {
-        return data
+        remoteProfiles = data
           .filter((p) => !deletedIds.has(p.id))
-          .map((p) => ({
-            id: p.id,
-            fullName: p.full_name,
-            email: p.email,
-            role: p.role,
-            institution: p.institution,
-            phone: p.phone,
-            isActive: p.is_active,
-            createdAt: p.created_at,
-            updatedAt: p.updated_at,
-          }));
+          .map((p) => {
+            const matchedLocal = localList.find(
+              (lp) => lp.id === p.id || lp.email.toLowerCase() === p.email.toLowerCase()
+            );
+            return {
+              id: p.id,
+              fullName: p.full_name || p.fullName || 'Dewan Juri',
+              email: p.email,
+              role: (p.role as any) || 'jury',
+              institution: p.institution || 'MWC NU Poncokusumo',
+              phone: p.phone || '',
+              isActive: p.is_active !== undefined ? p.is_active : (p.isActive ?? true),
+              username: matchedLocal?.username || (p.email.includes('@') ? p.email.split('@')[0] : p.email),
+              password: matchedLocal?.password || 'santri2026',
+              createdAt: p.created_at || p.createdAt,
+              updatedAt: p.updated_at || p.updatedAt,
+            };
+          });
       }
-    } catch {}
+    } catch (err) {
+      console.warn('Gagal membaca remote profiles:', err);
+    }
   }
-  const localList = getLocal<UserProfile[]>(STORAGE_PROFILES, INITIAL_JURY_PROFILES);
-  return localList
-    .filter((p) => !deletedIds.has(p.id))
-    .map((p) => ({
-      ...p,
-      username: p.username || (p.email.includes('@') ? p.email.split('@')[0] : p.email),
-      password: p.password || 'santri2026',
-    }));
+
+  // Gabungkan profil remote dan profil lokal (menjamin juri baru yang ditambahkan di CMS TIDAK PERNAH HILANG)
+  const combinedMap = new Map<string, UserProfile>();
+
+  // 1. Masukkan remote profil
+  for (const r of remoteProfiles) {
+    if (!deletedIds.has(r.id)) {
+      combinedMap.set(r.id, r);
+      if (r.email) combinedMap.set(r.email.toLowerCase(), r);
+    }
+  }
+
+  // 2. Timpa / Tambahkan dari localList (memuat juri baru yang baru saja dibuat di CMS)
+  for (const l of localList) {
+    if (!deletedIds.has(l.id)) {
+      const existing = combinedMap.get(l.id) || (l.email ? combinedMap.get(l.email.toLowerCase()) : undefined);
+      const merged: UserProfile = {
+        ...existing,
+        ...l,
+        username: l.username || existing?.username || (l.email.includes('@') ? l.email.split('@')[0] : l.email),
+        password: l.password || existing?.password || 'santri2026',
+      };
+      combinedMap.set(l.id, merged);
+      if (l.email) combinedMap.set(l.email.toLowerCase(), merged);
+    }
+  }
+
+  // 3. Pastikan daftar unik berdasarkan ID
+  const result: UserProfile[] = [];
+  const seenIds = new Set<string>();
+  for (const item of combinedMap.values()) {
+    if (!seenIds.has(item.id) && !deletedIds.has(item.id)) {
+      seenIds.add(item.id);
+      result.push(item);
+    }
+  }
+
+  return result.length > 0 ? result : INITIAL_JURY_PROFILES;
 }
 
 export async function saveJuryProfile(
@@ -330,6 +378,13 @@ export async function saveJuryProfile(
   const isNew = !profile.id;
   const id = profile.id || `jury-${Date.now()}`;
   const now = new Date().toISOString();
+
+  // Hapus dari blacklist terhapus jika sebelumnya pernah ditandai
+  const deletedSet = new Set(getDeletedProfileIds());
+  if (deletedSet.has(id)) {
+    deletedSet.delete(id);
+    setLocal(STORAGE_DELETED_PROFILES, Array.from(deletedSet));
+  }
 
   const cleanEmail = profile.email.trim().toLowerCase();
   const cleanUsername = profile.username?.trim().toLowerCase() || (cleanEmail.includes('@') ? cleanEmail.split('@')[0] : cleanEmail);
@@ -376,7 +431,7 @@ export async function saveJuryProfile(
   }
   setLocal(STORAGE_PROFILES, updatedList);
 
-  // Supabase update
+  // Supabase update (non-blocking)
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
     try {
@@ -388,13 +443,13 @@ export async function saveJuryProfile(
         institution: finalProfile.institution,
         phone: finalProfile.phone,
         is_active: finalProfile.isActive,
-        updated_at: now,
       });
-    } catch (e: any) {
-      console.warn('Supabase profile save error:', e?.message || e);
+    } catch (err) {
+      console.warn('Supabase upsert profile note:', err);
     }
   }
 
+  notifyJuryDataChanged('jury_profiles', updatedList);
   return { success: true, data: finalProfile };
 }
 

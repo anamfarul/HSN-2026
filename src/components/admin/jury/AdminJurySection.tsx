@@ -1387,8 +1387,8 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                     />
                   </div>
 
-                  {/* USERNAME & PASSWORD LOGIN KHUSUS SUPER ADMIN & DIVISI SEKRETARIAT & ADMINISTRASI */}
-                  {canManageJuryCredentials && (
+                  {/* USERNAME & PASSWORD LOGIN DEWAN JURI */}
+                  {(canManageJuryCredentials || !editingJudge.id) && (
                     <div className="p-3.5 rounded-2xl bg-[#006B4F]/15 border border-emerald-500/35 space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
@@ -1396,7 +1396,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                           <span>Kredensial Login Dewan Juri</span>
                         </span>
                         <span className="text-[10px] font-bold text-[#F2C96D] bg-[#F2C96D]/15 px-2 py-0.5 rounded-md border border-[#F2C96D]/30">
-                          Super Admin & Sekretariat
+                          {editingJudge.id ? 'Kelola Kredensial' : 'Wajib Diisi'}
                         </span>
                       </div>
 
