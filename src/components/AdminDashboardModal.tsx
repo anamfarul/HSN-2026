@@ -700,6 +700,19 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
               </span>
             </div>
 
+            {/* Portal Juri Direct Button */}
+            {onOpenJuryPortal && (
+              <button
+                type="button"
+                onClick={() => onOpenJuryPortal()}
+                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#006B4F] via-[#008F72] to-[#00D9F5] text-white text-xs font-bold flex items-center gap-1.5 shadow hover:scale-105 active:scale-95 transition-all border border-emerald-400/40"
+                title="Buka Portal Penilaian Juri (/juri)"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-[#F2C96D]" />
+                <span className="hidden sm:inline">Portal Juri</span>
+              </button>
+            )}
+
             {/* Logout Button */}
             <button
               onClick={() => setShowLogoutConfirm(true)}

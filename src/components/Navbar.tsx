@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, X, Download, UploadCloud } from 'lucide-react';
+import { Menu, X, Download, UploadCloud, Sparkles, Shield } from 'lucide-react';
 
 interface NavbarProps {
   onOpenRegister?: () => void;
   onOpenAdmin?: () => void;
   onOpenDownload: () => void;
   onOpenUploadWork?: () => void;
+  onOpenJury?: () => void;
+  onOpenCMSJury?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -13,6 +15,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAdmin,
   onOpenDownload,
   onOpenUploadWork,
+  onOpenJury,
+  onOpenCMSJury,
 }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -134,6 +138,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span>APLOUD KARYA</span>
               </button>
             )}
+
+            {/* Menu PORTAL JURI */}
+            {onOpenJury && (
+              <button
+                id="nav-btn-portal-juri"
+                onClick={onOpenJury}
+                className="ml-2 px-3 py-1.5 rounded-lg text-xs font-black tracking-wider uppercase text-white bg-gradient-to-r from-[#006B4F] via-[#008F72] to-[#00D9F5] hover:brightness-110 active:scale-95 transition-all flex items-center gap-1.5 shadow-md shadow-[#006B4F]/30 border border-emerald-400/40"
+                title="Buka Portal Penilaian Juri (/juri)"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-[#F2C96D]" />
+                <span>PORTAL JURI</span>
+              </button>
+            )}
           </nav>
 
           {/* Mobile Menu Hamburger Button */}
@@ -145,6 +162,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <UploadCloud className="w-3 h-3 text-[#031525]" />
                 <span>APLOUD KARYA</span>
+              </button>
+            )}
+
+            {onOpenJury && (
+              <button
+                onClick={onOpenJury}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-black uppercase text-white bg-[#006B4F] border border-emerald-400/40 flex items-center gap-1"
+                title="Buka Portal Juri"
+              >
+                <Sparkles className="w-3 h-3 text-[#F2C96D]" />
+                <span>JURI</span>
               </button>
             )}
 
@@ -177,6 +205,32 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <UploadCloud className="w-4 h-4 text-[#031525]" />
                 <span>APLOUD KARYA PESERTA</span>
+              </button>
+            )}
+
+            {onOpenJury && (
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onOpenJury();
+                }}
+                className="w-full py-2.5 px-4 rounded-xl text-xs font-black uppercase tracking-wider text-white bg-gradient-to-r from-[#006B4F] via-[#008F72] to-[#00D9F5] flex items-center justify-center gap-2 shadow-lg shadow-[#006B4F]/30 border border-emerald-400/40"
+              >
+                <Sparkles className="w-4 h-4 text-[#F2C96D]" />
+                <span>PORTAL PENILAIAN JURI</span>
+              </button>
+            )}
+
+            {onOpenCMSJury && (
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onOpenCMSJury();
+                }}
+                className="w-full py-2 px-4 rounded-xl text-xs font-bold text-[#F2C96D] bg-[#020e19] border border-[#F2C96D]/40 hover:bg-white/5 flex items-center justify-center gap-2"
+              >
+                <Shield className="w-4 h-4 text-[#F2C96D]" />
+                <span>CMS PENILAIAN JURI (PANITIA)</span>
               </button>
             )}
 

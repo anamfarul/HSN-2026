@@ -138,30 +138,62 @@ export default function App() {
   const [selectedRegNumberForWork, setSelectedRegNumberForWork] = useState<string | undefined>(undefined);
   
   // Portal Juri View State & URL Path Route Detector (/juri)
-  const [isJuryPortalOpen, setIsJuryPortalOpen] = useState(() => {
-    return typeof window !== 'undefined' && window.location.pathname.startsWith('/juri');
-  });
+  const isJuryUrl = () => {
+    if (typeof window === 'undefined') return false;
+    const path = window.location.pathname.toLowerCase();
+    const hash = window.location.hash.toLowerCase();
+    const search = window.location.search.toLowerCase();
+    return (
+      path.startsWith('/juri') ||
+      path.startsWith('/jury') ||
+      hash.includes('juri') ||
+      hash.includes('jury') ||
+      search.includes('portal=juri') ||
+      search.includes('tab=juri') ||
+      search.includes('page=juri') ||
+      search.includes('view=juri')
+    );
+  };
+
+  const [isJuryPortalOpen, setIsJuryPortalOpen] = useState(isJuryUrl);
 
   useEffect(() => {
-    const handlePopState = () => {
-      const isJuri = typeof window !== 'undefined' && window.location.pathname.startsWith('/juri');
-      setIsJuryPortalOpen(isJuri);
+    const handleUrlChange = () => {
+      setIsJuryPortalOpen(isJuryUrl());
     };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    window.addEventListener('popstate', handleUrlChange);
+    window.addEventListener('hashchange', handleUrlChange);
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      window.removeEventListener('hashchange', handleUrlChange);
+    };
   }, []);
 
-  const handleOpenJury = () => {
+  const handleOpenJury = (juryId?: string) => {
     setIsJuryPortalOpen(true);
-    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/juri')) {
-      window.history.pushState({}, '', '/juri');
+    if (typeof window !== 'undefined') {
+      try {
+        const targetPath = juryId ? `/juri?juryId=${encodeURIComponent(juryId)}` : '/juri';
+        if (window.location.pathname !== '/juri') {
+          window.history.pushState({}, '', targetPath);
+        }
+      } catch {
+        window.location.hash = juryId ? `#juri?juryId=${encodeURIComponent(juryId)}` : '#juri';
+      }
     }
   };
 
   const handleCloseJury = () => {
     setIsJuryPortalOpen(false);
-    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/juri')) {
-      window.history.pushState({}, '', '/');
+    if (typeof window !== 'undefined') {
+      try {
+        if (window.location.pathname.startsWith('/juri')) {
+          window.history.pushState({}, '', '/');
+        }
+        if (window.location.hash.includes('juri')) {
+          window.location.hash = '';
+        }
+      } catch {}
     }
   };
   
@@ -599,7 +631,12 @@ export default function App() {
           if (juryId) {
             try {
               const allJuries = await getJuryProfiles();
-              const target = allJuries.find((j) => j.id === juryId);
+              const target = allJuries.find(
+                (j) =>
+                  j.id === juryId ||
+                  j.username?.toLowerCase() === juryId.toLowerCase() ||
+                  j.email.toLowerCase() === juryId.toLowerCase()
+              );
               if (target) {
                 loginAsJuryDirectly(target);
               }
@@ -618,7 +655,7 @@ export default function App() {
             });
           }
           setIsAdminModalOpen(false);
-          handleOpenJury();
+          handleOpenJury(juryId);
         }}
         participants={participants}
         onUpdateParticipantStatus={handleUpdateParticipantStatus}

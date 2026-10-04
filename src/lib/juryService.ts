@@ -994,7 +994,7 @@ export async function saveScoringCriterion(
 
   const finalCrit: ScoringCriterion = {
     id,
-    competitionId: criterion.competitionId,
+    competitionId: normalizeCompId(criterion.competitionId),
     criterionName: criterion.criterionName.trim(),
     description: criterion.description?.trim() || '',
     maxScore: Number(criterion.maxScore) || 100,
@@ -1088,11 +1088,16 @@ export async function getJuryScores(
   participantId?: string
 ): Promise<JuryScore[]> {
   let remoteScores: JuryScore[] = [];
+  const normComp = competitionId ? normalizeCompId(competitionId).toLowerCase() : undefined;
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
     try {
       let query = supabase.from('jury_scores').select('*');
-      if (competitionId) query = query.eq('competition_id', competitionId);
+      if (competitionId && normComp) {
+        query = query.or(`competition_id.eq.${competitionId},competition_id.eq.${normComp}`);
+      } else if (competitionId) {
+        query = query.eq('competition_id', competitionId);
+      }
       if (juryId) query = query.eq('jury_id', juryId);
       if (participantId) query = query.eq('participant_id', participantId);
 
@@ -1102,7 +1107,7 @@ export async function getJuryScores(
           id: s.id,
           juryId: s.jury_id,
           participantId: s.participant_id,
-          competitionId: s.competition_id,
+          competitionId: normalizeCompId(s.competition_id),
           scores: s.scores || {},
           totalScore: Number(s.total_score) || 0,
           notes: s.notes,
@@ -1117,18 +1122,22 @@ export async function getJuryScores(
   }
 
   let localScores = getLocal<JuryScore[]>(STORAGE_SCORES, []);
-  if (competitionId) localScores = localScores.filter((s) => s.competitionId === competitionId);
+  if (competitionId) {
+    localScores = localScores.filter(
+      (s) => s.competitionId === competitionId || normalizeCompId(s.competitionId).toLowerCase() === normComp
+    );
+  }
   if (juryId) localScores = localScores.filter((s) => s.juryId === juryId);
   if (participantId) localScores = localScores.filter((s) => s.participantId === participantId);
 
   // Gabungkan nilai remote dan local (nilai lokal memiliki prioritas untuk draft/final terbaru)
   const scoreMap = new Map<string, JuryScore>();
   for (const r of remoteScores) {
-    const key = `${r.juryId}:${r.participantId}:${r.competitionId}`;
+    const key = `${r.juryId}:${r.participantId}:${normalizeCompId(r.competitionId).toLowerCase()}`;
     scoreMap.set(key, r);
   }
   for (const l of localScores) {
-    const key = `${l.juryId}:${l.participantId}:${l.competitionId}`;
+    const key = `${l.juryId}:${l.participantId}:${normalizeCompId(l.competitionId).toLowerCase()}`;
     scoreMap.set(key, l);
   }
 
@@ -1147,7 +1156,8 @@ export async function saveScoreDraft(params: {
   juryName?: string;
   participantName?: string;
 }): Promise<{ success: boolean; data?: JuryScore; message?: string }> {
-  const criteria = await getScoringCriteria(params.competitionId);
+  const normComp = normalizeCompId(params.competitionId);
+  const criteria = await getScoringCriteria(normComp);
   const totalScore = calculateJuryTotal(params.scores, criteria);
   const now = new Date().toISOString();
 
@@ -1156,7 +1166,7 @@ export async function saveScoreDraft(params: {
     (s) =>
       s.juryId === params.juryId &&
       s.participantId === params.participantId &&
-      s.competitionId === params.competitionId
+      (s.competitionId === params.competitionId || normalizeCompId(s.competitionId) === normComp)
   );
 
   if (existing && existing.status === 'locked') {
@@ -1167,7 +1177,7 @@ export async function saveScoreDraft(params: {
     id: existing?.id || `score-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     juryId: params.juryId,
     participantId: params.participantId,
-    competitionId: params.competitionId,
+    competitionId: normComp,
     scores: params.scores,
     totalScore,
     notes: params.notes || '',
@@ -1230,7 +1240,8 @@ export async function submitFinalScore(params: {
   juryName?: string;
   participantName?: string;
 }): Promise<{ success: boolean; data?: JuryScore; message?: string }> {
-  const criteria = await getScoringCriteria(params.competitionId);
+  const normComp = normalizeCompId(params.competitionId);
+  const criteria = await getScoringCriteria(normComp);
   const activeCriteria = criteria.filter((c) => c.isActive);
 
   // Validasi: seluruh kriteria aktif wajib diisi
@@ -1258,7 +1269,7 @@ export async function submitFinalScore(params: {
     (s) =>
       s.juryId === params.juryId &&
       s.participantId === params.participantId &&
-      s.competitionId === params.competitionId
+      (s.competitionId === params.competitionId || normalizeCompId(s.competitionId) === normComp)
   );
 
   if (existing && existing.status === 'locked') {
@@ -1269,7 +1280,7 @@ export async function submitFinalScore(params: {
     id: existing?.id || `score-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     juryId: params.juryId,
     participantId: params.participantId,
-    competitionId: params.competitionId,
+    competitionId: normComp,
     scores: params.scores,
     totalScore,
     notes: params.notes || '',
@@ -1436,12 +1447,21 @@ export async function getCompetitionScoreRecap(
   hasTies: boolean;
   divergentParticipantsCount: number;
 }> {
-  const compParticipants = participants.filter(
-    (p) => p.competitionId === competitionId || p.competitionTitle?.toLowerCase() === competitionId.toLowerCase()
-  );
+  const normTarget = normalizeCompId(competitionId).toLowerCase();
+  const compParticipants = participants.filter((p) => {
+    const pNorm = normalizeCompId(p.competitionId).toLowerCase();
+    return (
+      p.competitionId === competitionId ||
+      pNorm === normTarget ||
+      p.competitionTitle?.toLowerCase() === competitionId.toLowerCase()
+    );
+  });
 
   const assignments = await getJuryAssignments();
-  const assignedJuries = assignments.filter((a) => a.competitionId === competitionId && a.isActive);
+  const assignedJuries = assignments.filter((a) => {
+    const aNorm = normalizeCompId(a.competitionId).toLowerCase();
+    return a.isActive && (a.competitionId === competitionId || aNorm === normTarget);
+  });
   const totalExpectedJuries = assignedJuries.length;
 
   const allScores = await getJuryScores(competitionId);
@@ -1682,9 +1702,16 @@ export async function getScoringProgressSummary(
   const allResults = await getCompetitionResults();
 
   return competitions.map((comp) => {
-    const compParts = participants.filter(
-      (p) => p.competitionId === comp.id || p.competitionTitle?.toLowerCase() === comp.title.toLowerCase()
-    );
+    const compNorm = normalizeCompId(comp.id).toLowerCase();
+    const compParts = participants.filter((p) => {
+      const pNorm = normalizeCompId(p.competitionId).toLowerCase();
+      return (
+        p.competitionId === comp.id ||
+        pNorm === compNorm ||
+        p.competitionTitle?.toLowerCase() === comp.title.toLowerCase() ||
+        resolveCompetition(competitions, p.competitionId, p.competitionTitle)?.id === comp.id
+      );
+    });
     const assignedJuries = assignments.filter((a) => {
       if (!a.isActive) return false;
       if (a.competitionId === comp.id) return true;
@@ -1698,8 +1725,8 @@ export async function getScoringProgressSummary(
 
     const compScores = allScores.filter((s) => {
       if (s.competitionId === comp.id) return true;
-      const norm = normalizeCompId(s.competitionId);
-      return norm === comp.id;
+      const norm = normalizeCompId(s.competitionId).toLowerCase();
+      return norm === compNorm || norm === comp.id.toLowerCase();
     });
     const completedScores = compScores.filter((s) => s.status === 'submitted' || s.status === 'locked').length;
     const draftScores = compScores.filter((s) => s.status === 'draft').length;

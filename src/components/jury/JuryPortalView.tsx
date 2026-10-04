@@ -26,6 +26,7 @@ import {
   X, 
   ArrowLeft,
   RefreshCw,
+  Copy,
   Phone,
   HelpCircle,
   FolderOpen,
@@ -106,6 +107,7 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
   const [juryScores, setJuryScores] = useState<JuryScore[]>([]);
   const [quickJuries, setQuickJuries] = useState<UserProfile[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
+  const [copyToast, setCopyToast] = useState<string | null>(null);
 
   // Scoring Form State
   const [activeScores, setActiveScores] = useState<Record<string, number>>({});
@@ -206,6 +208,34 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
     return () => {
       isMounted = false;
     };
+  }, []);
+
+  // Baca parameter tautan link URL (misal: /juri?juryId=xxx atau /juri?user=xxx) untuk auto-fill login kredensial
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const search = new URLSearchParams(window.location.search);
+        const jId = search.get('juryId') || search.get('id');
+        const email = search.get('email');
+        const user = search.get('user');
+        if (jId || email || user) {
+          getJuryProfiles().then((all) => {
+            const found = all.find(
+              (j) =>
+                (jId && j.id === jId) ||
+                (email && j.email.toLowerCase() === email.toLowerCase()) ||
+                (user && (j.username?.toLowerCase() === user.toLowerCase() || j.email.toLowerCase().startsWith(user.toLowerCase())))
+            );
+            if (found) {
+              setLoginEmail(found.username || found.email);
+              if (found.password) {
+                setLoginPassword(found.password);
+              }
+            }
+          });
+        }
+      } catch {}
+    }
   }, []);
 
   // Pemeriksaan integritas sesi sebelum melakukan aksi penilaian (pilih lomba, simpan draf, kirim final)
@@ -312,10 +342,12 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
     const selComp = competitions.find((c) => c.id === selectedCompId || normalizeCompId(c.id).toLowerCase() === selNorm);
     return participants.filter((p) => {
       const pNorm = normalizeCompId(p.competitionId).toLowerCase();
+      const resolved = resolveCompetition(competitions, p.competitionId, p.competitionTitle);
       return (
         p.competitionId === selectedCompId ||
         pNorm === selNorm ||
-        (selComp && p.competitionTitle?.toLowerCase() === selComp.title.toLowerCase())
+        (selComp && p.competitionTitle?.toLowerCase() === selComp.title.toLowerCase()) ||
+        (resolved && selComp && resolved.id === selComp.id)
       );
     });
   }, [participants, selectedCompId, competitions]);
@@ -943,6 +975,23 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* Salin Tautan Portal */}
+            <button
+              type="button"
+              onClick={() => {
+                const url = typeof window !== 'undefined' ? `${window.location.origin}/juri` : '/juri';
+                navigator.clipboard?.writeText(url).then(() => {
+                  setCopyToast(`Tautan Portal Juri disalin: ${url}`);
+                  setTimeout(() => setCopyToast(null), 3000);
+                });
+              }}
+              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
+              title="Salin Tautan Portal Juri"
+            >
+              <Copy className="w-3.5 h-3.5 text-[#F2C96D]" />
+              <span className="hidden lg:inline">Salin Link</span>
+            </button>
+
             {onOpenCMS && (
               <button
                 onClick={onOpenCMS}
@@ -2009,6 +2058,14 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Copy Link Toast Notification */}
+      {copyToast && (
+        <div className="fixed top-16 right-6 z-50 px-4 py-2.5 rounded-2xl bg-emerald-600 text-white text-xs font-bold shadow-2xl flex items-center gap-2 border border-emerald-400">
+          <Sparkles className="w-4 h-4 text-[#F2C96D]" />
+          <span>{copyToast}</span>
         </div>
       )}
     </div>
