@@ -287,13 +287,58 @@ export async function getJuryAuditLogs(): Promise<JuryAuditLog[]> {
 // ==============================================================================
 export async function getJuryProfiles(): Promise<UserProfile[]> {
   const deletedIds = new Set(getDeletedProfileIds());
-  const localList = getLocal<UserProfile[]>(STORAGE_PROFILES, INITIAL_JURY_PROFILES)
-    .filter((p) => !deletedIds.has(p.id))
-    .map((p) => ({
-      ...p,
-      username: p.username || (p.email.includes('@') ? p.email.split('@')[0] : p.email),
-      password: p.password || 'santri2026',
-    }));
+
+  // Historical fallback recovery: Periksa seluruh versi penyimpanan agar tidak ada juri yang hilang
+  const historicalKeys = [
+    STORAGE_PROFILES,
+    'hsn2026_jury_profiles_v3',
+    'hsn2026_jury_profiles_v2',
+    'hsn2026_jury_profiles_v1',
+    'hsn2026_jury_profiles',
+  ];
+
+  const mergedLocalMap = new Map<string, UserProfile>();
+
+  // Inisialisasi awal dengan INITIAL_JURY_PROFILES
+  for (const initP of INITIAL_JURY_PROFILES) {
+    if (!deletedIds.has(initP.id)) {
+      mergedLocalMap.set(initP.id, {
+        ...initP,
+        username: initP.username || (initP.email.includes('@') ? initP.email.split('@')[0] : initP.email),
+        password: initP.password || 'santri2026',
+      });
+    }
+  }
+
+  // Muat dari seluruh historical storage keys
+  for (const key of historicalKeys) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          for (const item of parsed) {
+            if (item && item.id && !deletedIds.has(item.id)) {
+              const cleanEmail = (item.email || '').trim().toLowerCase();
+              const existing = mergedLocalMap.get(item.id) || (cleanEmail ? Array.from(mergedLocalMap.values()).find((p) => p.email.toLowerCase() === cleanEmail) : undefined);
+              const cleanUsername = item.username || existing?.username || (cleanEmail.includes('@') ? cleanEmail.split('@')[0] : cleanEmail) || item.id;
+              const cleanPassword = item.password || existing?.password || 'santri2026';
+
+              mergedLocalMap.set(item.id, {
+                ...existing,
+                ...item,
+                username: cleanUsername,
+                password: cleanPassword,
+                isActive: item.isActive !== undefined ? item.isActive : true,
+              });
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
+  const localList = Array.from(mergedLocalMap.values());
 
   let remoteProfiles: UserProfile[] = [];
   const supabase = getSupabaseClient();
@@ -339,14 +384,13 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
   for (const r of remoteProfiles) {
     if (!deletedIds.has(r.id)) {
       combinedMap.set(r.id, r);
-      if (r.email) combinedMap.set(r.email.toLowerCase(), r);
     }
   }
 
   // 2. Timpa / Tambahkan dari localList (memuat juri baru yang baru saja dibuat di CMS)
   for (const l of localList) {
     if (!deletedIds.has(l.id)) {
-      const existing = combinedMap.get(l.id) || (l.email ? combinedMap.get(l.email.toLowerCase()) : undefined);
+      const existing = combinedMap.get(l.id) || Array.from(combinedMap.values()).find((p) => p.email.toLowerCase() === l.email.toLowerCase());
       const merged: UserProfile = {
         ...existing,
         ...l,
@@ -354,18 +398,17 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
         password: l.password || existing?.password || 'santri2026',
       };
       combinedMap.set(l.id, merged);
-      if (l.email) combinedMap.set(l.email.toLowerCase(), merged);
     }
   }
 
   // 3. Pastikan daftar unik berdasarkan ID
-  const result: UserProfile[] = [];
-  const seenIds = new Set<string>();
-  for (const item of combinedMap.values()) {
-    if (!seenIds.has(item.id) && !deletedIds.has(item.id)) {
-      seenIds.add(item.id);
-      result.push(item);
-    }
+  const result: UserProfile[] = Array.from(combinedMap.values()).filter((p) => !deletedIds.has(p.id));
+
+  // Sync balik ke STORAGE_PROFILES agar selalu termutakhirkan
+  if (result.length > 0 && typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(STORAGE_PROFILES, JSON.stringify(result));
+    } catch {}
   }
 
   return result.length > 0 ? result : INITIAL_JURY_PROFILES;
@@ -579,9 +622,21 @@ export async function getJuryAssignments(customCompetitions?: Competition[]): Pr
     } catch {}
   }
 
-  if (rawList.length === 0) {
-    rawList = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, INITIAL_JURY_ASSIGNMENTS);
+  // Gabungkan penugasan remote Supabase dan local storage agar penugasan juri CMS selalu sinkron
+  const localAssignments = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, INITIAL_JURY_ASSIGNMENTS);
+  const combinedAssignMap = new Map<string, JuryAssignment>();
+
+  for (const r of rawList) {
+    const key = `${r.juryId}:${r.competitionId}`;
+    combinedAssignMap.set(key, r);
   }
+  for (const l of localAssignments) {
+    const key = `${l.juryId}:${l.competitionId}`;
+    const existing = combinedAssignMap.get(key);
+    combinedAssignMap.set(key, { ...existing, ...l });
+  }
+
+  rawList = Array.from(combinedAssignMap.values());
 
   // Filter out any explicitly deleted assignments and profiles
   const deletedAssignIds = new Set(getDeletedAssignmentIds());
@@ -872,6 +927,7 @@ export async function removeAllAssignmentsForJudge(
 export async function getScoringCriteria(competitionId?: string): Promise<ScoringCriterion[]> {
   const deletedCriteria = new Set(getDeletedCriteriaIds());
   const normCompId = competitionId ? normalizeCompId(competitionId) : undefined;
+  let remoteCriteria: ScoringCriterion[] = [];
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
     try {
@@ -881,7 +937,7 @@ export async function getScoringCriteria(competitionId?: string): Promise<Scorin
       }
       const { data, error } = await query;
       if (!error && data && data.length > 0) {
-        return data
+        remoteCriteria = data
           .filter((d) => !deletedCriteria.has(d.id))
           .map((d) => ({
             id: d.id,
@@ -907,10 +963,19 @@ export async function getScoringCriteria(competitionId?: string): Promise<Scorin
       competitionId: normalizeCompId(c.competitionId),
     }));
 
-  if (normCompId) {
-    return normalizedAll.filter((c) => c.competitionId === normCompId || c.competitionId === competitionId);
+  const criteriaMap = new Map<string, ScoringCriterion>();
+  for (const r of remoteCriteria) {
+    criteriaMap.set(r.id, r);
   }
-  return normalizedAll;
+  for (const l of normalizedAll) {
+    criteriaMap.set(l.id, l);
+  }
+  const mergedList = Array.from(criteriaMap.values());
+
+  if (normCompId) {
+    return mergedList.filter((c) => c.competitionId === normCompId || c.competitionId === competitionId);
+  }
+  return mergedList;
 }
 
 export async function saveScoringCriterion(
@@ -1022,6 +1087,7 @@ export async function getJuryScores(
   juryId?: string,
   participantId?: string
 ): Promise<JuryScore[]> {
+  let remoteScores: JuryScore[] = [];
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
     try {
@@ -1032,7 +1098,7 @@ export async function getJuryScores(
 
       const { data, error } = await query;
       if (!error && data && data.length > 0) {
-        return data.map((s) => ({
+        remoteScores = data.map((s) => ({
           id: s.id,
           juryId: s.jury_id,
           participantId: s.participant_id,
@@ -1050,11 +1116,23 @@ export async function getJuryScores(
     } catch {}
   }
 
-  let list = getLocal<JuryScore[]>(STORAGE_SCORES, []);
-  if (competitionId) list = list.filter((s) => s.competitionId === competitionId);
-  if (juryId) list = list.filter((s) => s.juryId === juryId);
-  if (participantId) list = list.filter((s) => s.participantId === participantId);
-  return list;
+  let localScores = getLocal<JuryScore[]>(STORAGE_SCORES, []);
+  if (competitionId) localScores = localScores.filter((s) => s.competitionId === competitionId);
+  if (juryId) localScores = localScores.filter((s) => s.juryId === juryId);
+  if (participantId) localScores = localScores.filter((s) => s.participantId === participantId);
+
+  // Gabungkan nilai remote dan local (nilai lokal memiliki prioritas untuk draft/final terbaru)
+  const scoreMap = new Map<string, JuryScore>();
+  for (const r of remoteScores) {
+    const key = `${r.juryId}:${r.participantId}:${r.competitionId}`;
+    scoreMap.set(key, r);
+  }
+  for (const l of localScores) {
+    const key = `${l.juryId}:${l.participantId}:${l.competitionId}`;
+    scoreMap.set(key, l);
+  }
+
+  return Array.from(scoreMap.values());
 }
 
 /**

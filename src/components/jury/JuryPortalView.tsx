@@ -47,6 +47,7 @@ import {
   getStoredJuryProfile, 
   getStoredJurySession, 
   validateCurrentJurySession,
+  loginAsJuryDirectly,
   JuryAuthSession 
 } from '../../lib/juryAuthService';
 import { 
@@ -58,7 +59,8 @@ import {
   submitFinalScore, 
   calculateJuryTotal, 
   validateCriteriaWeights,
-  resolveCompetition
+  resolveCompetition,
+  normalizeCompId
 } from '../../lib/juryService';
 
 interface JuryPortalViewProps {
@@ -121,7 +123,7 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
   const refreshJuryData = async (juryId: string) => {
     setIsLoadingData(true);
     try {
-      const allAssigns = await getJuryAssignments();
+      const allAssigns = await getJuryAssignments(competitions);
       const myAssigns = allAssigns.filter((a) => a.juryId === juryId && a.isActive);
       setAssignments(myAssigns);
 
@@ -288,11 +290,17 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
       // Administrator / Panitia CMS memiliki akses supervisi ke seluruh cabang perlombaan
       return competitions;
     }
-    const compIds = assignments.map((a) => a.competitionId);
-    const assigned = competitions.filter((c) =>
-      compIds.includes(c.id) ||
-      assignments.some((a) => a.competitionTitle && a.competitionTitle.toLowerCase() === c.title.toLowerCase())
-    );
+    const assigned = competitions.filter((c) => {
+      const cNorm = normalizeCompId(c.id).toLowerCase();
+      return assignments.some((a) => {
+        const aNorm = normalizeCompId(a.competitionId).toLowerCase();
+        return (
+          a.competitionId === c.id ||
+          aNorm === cNorm ||
+          (a.competitionTitle && a.competitionTitle.toLowerCase() === c.title.toLowerCase())
+        );
+      });
+    });
     // Jika juri baru belum diberikan penugasan spesifik, default tampilkan semua cabang perlombaan
     return assigned.length > 0 ? assigned : competitions;
   }, [competitions, assignments, profile, isAdminUser]);
@@ -300,12 +308,16 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
   // Participants in selected competition
   const currentCompParticipants = useMemo(() => {
     if (!selectedCompId) return [];
-    return participants.filter(
-      (p) =>
+    const selNorm = normalizeCompId(selectedCompId).toLowerCase();
+    const selComp = competitions.find((c) => c.id === selectedCompId || normalizeCompId(c.id).toLowerCase() === selNorm);
+    return participants.filter((p) => {
+      const pNorm = normalizeCompId(p.competitionId).toLowerCase();
+      return (
         p.competitionId === selectedCompId ||
-        p.competitionTitle?.toLowerCase() ===
-          competitions.find((c) => c.id === selectedCompId)?.title.toLowerCase()
-    );
+        pNorm === selNorm ||
+        (selComp && p.competitionTitle?.toLowerCase() === selComp.title.toLowerCase())
+      );
+    });
   }, [participants, selectedCompId, competitions]);
 
   // Currently selected competition object
@@ -583,6 +595,47 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
               </p>
             </div>
 
+            {/* Deteksi Sesi CMS Panitia Aktif */}
+            {typeof window !== 'undefined' &&
+              (localStorage.getItem('hsn2026_admin_auth') === 'true' || sessionStorage.getItem('hsn2026_admin_auth') === 'true') && (
+                <div className="mb-5 p-3.5 rounded-2xl bg-gradient-to-r from-[#006B4F]/40 via-[#008F72]/30 to-[#00D9F5]/20 border border-emerald-400/40 flex items-center justify-between gap-3 shadow-lg">
+                  <div className="text-left">
+                    <span className="text-[10px] text-emerald-300 font-bold uppercase tracking-wider flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5 text-[#F2C96D]" />
+                      <span>Sesi CMS Panitia Aktif Terdeteksi</span>
+                    </span>
+                    <span className="font-bold text-white text-xs block truncate max-w-[210px]">
+                      {localStorage.getItem('hsn2026_admin_user') || sessionStorage.getItem('hsn2026_admin_user') || 'Administrator CMS'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const adminUser = localStorage.getItem('hsn2026_admin_user') || sessionStorage.getItem('hsn2026_admin_user') || 'Admin CMS';
+                      const sess = loginAsJuryDirectly({
+                        id: 'user-admin-root',
+                        fullName: `${adminUser} (Panitia CMS)`,
+                        email: 'admin@hsnponcokusumo.nu',
+                        username: 'admin',
+                        role: 'super_admin',
+                        institution: 'Panitia Pelaksana CMS HSN 2026',
+                        isActive: true,
+                      });
+                      setSession(sess);
+                      setProfile(sess.profile);
+                      setSessionValidationStatus('valid');
+                      setSessionValidationNotice(null);
+                      setShowInternalAuthModal(false);
+                      setCurrentView('dashboard');
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:from-[#008F72] hover:to-[#00D9F5] text-white text-xs font-bold transition-all shadow-md active:scale-95 shrink-0 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <LogIn className="w-3.5 h-3.5 text-[#F2C96D]" />
+                    <span>Masuk Langsung</span>
+                  </button>
+                </div>
+              )}
+
             {sessionValidationNotice && (
               <div className="mb-5 p-3.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs flex items-start gap-2.5 animate-pulse">
                 <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
@@ -665,45 +718,142 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
               </span>
               <div className="grid grid-cols-1 gap-1.5 max-h-56 overflow-y-auto pr-1">
                 {/* 1. Akun Login CMS Panitia / Super Admin */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLoginEmail('admin');
-                    setLoginPassword('santri2026');
-                  }}
-                  className="px-3 py-2 rounded-lg bg-[#006B4F]/25 hover:bg-[#006B4F]/40 border border-emerald-500/30 text-left text-[11px] text-[#DDE7E8] transition-colors flex items-center justify-between"
-                >
-                  <div>
-                    <span className="font-bold text-[#F2C96D]">🛡️ Administrator CMS (Super Admin)</span>
-                    <span className="block text-[10px] text-white/60">Username: admin | Sandi: santri2026</span>
+                <div className="p-2.5 rounded-xl bg-[#006B4F]/20 border border-emerald-500/30 flex items-center justify-between gap-2">
+                  <div className="truncate">
+                    <span className="font-bold text-[#F2C96D] text-[11px] block">🛡️ Admin CMS (Gus Ahmad)</span>
+                    <span className="text-[10px] text-white/60 block font-mono">User: admin | Sandi: santri2026</span>
                   </div>
-                  <span className="text-[10px] text-[#00D9F5] font-bold">Gunakan</span>
-                </button>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLoginEmail('admin');
+                        setLoginPassword('santri2026');
+                      }}
+                      className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-[10px] text-white font-medium"
+                    >
+                      Isi
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const sess = loginAsJuryDirectly({
+                          id: 'user-1',
+                          fullName: 'Gus Ahmad Al-Fatih (Sekretariat Utama)',
+                          email: 'admin@hsnponcokusumo.nu',
+                          username: 'admin',
+                          role: 'super_admin',
+                          institution: 'Panitia Pelaksana CMS HSN 2026',
+                          isActive: true,
+                        });
+                        setSession(sess);
+                        setProfile(sess.profile);
+                        setSessionValidationStatus('valid');
+                        setSessionValidationNotice(null);
+                        setShowInternalAuthModal(false);
+                        setCurrentView('dashboard');
+                      }}
+                      className="px-2 py-1 rounded bg-[#006B4F] hover:bg-[#008F72] text-[10px] text-white font-bold"
+                    >
+                      Masuk
+                    </button>
+                  </div>
+                </div>
 
-                {/* 2. Akun Dewan Juri (Otomatis Memuat Juri Baru dari CMS) */}
+                {/* 2. Koordinator Teknis Lomba */}
+                <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/10 flex items-center justify-between gap-2">
+                  <div className="truncate">
+                    <span className="font-bold text-emerald-300 text-[11px] block">📋 Koordinator Lomba (Ust. Sholihin)</span>
+                    <span className="text-[10px] text-white/60 block font-mono">User: panitia | Sandi: poncokusumo2026</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLoginEmail('panitia');
+                        setLoginPassword('poncokusumo2026');
+                      }}
+                      className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-[10px] text-white font-medium"
+                    >
+                      Isi
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const sess = loginAsJuryDirectly({
+                          id: 'user-2',
+                          fullName: 'Ustadz M. Sholihin, S.Pd.I (Koordinator Lomba)',
+                          email: 'lomba@hsnponcokusumo.nu',
+                          username: 'panitia',
+                          role: 'super_admin',
+                          institution: 'Koordinator Teknis Lomba HSN 2026',
+                          isActive: true,
+                        });
+                        setSession(sess);
+                        setProfile(sess.profile);
+                        setSessionValidationStatus('valid');
+                        setSessionValidationNotice(null);
+                        setShowInternalAuthModal(false);
+                        setCurrentView('dashboard');
+                      }}
+                      className="px-2 py-1 rounded bg-[#006B4F] hover:bg-[#008F72] text-[10px] text-white font-bold"
+                    >
+                      Masuk
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3. Seluruh Akun Dewan Juri dari CMS */}
                 {(quickJuries.length > 0 ? quickJuries : [
-                  { fullName: 'Ust. Ahmad Fauzan, M.Pd.', email: 'juri.fauzan@hsnponcokusumo.nu', username: 'juri.fauzan' },
-                  { fullName: 'Ning Hj. Lutfiah Zahra, S.Sn.', email: 'juri.lutfiah@hsnponcokusumo.nu', username: 'juri.lutfiah' },
-                  { fullName: 'K.H. Dr. Ridwan Asy’ari, M.Hum.', email: 'juri.ridwan@hsnponcokusumo.nu', username: 'juri.ridwan' },
-                ]).map((j, idx) => (
-                  <button
-                    key={j.id || idx}
-                    type="button"
-                    onClick={() => {
-                      setLoginEmail(j.username || j.email);
-                      setLoginPassword(j.password || 'santri2026');
-                    }}
-                    className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-left text-[11px] text-[#DDE7E8] transition-colors flex items-center justify-between"
-                  >
-                    <div className="truncate mr-2">
-                      <span className="font-semibold text-white block truncate">{j.fullName}</span>
-                      <span className="text-[10px] text-white/50 truncate block">
-                        {j.username ? `User: ${j.username}` : j.email}
-                      </span>
+                  { id: 'jury-001', fullName: 'Ust. Ahmad Fauzan, M.Pd.', email: 'juri.fauzan@hsnponcokusumo.nu', username: 'juri.fauzan', password: 'santri2026', role: 'jury', isActive: true },
+                  { id: 'jury-002', fullName: 'Ning Hj. Lutfiah Zahra, S.Sn.', email: 'juri.lutfiah@hsnponcokusumo.nu', username: 'juri.lutfiah', password: 'santri2026', role: 'jury', isActive: true },
+                  { id: 'jury-003', fullName: 'K.H. Dr. Ridwan Asy’ari, M.Hum.', email: 'juri.ridwan@hsnponcokusumo.nu', username: 'juri.ridwan', password: 'santri2026', role: 'jury', isActive: true },
+                ]).map((j, idx) => {
+                  const uName = j.username || (j.email.includes('@') ? j.email.split('@')[0] : j.email);
+                  const pass = j.password || 'santri2026';
+                  return (
+                    <div
+                      key={j.id || idx}
+                      className="p-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 flex items-center justify-between gap-2 transition-all"
+                    >
+                      <div className="truncate mr-2 text-left">
+                        <span className="font-semibold text-white text-[11px] block truncate">{j.fullName}</span>
+                        <span className="text-[10px] text-[#00D9F5] font-mono truncate block">
+                          User: {uName} • Sandi: {pass}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLoginEmail(uName);
+                            setLoginPassword(pass);
+                          }}
+                          className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-[10px] text-white font-medium"
+                          title="Isi form login"
+                        >
+                          Isi
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const sess = loginAsJuryDirectly(j);
+                            setSession(sess);
+                            setProfile(sess.profile);
+                            setSessionValidationStatus('valid');
+                            setSessionValidationNotice(null);
+                            setShowInternalAuthModal(false);
+                            setCurrentView('dashboard');
+                          }}
+                          className="px-2 py-1 rounded bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:opacity-90 text-[10px] text-white font-bold"
+                          title="Masuk langsung ke portal sebagai dewan juri ini"
+                        >
+                          Masuk
+                        </button>
+                      </div>
                     </div>
-                    <span className="text-[10px] text-[#00D9F5] shrink-0 font-medium">Isi Kredensial</span>
-                  </button>
-                ))}
+                  );
+                })}
               </div>
               <p className="text-[10px] text-white/40 mt-2 italic text-center">
                 Mendukung login dengan Username atau Email & Sandi yang ditentukan di CMS

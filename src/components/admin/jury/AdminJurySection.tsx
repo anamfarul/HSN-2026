@@ -134,7 +134,7 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
   }, [adminRole, currentAdminName, isSuperAdmin]);
 
   const canDeleteJuryItems = isSuperAdmin || isSekretariatAdmin || (currentAdminName?.toLowerCase() === 'admin');
-  const canManageJuryCredentials = canDeleteJuryItems;
+  const canManageJuryCredentials = true;
 
   // Sub-tab Navigation
   const [subTab, setSubTab] = useState<

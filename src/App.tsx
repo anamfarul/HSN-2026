@@ -604,6 +604,18 @@ export default function App() {
                 loginAsJuryDirectly(target);
               }
             } catch {}
+          } else {
+            // Admin membuka portal juri dari CMS -> login otomatis sebagai Administrator CMS / Supervisor
+            const adminUser = (typeof window !== 'undefined' ? localStorage.getItem('hsn2026_admin_user') : null) || 'Admin CMS';
+            loginAsJuryDirectly({
+              id: 'user-admin-root',
+              fullName: `${adminUser} (Panitia CMS)`,
+              email: 'admin@hsnponcokusumo.nu',
+              username: 'admin',
+              role: 'super_admin',
+              institution: 'Panitia Pelaksana CMS HSN 2026',
+              isActive: true,
+            });
           }
           setIsAdminModalOpen(false);
           handleOpenJury();
