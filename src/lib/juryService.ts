@@ -19,10 +19,10 @@ import {
 } from '../data/initialJuryData';
 import { COMPETITIONS } from '../data/initialData';
 
-// Storage keys for local fallback (v5: strictly synchronized with CMS Panitia Cabang Lomba)
+// Storage keys for local fallback (v6: strictly synchronized with CMS Panitia Cabang Lomba)
 export const STORAGE_PROFILES = 'hsn2026_jury_profiles_v4';
 const STORAGE_CRITERIA = 'hsn2026_scoring_criteria_v4';
-const STORAGE_ASSIGNMENTS = 'hsn2026_jury_assignments_v5';
+const STORAGE_ASSIGNMENTS = 'hsn2026_jury_assignments_v6';
 const STORAGE_SCORES = 'hsn2026_jury_scores_v4';
 const STORAGE_RESULTS = 'hsn2026_competition_results_v4';
 const STORAGE_AUDIT = 'hsn2026_jury_audit_logs_v4';
@@ -42,6 +42,12 @@ export function getDeletedCriteriaIds(): string[] {
   return getLocal<string[]>(STORAGE_DELETED_CRITERIA, []);
 }
 
+export const isMockAssignment = (a: any): boolean => {
+  if (!a) return false;
+  const id = String(a.id || '').toLowerCase();
+  return /^assign-0\d\d$/.test(id) || id.includes('mock') || id.includes('dummy');
+};
+
 // Cleanup any old legacy storage keys to eliminate outdated / mismatched competitions and purge dummy scores
 if (typeof window !== 'undefined') {
   try {
@@ -52,6 +58,7 @@ if (typeof window !== 'undefined') {
       'hsn2026_jury_assignments_v2',
       'hsn2026_jury_assignments_v3',
       'hsn2026_jury_assignments_v4',
+      'hsn2026_jury_assignments_v5',
     ];
     legacyKeys.forEach((k) => localStorage.removeItem(k));
 
@@ -63,6 +70,18 @@ if (typeof window !== 'undefined') {
         const cleaned = parsedScores.filter((s) => !isMockScore(s));
         if (cleaned.length !== parsedScores.length) {
           localStorage.setItem(STORAGE_SCORES, JSON.stringify(cleaned));
+        }
+      }
+    }
+
+    // Bersihkan penugasan dummy jika masih tersimpan di local storage
+    const rawAssignments = localStorage.getItem(STORAGE_ASSIGNMENTS);
+    if (rawAssignments) {
+      const parsedAssignments = JSON.parse(rawAssignments);
+      if (Array.isArray(parsedAssignments)) {
+        const cleaned = parsedAssignments.filter((a) => !isMockAssignment(a));
+        if (cleaned.length !== parsedAssignments.length) {
+          localStorage.setItem(STORAGE_ASSIGNMENTS, JSON.stringify(cleaned));
         }
       }
     }
@@ -692,7 +711,7 @@ export async function getJuryAssignments(customCompetitions?: Competition[]): Pr
     combinedAssignMap.set(key, { ...existing, ...l });
   }
 
-  rawList = Array.from(combinedAssignMap.values());
+  rawList = Array.from(combinedAssignMap.values()).filter((a) => !isMockAssignment(a));
 
   // Filter out any explicitly deleted assignments and profiles
   const deletedAssignIds = new Set(getDeletedAssignmentIds());
@@ -743,26 +762,6 @@ export async function getJuryAssignments(customCompetitions?: Competition[]): Pr
     }
   }
   normalizedList = Array.from(uniqueAssignMap.values());
-
-  // Only replenish from INITIAL_JURY_ASSIGNMENTS on first run if local storage was totally uninitialized
-  const hasInitializedStorage = typeof window !== 'undefined' && localStorage.getItem(STORAGE_ASSIGNMENTS) !== null;
-  if (!hasInitializedStorage && normalizedList.length === 0 && deletedAssignIds.size === 0) {
-    allComps.forEach((comp) => {
-      const initMatches = INITIAL_JURY_ASSIGNMENTS.filter((initA) => {
-        return initA.competitionId === comp.id || resolveCompetition(allComps, initA.competitionId, initA.competitionTitle)?.id === comp.id;
-      });
-      if (initMatches.length > 0) {
-        initMatches.forEach((m) => {
-          normalizedList.push({
-            ...m,
-            competitionId: comp.id,
-            competitionTitle: comp.title,
-            competitionCategory: comp.category,
-          });
-        });
-      }
-    });
-  }
 
   // Re-save sanitized and synchronized assignments to local storage
   setLocal(STORAGE_ASSIGNMENTS, normalizedList);

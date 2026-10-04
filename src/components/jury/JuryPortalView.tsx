@@ -126,10 +126,20 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
     setIsLoadingData(true);
     try {
       const allAssigns = await getJuryAssignments(competitions);
-      const myAssigns = allAssigns.filter((a) => a.juryId === juryId && a.isActive);
+      const isSuper =
+        profile?.role === 'super_admin' ||
+        profile?.role === 'admin' ||
+        juryId.startsWith('user-') ||
+        juryId.startsWith('admin');
+
+      // Jika supervisor CMS, tampilkan penugasan aktif yang ada di CMS
+      // Jika dewan juri, tampilkan HANYA cabang lomba yang ditugaskan kepada juri ini di CMS
+      const myAssigns = isSuper
+        ? allAssigns.filter((a) => a.isActive)
+        : allAssigns.filter((a) => a.juryId === juryId && a.isActive);
       setAssignments(myAssigns);
 
-      const allScores = await getJuryScores(undefined, juryId);
+      const allScores = await getJuryScores(undefined, isSuper ? undefined : juryId);
       setJuryScores(allScores);
     } catch (err) {
       console.warn('Refresh jury error:', err);
@@ -308,24 +318,28 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
 
   const assignedCompetitions = useMemo(() => {
     if (!profile) return [];
-    if (isAdminUser) {
-      // Administrator / Panitia CMS memiliki akses supervisi ke seluruh cabang perlombaan
-      return competitions;
+    
+    // Jika tidak ada penugasan di CMS, jangan tampilkan cabang perlombaan apapun
+    if (assignments.length === 0) {
+      return [];
     }
+
     const assigned = competitions.filter((c) => {
       const cNorm = normalizeCompId(c.id).toLowerCase();
       return assignments.some((a) => {
+        if (!a.isActive) return false;
         const aNorm = normalizeCompId(a.competitionId).toLowerCase();
         return (
           a.competitionId === c.id ||
           aNorm === cNorm ||
-          (a.competitionTitle && a.competitionTitle.toLowerCase() === c.title.toLowerCase())
+          (a.competitionTitle && a.competitionTitle.toLowerCase() === c.title.toLowerCase()) ||
+          resolveCompetition(competitions, a.competitionId, a.competitionTitle)?.id === c.id
         );
       });
     });
-    // Jika juri baru belum diberikan penugasan spesifik, default tampilkan semua cabang perlombaan
-    return assigned.length > 0 ? assigned : competitions;
-  }, [competitions, assignments, profile, isAdminUser]);
+
+    return assigned;
+  }, [competitions, assignments, profile]);
 
   // Participants in selected competition (Hanya peserta riil, bukan mock/dummy)
   const currentCompParticipants = useMemo(() => {
@@ -907,7 +921,11 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
                     Dashboard Penilaian Karya Santri
                   </h2>
                   <p className="text-xs sm:text-sm text-[#DDE7E8]/80 mt-1 max-w-2xl leading-relaxed">
-                    Anda ditugaskan pada <strong className="text-[#F2C96D]">{assignedCompetitions.length} cabang perlombaan</strong>. Mohon berikan penilaian secara objektif, amanah, dan berlandaskan kriteria teknis yang telah ditetapkan panitia.
+                    {assignedCompetitions.length > 0 ? (
+                      <>Anda ditugaskan pada <strong className="text-[#F2C96D]">{assignedCompetitions.length} cabang perlombaan</strong>. Mohon berikan penilaian secara objektif, amanah, dan berlandaskan kriteria teknis yang telah ditetapkan panitia.</>
+                    ) : (
+                      <>Saat ini belum ada cabang perlombaan yang ditugaskan kepada akun Anda di CMS Penilaian Juri. Penugasan dewan juri dikelola secara resmi oleh panitia melalui CMS.</>
+                    )}
                   </p>
                 </div>
 
@@ -973,12 +991,26 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
               </div>
 
               {assignedCompetitions.length === 0 ? (
-                <div className="p-12 text-center rounded-3xl bg-[#031525] border border-white/10">
-                  <FolderOpen className="w-12 h-12 text-white/30 mx-auto mb-3" />
+                <div className="p-12 text-center rounded-3xl bg-[#031525] border border-white/10 space-y-3 shadow-xl">
+                  <FolderOpen className="w-12 h-12 text-white/30 mx-auto mb-1" />
                   <h4 className="text-base font-bold text-white">Belum Ada Penugasan Lomba</h4>
-                  <p className="text-xs text-white/60 mt-1">
-                    Sekretariat Utama belum memasukkan nama Anda pada penugasan cabang lomba. Silakan hubungi admin panitia.
+                  <p className="text-xs text-white/60 max-w-md mx-auto leading-relaxed">
+                    {isAdminUser
+                      ? 'Belum ada cabang lomba yang ditugaskan kepada dewan juri di CMS Penilaian Juri. Silakan buka CMS Penilaian Juri untuk menambahkan penugasan dewan juri.'
+                      : 'Sekretariat Utama belum memasukkan nama Anda pada penugasan cabang lomba. Silakan hubungi admin panitia melalui CMS Penilaian Juri.'}
                   </p>
+                  {onOpenCMS && (
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={onOpenCMS}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:opacity-95 text-white text-xs font-bold transition-all shadow-md active:scale-95 border border-emerald-400/40"
+                      >
+                        <Shield className="w-4 h-4 text-[#F2C96D]" />
+                        <span>Buka CMS Penilaian Juri</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
