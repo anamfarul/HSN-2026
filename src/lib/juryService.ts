@@ -42,7 +42,7 @@ export function getDeletedCriteriaIds(): string[] {
   return getLocal<string[]>(STORAGE_DELETED_CRITERIA, []);
 }
 
-// Cleanup any old legacy storage keys to eliminate outdated / mismatched competitions
+// Cleanup any old legacy storage keys to eliminate outdated / mismatched competitions and purge dummy scores
 if (typeof window !== 'undefined') {
   try {
     const legacyKeys = [
@@ -54,6 +54,18 @@ if (typeof window !== 'undefined') {
       'hsn2026_jury_assignments_v4',
     ];
     legacyKeys.forEach((k) => localStorage.removeItem(k));
+
+    // Bersihkan nilai dummy yang mengacu pada peserta contoh awal
+    const rawScores = localStorage.getItem(STORAGE_SCORES);
+    if (rawScores) {
+      const parsedScores = JSON.parse(rawScores);
+      if (Array.isArray(parsedScores)) {
+        const cleaned = parsedScores.filter((s) => !isMockScore(s));
+        if (cleaned.length !== parsedScores.length) {
+          localStorage.setItem(STORAGE_SCORES, JSON.stringify(cleaned));
+        }
+      }
+    }
   } catch {}
 }
 
@@ -128,8 +140,52 @@ export function resolveCompetition(
 }
 
 // ==============================================================================
-// 1. LOCAL STORAGE HELPERS & REAL-TIME EVENT DISPATCHER
+// 1. DATA SANITIZATION & LOCAL STORAGE HELPERS
 // ==============================================================================
+export const isInitialMockParticipant = (p: any): boolean => {
+  if (!p) return false;
+  const id = String(p.id || '').toLowerCase();
+  const regNo = String(p.registrationNumber || p.registration_number || '').toUpperCase();
+  const fullName = String(p.fullName || p.full_name || '').toLowerCase();
+
+  return (
+    id.startsWith('reg-00') ||
+    regNo.startsWith('HSN-2026-00') ||
+    regNo.startsWith('HSN26-SMP-0001') ||
+    regNo.startsWith('HSN26-SMA-0002') ||
+    regNo.startsWith('HSN26-IPNU-0003') ||
+    regNo.startsWith('HSN26-FAT-0004') ||
+    regNo.startsWith('HSN26-PAUD-0005') ||
+    fullName.includes('ahmad faiz al-hafidz') ||
+    fullName.includes('siti nur khadijah') ||
+    fullName.includes('rizki bayu pratama') ||
+    fullName.includes('umi kalsum') ||
+    fullName.includes('muhammad bilal ramadhan') ||
+    fullName.includes('ahmad fauzi rabbani') ||
+    fullName.includes('siti maryam azzahra') ||
+    fullName.includes('m. rizqi maulana')
+  );
+};
+
+export const isMockScore = (s: JuryScore): boolean => {
+  if (!s) return false;
+  const pId = String(s.participantId || '').toLowerCase();
+  const sId = String(s.id || '').toLowerCase();
+  return (
+    pId.startsWith('reg-00') ||
+    pId.startsWith('hsn-2026-00') ||
+    pId.startsWith('hsn26-smp-0001') ||
+    pId.startsWith('hsn26-sma-0002') ||
+    pId.startsWith('hsn26-ipnu-0003') ||
+    pId.startsWith('hsn26-fat-0004') ||
+    pId.startsWith('hsn26-paud-0005') ||
+    pId.includes('mock') ||
+    pId.includes('dummy') ||
+    sId.includes('mock') ||
+    sId.includes('dummy')
+  );
+};
+
 export function notifyJuryDataChanged(key?: string, data?: any): void {
   if (typeof window !== 'undefined') {
     try {
@@ -1141,7 +1197,8 @@ export async function getJuryScores(
     scoreMap.set(key, l);
   }
 
-  return Array.from(scoreMap.values());
+  const allScoresList = Array.from(scoreMap.values()).filter((s) => !isMockScore(s));
+  return allScoresList;
 }
 
 /**
@@ -1448,14 +1505,16 @@ export async function getCompetitionScoreRecap(
   divergentParticipantsCount: number;
 }> {
   const normTarget = normalizeCompId(competitionId).toLowerCase();
-  const compParticipants = participants.filter((p) => {
-    const pNorm = normalizeCompId(p.competitionId).toLowerCase();
-    return (
-      p.competitionId === competitionId ||
-      pNorm === normTarget ||
-      p.competitionTitle?.toLowerCase() === competitionId.toLowerCase()
-    );
-  });
+  const compParticipants = participants
+    .filter((p) => !isInitialMockParticipant(p))
+    .filter((p) => {
+      const pNorm = normalizeCompId(p.competitionId).toLowerCase();
+      return (
+        p.competitionId === competitionId ||
+        pNorm === normTarget ||
+        p.competitionTitle?.toLowerCase() === competitionId.toLowerCase()
+      );
+    });
 
   const assignments = await getJuryAssignments();
   const assignedJuries = assignments.filter((a) => {
@@ -1703,15 +1762,17 @@ export async function getScoringProgressSummary(
 
   return competitions.map((comp) => {
     const compNorm = normalizeCompId(comp.id).toLowerCase();
-    const compParts = participants.filter((p) => {
-      const pNorm = normalizeCompId(p.competitionId).toLowerCase();
-      return (
-        p.competitionId === comp.id ||
-        pNorm === compNorm ||
-        p.competitionTitle?.toLowerCase() === comp.title.toLowerCase() ||
-        resolveCompetition(competitions, p.competitionId, p.competitionTitle)?.id === comp.id
-      );
-    });
+    const compParts = participants
+      .filter((p) => !isInitialMockParticipant(p))
+      .filter((p) => {
+        const pNorm = normalizeCompId(p.competitionId).toLowerCase();
+        return (
+          p.competitionId === comp.id ||
+          pNorm === compNorm ||
+          p.competitionTitle?.toLowerCase() === comp.title.toLowerCase() ||
+          resolveCompetition(competitions, p.competitionId, p.competitionTitle)?.id === comp.id
+        );
+      });
     const assignedJuries = assignments.filter((a) => {
       if (!a.isActive) return false;
       if (a.competitionId === comp.id) return true;

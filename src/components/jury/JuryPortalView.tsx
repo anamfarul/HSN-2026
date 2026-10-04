@@ -61,7 +61,8 @@ import {
   calculateJuryTotal, 
   validateCriteriaWeights,
   resolveCompetition,
-  normalizeCompId
+  normalizeCompId,
+  isInitialMockParticipant
 } from '../../lib/juryService';
 
 interface JuryPortalViewProps {
@@ -105,7 +106,6 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
   const [assignments, setAssignments] = useState<JuryAssignment[]>([]);
   const [criteria, setCriteria] = useState<ScoringCriterion[]>([]);
   const [juryScores, setJuryScores] = useState<JuryScore[]>([]);
-  const [quickJuries, setQuickJuries] = useState<UserProfile[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [copyToast, setCopyToast] = useState<string | null>(null);
 
@@ -153,9 +153,7 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
 
   // Real-time synchronization listener (connected directly to CMS Penilaian Juri)
   useEffect(() => {
-    getJuryProfiles().then(setQuickJuries).catch(console.warn);
     const handleJuryUpdated = () => {
-      getJuryProfiles().then(setQuickJuries).catch(console.warn);
       if (session?.profile?.id) {
         refreshJuryData(session.profile.id);
       }
@@ -281,12 +279,6 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
     }
   };
 
-  // Quick Demo Login Handler
-  const handleQuickDemoLogin = (email: string) => {
-    setLoginEmail(email);
-    setLoginPassword('santri2026');
-  };
-
   // Handle Logout
   const handleLogout = async () => {
     await signOutJury();
@@ -335,21 +327,23 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
     return assigned.length > 0 ? assigned : competitions;
   }, [competitions, assignments, profile, isAdminUser]);
 
-  // Participants in selected competition
+  // Participants in selected competition (Hanya peserta riil, bukan mock/dummy)
   const currentCompParticipants = useMemo(() => {
     if (!selectedCompId) return [];
     const selNorm = normalizeCompId(selectedCompId).toLowerCase();
     const selComp = competitions.find((c) => c.id === selectedCompId || normalizeCompId(c.id).toLowerCase() === selNorm);
-    return participants.filter((p) => {
-      const pNorm = normalizeCompId(p.competitionId).toLowerCase();
-      const resolved = resolveCompetition(competitions, p.competitionId, p.competitionTitle);
-      return (
-        p.competitionId === selectedCompId ||
-        pNorm === selNorm ||
-        (selComp && p.competitionTitle?.toLowerCase() === selComp.title.toLowerCase()) ||
-        (resolved && selComp && resolved.id === selComp.id)
-      );
-    });
+    return participants
+      .filter((p) => !isInitialMockParticipant(p))
+      .filter((p) => {
+        const pNorm = normalizeCompId(p.competitionId).toLowerCase();
+        const resolved = resolveCompetition(competitions, p.competitionId, p.competitionTitle);
+        return (
+          p.competitionId === selectedCompId ||
+          pNorm === selNorm ||
+          (selComp && p.competitionTitle?.toLowerCase() === selComp.title.toLowerCase()) ||
+          (resolved && selComp && resolved.id === selComp.id)
+        );
+      });
   }, [participants, selectedCompId, competitions]);
 
   // Currently selected competition object
@@ -539,11 +533,16 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
     let totalLocked = 0;
 
     for (const comp of assignedCompetitions) {
-      const compParts = participants.filter(
-        (p) =>
-          p.competitionId === comp.id ||
-          p.competitionTitle?.toLowerCase() === comp.title.toLowerCase()
-      );
+      const compNorm = normalizeCompId(comp.id).toLowerCase();
+      const compParts = participants
+        .filter((p) => !isInitialMockParticipant(p))
+        .filter(
+          (p) =>
+            p.competitionId === comp.id ||
+            normalizeCompId(p.competitionId).toLowerCase() === compNorm ||
+            p.competitionTitle?.toLowerCase() === comp.title.toLowerCase() ||
+            resolveCompetition(competitions, p.competitionId, p.competitionTitle)?.id === comp.id
+        );
       totalAssignedParts += compParts.length;
 
       for (const p of compParts) {
@@ -688,14 +687,14 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
             <form onSubmit={handleLoginSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-[#DDE7E8] mb-1.5 flex items-center justify-between">
-                  <span>Username atau Email (Juri / Panitia CMS)</span>
-                  <span className="text-[10px] text-[#00D9F5]">Akun CMS & Dewan Juri</span>
+                  <span>Username atau Email Dewan Juri</span>
+                  <span className="text-[10px] text-[#00D9F5]">Kredensial Resmi</span>
                 </label>
                 <input
                   type="text"
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder="Contoh: admin, juri.fauzan, atau email akun"
+                  placeholder="Masukkan Username atau Email resmi dewan juri"
                   required
                   className="w-full px-4 py-3 rounded-xl bg-[#020e19] border border-white/15 focus:border-[#00D9F5] text-white text-xs outline-none transition-all"
                 />
@@ -743,153 +742,20 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
               </button>
             </form>
 
-            {/* Quick Demo Accounts */}
+            {/* Panduan Resmi Kredensial Dewan Juri */}
             <div className="mt-6 pt-5 border-t border-white/10">
-              <span className="text-[11px] font-bold text-[#F2C96D] block mb-2">
-                Akses Cepat Pengujian Login (CMS Panitia & Dewan Juri):
-              </span>
-              <div className="grid grid-cols-1 gap-1.5 max-h-56 overflow-y-auto pr-1">
-                {/* 1. Akun Login CMS Panitia / Super Admin */}
-                <div className="p-2.5 rounded-xl bg-[#006B4F]/20 border border-emerald-500/30 flex items-center justify-between gap-2">
-                  <div className="truncate">
-                    <span className="font-bold text-[#F2C96D] text-[11px] block">🛡️ Admin CMS (Gus Ahmad)</span>
-                    <span className="text-[10px] text-white/60 block font-mono">User: admin | Sandi: santri2026</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLoginEmail('admin');
-                        setLoginPassword('santri2026');
-                      }}
-                      className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-[10px] text-white font-medium"
-                    >
-                      Isi
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const sess = loginAsJuryDirectly({
-                          id: 'user-1',
-                          fullName: 'Gus Ahmad Al-Fatih (Sekretariat Utama)',
-                          email: 'admin@hsnponcokusumo.nu',
-                          username: 'admin',
-                          role: 'super_admin',
-                          institution: 'Panitia Pelaksana CMS HSN 2026',
-                          isActive: true,
-                        });
-                        setSession(sess);
-                        setProfile(sess.profile);
-                        setSessionValidationStatus('valid');
-                        setSessionValidationNotice(null);
-                        setShowInternalAuthModal(false);
-                        setCurrentView('dashboard');
-                      }}
-                      className="px-2 py-1 rounded bg-[#006B4F] hover:bg-[#008F72] text-[10px] text-white font-bold"
-                    >
-                      Masuk
-                    </button>
-                  </div>
+              <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/10 flex items-start gap-3 text-left">
+                <Info className="w-4 h-4 text-[#00D9F5] shrink-0 mt-0.5" />
+                <div className="text-[11px] text-white/70 space-y-1">
+                  <span className="font-bold text-white block">Informasi Masuk Portal Penilaian:</span>
+                  <p>
+                    Silakan gunakan <strong>Username atau Email</strong> serta <strong>Kata Sandi</strong> resmi yang telah diterbitkan oleh Sekretariat Panitia HSN 2026 melalui CMS Penilaian Juri.
+                  </p>
+                  <p className="text-[10px] text-white/50 pt-1">
+                    Bila belum menerima akun atau lupa kata sandi, silakan hubungi administrator panitia melalui tombol Buka CMS di bawah.
+                  </p>
                 </div>
-
-                {/* 2. Koordinator Teknis Lomba */}
-                <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/10 flex items-center justify-between gap-2">
-                  <div className="truncate">
-                    <span className="font-bold text-emerald-300 text-[11px] block">📋 Koordinator Lomba (Ust. Sholihin)</span>
-                    <span className="text-[10px] text-white/60 block font-mono">User: panitia | Sandi: poncokusumo2026</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLoginEmail('panitia');
-                        setLoginPassword('poncokusumo2026');
-                      }}
-                      className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-[10px] text-white font-medium"
-                    >
-                      Isi
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const sess = loginAsJuryDirectly({
-                          id: 'user-2',
-                          fullName: 'Ustadz M. Sholihin, S.Pd.I (Koordinator Lomba)',
-                          email: 'lomba@hsnponcokusumo.nu',
-                          username: 'panitia',
-                          role: 'super_admin',
-                          institution: 'Koordinator Teknis Lomba HSN 2026',
-                          isActive: true,
-                        });
-                        setSession(sess);
-                        setProfile(sess.profile);
-                        setSessionValidationStatus('valid');
-                        setSessionValidationNotice(null);
-                        setShowInternalAuthModal(false);
-                        setCurrentView('dashboard');
-                      }}
-                      className="px-2 py-1 rounded bg-[#006B4F] hover:bg-[#008F72] text-[10px] text-white font-bold"
-                    >
-                      Masuk
-                    </button>
-                  </div>
-                </div>
-
-                {/* 3. Seluruh Akun Dewan Juri dari CMS */}
-                {(quickJuries.length > 0 ? quickJuries : [
-                  { id: 'jury-001', fullName: 'Ust. Ahmad Fauzan, M.Pd.', email: 'juri.fauzan@hsnponcokusumo.nu', username: 'juri.fauzan', password: 'santri2026', role: 'jury', isActive: true },
-                  { id: 'jury-002', fullName: 'Ning Hj. Lutfiah Zahra, S.Sn.', email: 'juri.lutfiah@hsnponcokusumo.nu', username: 'juri.lutfiah', password: 'santri2026', role: 'jury', isActive: true },
-                  { id: 'jury-003', fullName: 'K.H. Dr. Ridwan Asy’ari, M.Hum.', email: 'juri.ridwan@hsnponcokusumo.nu', username: 'juri.ridwan', password: 'santri2026', role: 'jury', isActive: true },
-                ]).map((j, idx) => {
-                  const uName = j.username || (j.email.includes('@') ? j.email.split('@')[0] : j.email);
-                  const pass = j.password || 'santri2026';
-                  return (
-                    <div
-                      key={j.id || idx}
-                      className="p-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 flex items-center justify-between gap-2 transition-all"
-                    >
-                      <div className="truncate mr-2 text-left">
-                        <span className="font-semibold text-white text-[11px] block truncate">{j.fullName}</span>
-                        <span className="text-[10px] text-[#00D9F5] font-mono truncate block">
-                          User: {uName} • Sandi: {pass}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setLoginEmail(uName);
-                            setLoginPassword(pass);
-                          }}
-                          className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-[10px] text-white font-medium"
-                          title="Isi form login"
-                        >
-                          Isi
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const sess = loginAsJuryDirectly(j);
-                            setSession(sess);
-                            setProfile(sess.profile);
-                            setSessionValidationStatus('valid');
-                            setSessionValidationNotice(null);
-                            setShowInternalAuthModal(false);
-                            setCurrentView('dashboard');
-                          }}
-                          className="px-2 py-1 rounded bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:opacity-90 text-[10px] text-white font-bold"
-                          title="Masuk langsung ke portal sebagai dewan juri ini"
-                        >
-                          Masuk
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
-              <p className="text-[10px] text-white/40 mt-2 italic text-center">
-                Mendukung login dengan Username atau Email & Sandi yang ditentukan di CMS
-              </p>
             </div>
           </div>
         </div>
@@ -1117,11 +983,15 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                   {assignedCompetitions.map((comp) => {
-                    const compParts = participants.filter(
-                      (p) =>
-                        p.competitionId === comp.id ||
-                        p.competitionTitle?.toLowerCase() === comp.title.toLowerCase()
-                    );
+                    const compParts = participants
+                      .filter((p) => !isInitialMockParticipant(p))
+                      .filter(
+                        (p) =>
+                          p.competitionId === comp.id ||
+                          normalizeCompId(p.competitionId).toLowerCase() === normalizeCompId(comp.id).toLowerCase() ||
+                          p.competitionTitle?.toLowerCase() === comp.title.toLowerCase() ||
+                          resolveCompetition(competitions, p.competitionId, p.competitionTitle)?.id === comp.id
+                      );
                     const scoredCount = compParts.filter((p) => {
                       const sc = juryScores.find(
                         (s) =>
@@ -1203,13 +1073,27 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
           <div className="space-y-6">
             {/* Breadcrumb & Navigation */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <button
-                onClick={() => setCurrentView('dashboard')}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold text-white transition-all w-fit"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Kembali ke Daftar Lomba</span>
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setCurrentView('dashboard')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold text-white transition-all w-fit"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Kembali ke Daftar Lomba</span>
+                </button>
+
+                {onOpenCMS && (
+                  <button
+                    type="button"
+                    onClick={onOpenCMS}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#006B4F]/60 to-[#008F72]/60 hover:from-[#006B4F] hover:to-[#008F72] border border-emerald-400/50 text-xs font-bold text-emerald-200 hover:text-white transition-all shadow-md active:scale-95"
+                    title="Buka CMS Penilaian Juri Panitia"
+                  >
+                    <Shield className="w-3.5 h-3.5 text-[#F2C96D]" />
+                    <span>CMS Penilaian Juri</span>
+                  </button>
+                )}
+              </div>
 
               {/* Mode Anonim Toggle (Requested for unbiased scoring) */}
               <div className="flex items-center gap-3 p-2 rounded-2xl bg-[#031525] border border-white/15">
@@ -1331,9 +1215,17 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
 
             {/* Participants Table / Mobile Cards */}
             {filteredParticipants.length === 0 ? (
-              <div className="p-10 rounded-3xl bg-[#031525] border border-white/10 text-center">
-                <p className="text-sm font-semibold text-white/60">
-                  Tidak ada peserta ditemukan pada filter ini.
+              <div className="p-10 rounded-3xl bg-[#031525] border border-white/10 text-center space-y-2">
+                <FileText className="w-10 h-10 text-white/30 mx-auto mb-2" />
+                <p className="text-sm font-semibold text-white/80">
+                  {currentCompParticipants.length === 0
+                    ? 'Belum ada peserta riil yang terdaftar pada cabang lomba ini.'
+                    : 'Tidak ada peserta yang cocok dengan filter pencarian.'}
+                </p>
+                <p className="text-xs text-white/50 max-w-md mx-auto">
+                  {currentCompParticipants.length === 0
+                    ? 'Data peserta disinkronkan langsung dari pendaftaran resmi tanpa data contoh/dummy.'
+                    : 'Silakan ganti opsi filter atau reset pencarian.'}
                 </p>
               </div>
             ) : (
@@ -1502,14 +1394,28 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
           <div className="space-y-6">
             {/* Header & Participant Nav */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <button
-                type="button"
-                onClick={() => setCurrentView('competition')}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold text-white transition-all w-fit"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Kembali ke Daftar Peserta</span>
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setCurrentView('competition')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold text-white transition-all w-fit"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Kembali ke Daftar Peserta</span>
+                </button>
+
+                {onOpenCMS && (
+                  <button
+                    type="button"
+                    onClick={onOpenCMS}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#006B4F]/60 to-[#008F72]/60 hover:from-[#006B4F] hover:to-[#008F72] border border-emerald-400/50 text-xs font-bold text-emerald-200 hover:text-white transition-all shadow-md active:scale-95"
+                    title="Buka CMS Penilaian Juri Panitia"
+                  >
+                    <Shield className="w-3.5 h-3.5 text-[#F2C96D]" />
+                    <span>CMS Penilaian Juri</span>
+                  </button>
+                )}
+              </div>
 
               {/* Prev / Next Nav Buttons */}
               <div className="flex items-center gap-2">
@@ -1973,7 +1879,7 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
                   required
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder="Contoh: admin, juri.fauzan, atau email"
+                  placeholder="Masukkan Username atau Email resmi dewan juri"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/20 text-white text-xs outline-none focus:border-[#00D9F5]"
                 />
               </div>
@@ -2034,29 +1940,23 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
               </div>
             </form>
 
-            {/* Failsafe Demo quick buttons */}
-            <div className="pt-2 border-t border-white/10 flex flex-col gap-1.5 text-center">
-              <button
-                type="button"
-                onClick={() => {
-                  setLoginEmail('admin');
-                  setLoginPassword('santri2026');
-                }}
-                className="text-[11px] text-[#F2C96D] hover:underline font-bold"
-              >
-                Gunakan Akun CMS Panitia: admin (santri2026)
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setLoginEmail('juri.fauzan');
-                  setLoginPassword('santri2026');
-                }}
-                className="text-[11px] text-[#00D9F5] hover:underline"
-              >
-                Gunakan Akun Juri: juri.fauzan (santri2026)
-              </button>
-            </div>
+            {/* Link Terintegrasi ke CMS Penilaian Juri */}
+            {onOpenCMS && (
+              <div className="pt-3 border-t border-white/10 text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowInternalAuthModal(false);
+                    onOpenCMS();
+                  }}
+                  className="text-xs text-[#F2C96D] hover:underline font-bold inline-flex items-center gap-1.5"
+                  title="Buka CMS Penilaian Juri Panitia"
+                >
+                  <Shield className="w-3.5 h-3.5 text-[#F2C96D]" />
+                  <span>Buka CMS Penilaian Juri (Panitia)</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -151,6 +151,20 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span>PORTAL JURI</span>
               </button>
             )}
+
+            {/* Menu CMS PENILAIAN JURI */}
+            {onOpenCMSJury && (
+              <button
+                id="nav-btn-cms-juri"
+                onClick={onOpenCMSJury}
+                className="ml-1.5 px-3 py-1.5 rounded-lg text-xs font-black tracking-wider uppercase text-[#F2C96D] bg-[#020e19] border border-[#F2C96D]/40 hover:bg-[#F2C96D]/15 hover:border-[#F2C96D] active:scale-95 transition-all flex items-center gap-1.5 shadow-sm"
+                title="Buka CMS Penilaian Juri Panitia"
+              >
+                <Shield className="w-3.5 h-3.5 text-[#F2C96D]" />
+                <span className="hidden xl:inline">CMS PENILAIAN JURI</span>
+                <span className="xl:hidden">CMS JURI</span>
+              </button>
+            )}
           </nav>
 
           {/* Mobile Menu Hamburger Button */}

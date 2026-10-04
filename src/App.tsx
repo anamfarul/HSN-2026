@@ -163,6 +163,22 @@ export default function App() {
     };
     window.addEventListener('popstate', handleUrlChange);
     window.addEventListener('hashchange', handleUrlChange);
+
+    // Deteksi jika link membuka CMS Penilaian Juri secara langsung (?tab=jury_scoring / ?cms=juri)
+    try {
+      const search = window.location.search.toLowerCase();
+      const hash = window.location.hash.toLowerCase();
+      if (
+        search.includes('tab=jury_scoring') ||
+        search.includes('cms=juri') ||
+        hash.includes('cms-juri') ||
+        hash.includes('jury_scoring')
+      ) {
+        setAdminInitialTab('jury_scoring');
+        setIsAdminModalOpen(true);
+      }
+    } catch {}
+
     return () => {
       window.removeEventListener('popstate', handleUrlChange);
       window.removeEventListener('hashchange', handleUrlChange);
@@ -470,6 +486,11 @@ export default function App() {
           if (el) el.scrollIntoView({ behavior: 'smooth' });
         }}
         onOpenUploadWork={() => handleOpenUploadWork()}
+        onOpenJury={handleOpenJury}
+        onOpenCMSJury={() => {
+          setAdminInitialTab('jury_scoring');
+          setIsAdminModalOpen(true);
+        }}
       />
 
       {/* Main Content Layout */}
@@ -575,7 +596,7 @@ export default function App() {
           aria-label="Buka CMS Penilaian Juri"
         >
           <Shield className="w-4 h-4 text-[#F2C96D]" />
-          <span className="text-xs font-bold hidden sm:inline">CMS Penilaian</span>
+          <span className="text-xs font-bold hidden sm:inline">CMS Penilaian Juri</span>
         </button>
 
         {/* Upload Karya Floating Quick Action Button */}
