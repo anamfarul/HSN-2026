@@ -373,11 +373,15 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
 
   // Real-time synchronization listener (connected directly to Supabase Realtime & Portal Penilaian Juri)
   useEffect(() => {
+    let updateTimer: any = null;
     const handleJuryUpdated = () => {
-      loadAllData();
-      if (selectedCompId) {
-        getScoringCriteria(selectedCompId).then(setCriteriaList);
-      }
+      if (updateTimer) clearTimeout(updateTimer);
+      updateTimer = setTimeout(() => {
+        loadAllData();
+        if (selectedCompId) {
+          getScoringCriteria(selectedCompId).then(setCriteriaList).catch(() => {});
+        }
+      }, 300);
     };
     const handleStorage = (e: StorageEvent) => {
       if (!e.key || e.key.includes('hsn2026_jury')) {
@@ -393,6 +397,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
     });
 
     return () => {
+      if (updateTimer) clearTimeout(updateTimer);
       window.removeEventListener('hsn2026_jury_data_updated', handleJuryUpdated);
       window.removeEventListener('storage', handleStorage);
       unsubscribeRealtime();

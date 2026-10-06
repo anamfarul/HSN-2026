@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Competition, CategoryGeneration } from '../types';
 import { 
   Trophy, 
@@ -46,20 +46,27 @@ export const CompetitionsSection: React.FC<CompetitionsSectionProps> = ({
   ];
 
   // Tambahkan kategori custom jika ada lomba baru dengan kategori tambahan
-  const extraCategories = [...new Set<string>(competitions.map((c) => String(c.category)))].filter(
-    (c) => Boolean(c) && !defaultCategories.includes(c)
-  );
-  const categories = [...defaultCategories, ...extraCategories];
+  const categories = useMemo(() => {
+    const extraCategories = [...new Set<string>(competitions.map((c) => String(c.category)))].filter(
+      (c) => Boolean(c) && !defaultCategories.includes(c)
+    );
+    return [...defaultCategories, ...extraCategories];
+  }, [competitions]);
 
-  const filteredCompetitions = competitions.filter((comp) => {
-    const matchesCategory =
-      selectedCategory === 'SEMUA' || comp.category === selectedCategory;
-    const matchesSearch =
-      comp.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      comp.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      comp.targetAudience.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
-  });
+  const filteredCompetitions = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    return competitions.filter((comp) => {
+      const matchesCategory =
+        selectedCategory === 'SEMUA' || comp.category === selectedCategory;
+      if (!matchesCategory) return false;
+      if (!q) return true;
+      return (
+        comp.title.toLowerCase().includes(q) ||
+        comp.description.toLowerCase().includes(q) ||
+        (comp.targetAudience && comp.targetAudience.toLowerCase().includes(q))
+      );
+    });
+  }, [competitions, selectedCategory, searchQuery]);
 
   return (
     <section id="lomba" className="relative py-24 px-4 sm:px-6 lg:px-8 bg-[#031525] overflow-hidden">

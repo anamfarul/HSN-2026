@@ -170,6 +170,7 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
 
   // Real-time synchronization listener (connected directly to Supabase Realtime & CMS Penilaian Juri)
   useEffect(() => {
+    let updateTimer: any = null;
     const handleJuryUpdated = (e?: any) => {
       // Jika event berisi sesi baru (misal pergantian juri dari CMS)
       if (e?.detail?.key === 'session' && e.detail.session) {
@@ -177,14 +178,17 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
         setProfile(e.detail.session.profile);
       }
 
-      const activeProfId = session?.profile?.id || profile?.id;
-      if (activeProfId) {
-        refreshJuryData(activeProfId);
-      }
-      getJuryProfiles().then(setAvailableJuries).catch(() => {});
-      if (selectedCompId) {
-        getScoringCriteria(selectedCompId).then(setCriteria);
-      }
+      if (updateTimer) clearTimeout(updateTimer);
+      updateTimer = setTimeout(() => {
+        const activeProfId = session?.profile?.id || profile?.id;
+        if (activeProfId) {
+          refreshJuryData(activeProfId);
+        }
+        getJuryProfiles().then(setAvailableJuries).catch(() => {});
+        if (selectedCompId) {
+          getScoringCriteria(selectedCompId).then(setCriteria).catch(() => {});
+        }
+      }, 300);
     };
     const handleStorage = (e: StorageEvent) => {
       if (!e.key || e.key.includes('hsn2026_jury')) {
@@ -200,11 +204,12 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
     });
 
     return () => {
+      if (updateTimer) clearTimeout(updateTimer);
       window.removeEventListener('hsn2026_jury_data_updated', handleJuryUpdated as any);
       window.removeEventListener('storage', handleStorage);
       unsubscribeRealtime();
     };
-  }, [session, profile, selectedCompId, competitions]);
+  }, [session?.profile?.id, profile?.id, selectedCompId, competitions]);
 
   // Validasi status juri langsung (cek apakah belum login atau sesi kadaluwarsa)
   useEffect(() => {

@@ -45,22 +45,33 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 
   // Smooth mouse parallax listener
   useEffect(() => {
+    let resizeTimer: any = null;
     const checkWidth = () => {
-      setIsDesktop(window.innerWidth >= 1024);
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        setIsDesktop(window.innerWidth >= 1024);
+      }, 150);
     };
-    checkWidth();
-    window.addEventListener('resize', checkWidth);
+    setIsDesktop(window.innerWidth >= 1024);
+    window.addEventListener('resize', checkWidth, { passive: true });
 
+    let rafId: number | null = null;
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDesktop) return;
-      // Normalized between -1 and 1
-      const x = (e.clientX / window.innerWidth - 0.5) * 2;
-      const y = (e.clientY / window.innerHeight - 0.5) * 2;
-      setMousePos({ x, y });
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        // Normalized between -1 and 1
+        const x = (e.clientX / window.innerWidth - 0.5) * 2;
+        const y = (e.clientY / window.innerHeight - 0.5) * 2;
+        setMousePos({ x, y });
+      });
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
     return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      if (resizeTimer) clearTimeout(resizeTimer);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('resize', checkWidth);
     };

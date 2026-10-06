@@ -45,7 +45,7 @@ import {
   getJuryProfiles
 } from './lib/juryService';
 import { loginAsJuryDirectly } from './lib/juryAuthService';
-import { Sparkles, MessageCircle, Shield, UploadCloud } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 
 const DELETED_COMPETITIONS_KEY = 'hsn2026_deleted_competitions_v1';
 const CUSTOM_COMPETITIONS_KEY = 'hsn2026_custom_competitions_v1';
@@ -572,46 +572,8 @@ export default function App() {
         onOpenJury={handleOpenJury}
       />
 
-      {/* Floating Quick Action Buttons */}
-      <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-3 pointer-events-none">
-        {/* Portal Juri Floating Button */}
-        <button
-          onClick={handleOpenJury}
-          className="pointer-events-auto px-3.5 py-2.5 rounded-full bg-[#006B4F]/95 border border-emerald-400/60 text-white hover:bg-[#008F72] shadow-2xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 group flex items-center gap-2"
-          title="Buka Portal Penilaian Juri (/juri)"
-          aria-label="Buka Portal Juri"
-        >
-          <Sparkles className="w-4 h-4 text-[#F2C96D]" />
-          <span className="text-xs font-black tracking-wide hidden sm:inline">Portal Juri</span>
-        </button>
-
-        {/* Admin CMS Floating Button */}
-        <button
-          onClick={() => {
-            setAdminInitialTab('jury_scoring');
-            setIsAdminModalOpen(true);
-          }}
-          className="pointer-events-auto px-3.5 py-2.5 rounded-full bg-[#020e19]/95 border border-[#F2C96D]/50 text-[#F2C96D] hover:text-white hover:border-[#D9B45B] hover:bg-[#031525] shadow-2xl backdrop-blur-md transition-all hover:scale-105 group flex items-center gap-1.5"
-          title="Buka CMS Penilaian Juri Panitia"
-          aria-label="Buka CMS Penilaian Juri"
-        >
-          <Shield className="w-4 h-4 text-[#F2C96D]" />
-          <span className="text-xs font-bold hidden sm:inline">CMS Penilaian Juri</span>
-        </button>
-
-        {/* Upload Karya Floating Quick Action Button */}
-        <button
-          id="floating-btn-aploud-karya"
-          onClick={() => handleOpenUploadWork()}
-          className="pointer-events-auto px-4 py-2.5 rounded-full bg-[#031525]/95 border border-[#00D9F5]/40 text-[#00D9F5] hover:text-white hover:bg-[#006B4F]/80 font-bold text-xs uppercase tracking-wider shadow-xl backdrop-blur-md hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5"
-          aria-label="Aploud Karya Peserta"
-          title="Bagi peserta yang sudah mendaftar: Aploud Karya Lomba"
-        >
-          <UploadCloud className="w-4 h-4 text-[#00D9F5]" />
-          <span className="hidden sm:inline">Aploud Karya</span>
-          <span className="sm:hidden">Karya</span>
-        </button>
-
+      {/* Floating Quick Action Button (Daftar Lomba) */}
+      <div className="fixed bottom-6 right-6 z-40 pointer-events-none">
         {/* Primary Register Floating Button */}
         <button
           onClick={handleOpenRegister}

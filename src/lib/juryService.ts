@@ -253,6 +253,10 @@ export function isAssignmentForJury(
   return false;
 }
 
+// Client ID unik untuk mengenali pengirim dan mencegah echo-loop broadcast Supabase Realtime
+const CLIENT_INSTANCE_ID = `client_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`;
+let notifyDebounceTimer: any = null;
+
 // Multi-subscriber registry untuk Supabase Realtime channel agar CMS dan Portal tidak saling memutus koneksi
 type RealtimeCallback = (tableName: string, payload: any) => void;
 const realtimeListeners = new Set<RealtimeCallback>();
@@ -280,7 +284,7 @@ export function initJuryRealtimeSubscription(onUpdate?: RealtimeCallback): () =>
           try {
             window.dispatchEvent(
               new CustomEvent('hsn2026_jury_data_updated', {
-                detail: { key: table, payload, source: 'supabase_realtime', timestamp: Date.now() },
+                detail: { key: table, payload, source: 'supabase_realtime', senderId: payload?.senderId, timestamp: Date.now() },
               })
             );
           } catch {}
@@ -301,6 +305,10 @@ export function initJuryRealtimeSubscription(onUpdate?: RealtimeCallback): () =>
         .on('postgres_changes', { event: '*', schema: 'public', table: 'jury_scores' }, (p) => handleTableChange('jury_scores', p))
         .on('postgres_changes', { event: '*', schema: 'public', table: 'competition_results' }, (p) => handleTableChange('competition_results', p))
         .on('broadcast', { event: 'jury_updated' }, (p) => {
+          // Abaikan broadcast yang dikirim oleh instance tab/window ini sendiri agar tidak looping
+          if (p?.payload?.senderId === CLIENT_INSTANCE_ID) {
+            return;
+          }
           const key = p?.payload?.key || 'all';
           handleTableChange(key, p?.payload);
         })
@@ -327,26 +335,33 @@ export function initJuryRealtimeSubscription(onUpdate?: RealtimeCallback): () =>
 }
 
 export function notifyJuryDataChanged(key?: string, data?: any): void {
-  if (typeof window !== 'undefined') {
-    try {
-      window.dispatchEvent(
-        new CustomEvent('hsn2026_jury_data_updated', {
-          detail: { key, data, timestamp: Date.now() },
-        })
-      );
-    } catch {}
+  if (notifyDebounceTimer) {
+    clearTimeout(notifyDebounceTimer);
   }
 
-  // Broadcast ke seluruh tab & perangkat lain via Supabase Realtime
-  try {
-    if (activeRealtimeChannel) {
-      activeRealtimeChannel.send({
-        type: 'broadcast',
-        event: 'jury_updated',
-        payload: { key, timestamp: Date.now() },
-      });
+  // Debounce notification agar operasi beruntun tidak membanjiri CPU dan network
+  notifyDebounceTimer = setTimeout(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(
+          new CustomEvent('hsn2026_jury_data_updated', {
+            detail: { key, data, senderId: CLIENT_INSTANCE_ID, timestamp: Date.now() },
+          })
+        );
+      } catch {}
     }
-  } catch {}
+
+    // Broadcast ke seluruh tab & perangkat lain via Supabase Realtime
+    try {
+      if (activeRealtimeChannel) {
+        activeRealtimeChannel.send({
+          type: 'broadcast',
+          event: 'jury_updated',
+          payload: { key, senderId: CLIENT_INSTANCE_ID, timestamp: Date.now() },
+        });
+      }
+    } catch {}
+  }, 150);
 }
 
 function getLocal<T>(key: string, defaultVal: T): T {
@@ -359,10 +374,10 @@ function getLocal<T>(key: string, defaultVal: T): T {
   }
 }
 
+// setLocal hanya menyimpan ke localStorage tanpa memicu notifikasi event (mencegah loop rekursif)
 function setLocal<T>(key: string, val: T): void {
   try {
     localStorage.setItem(key, JSON.stringify(val));
-    notifyJuryDataChanged(key, val);
   } catch {}
 }
 

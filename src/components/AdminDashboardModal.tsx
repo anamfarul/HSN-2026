@@ -127,24 +127,35 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [isRefreshingParticipants, setIsRefreshingParticipants] = useState<boolean>(false);
   const [modalJuryAssignments, setModalJuryAssignments] = useState<JuryAssignment[]>([]);
 
-  // Sinkronisasi data penugasan juri untuk ditampilkan di katalog & tabel lomba
+  // Sinkronisasi data penugasan juri untuk ditampilkan di katalog & tabel lomba (hanya saat modal dibuka)
   useEffect(() => {
-    if (isOpen) {
-      getJuryAssignments(competitions)
-        .then((data) => setModalJuryAssignments(data || []))
-        .catch(() => {});
-    }
-  }, [isOpen, competitions]);
+    if (!isOpen) return;
 
-  useEffect(() => {
-    const handleJuryUpdated = () => {
+    let isMounted = true;
+    let timer: any = null;
+
+    const loadAssignments = () => {
       getJuryAssignments(competitions)
-        .then((data) => setModalJuryAssignments(data || []))
+        .then((data) => {
+          if (isMounted) setModalJuryAssignments(data || []);
+        })
         .catch(() => {});
     };
-    window.addEventListener('hsn_jury_data_updated', handleJuryUpdated);
-    return () => window.removeEventListener('hsn_jury_data_updated', handleJuryUpdated);
-  }, [competitions]);
+
+    loadAssignments();
+
+    const handleJuryUpdated = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(loadAssignments, 300);
+    };
+
+    window.addEventListener('hsn2026_jury_data_updated', handleJuryUpdated);
+    return () => {
+      isMounted = false;
+      if (timer) clearTimeout(timer);
+      window.removeEventListener('hsn2026_jury_data_updated', handleJuryUpdated);
+    };
+  }, [isOpen, competitions]);
 
   // Uji koneksi Supabase saat CMS dibuka
   useEffect(() => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { CategoryGeneration, Competition, ParticipantRegistration } from '../types';
 import { 
   X, 
@@ -156,9 +156,9 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
   }, [initialCompetition]);
 
   // Filter competitions matching chosen category
-  const availableCompetitions = competitions.filter(
-    (c) => c.category === category
-  );
+  const availableCompetitions = useMemo(() => {
+    return competitions.filter((c) => c.category === category);
+  }, [competitions, category]);
 
   useEffect(() => {
     // If current selectedCompId is not in availableCompetitions, auto pick first or reset
@@ -169,7 +169,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
     } else {
       setSelectedCompId('');
     }
-  }, [category, availableCompetitions, selectedCompId]);
+  }, [availableCompetitions]);
 
   useEffect(() => {
     if (!isOpen) {
