@@ -17,6 +17,7 @@ import {
   isSupabaseConnected,
   ADMIN_USERS_SETUP_SQL
 } from '../lib/supabaseClient';
+import { saveJuryProfile } from '../lib/juryService';
 import { 
   UserPlus, 
   Trash2, 
@@ -232,6 +233,23 @@ export const AdminUsersTab: React.FC = () => {
     // Real-time insert to Supabase
     if (isSupabaseConnected()) {
       insertAdminUserToSupabase(newUser).catch(console.warn);
+    }
+
+    // Jika peran adalah Dewan Juri, sinkronkan juga ke jury service & CMS Penilaian Juri
+    if (newUser.role === 'Dewan Juri' || newUser.role.toLowerCase().includes('juri')) {
+      saveJuryProfile(
+        {
+          id: newUser.id,
+          fullName: newUser.fullName,
+          username: newUser.username,
+          password: newUser.password,
+          email: newUser.email,
+          phone: newUser.phone,
+          institution: 'MWC NU Poncokusumo',
+          isActive: true,
+        },
+        'CMS Panitia (Users)'
+      ).catch(console.warn);
     }
 
     // Reset form

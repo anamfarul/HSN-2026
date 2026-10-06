@@ -1,6 +1,7 @@
 import { getSupabaseClient, isSupabaseConnected } from './supabaseClient';
 import {
   UserProfile,
+  AdminUser,
   JuryAssignment,
   ScoringCriterion,
   JuryScore,
@@ -17,6 +18,10 @@ import {
   INITIAL_SCORING_CRITERIA,
   INITIAL_JURY_ASSIGNMENTS,
 } from '../data/initialJuryData';
+import {
+  getRegisteredAdminUsers,
+  saveRegisteredAdminUsers,
+} from '../data/initialUsers';
 import { COMPETITIONS } from '../data/initialData';
 
 // Storage keys for local fallback (v7: strictly synchronized with CMS Panitia Cabang Lomba & Supabase Realtime)
@@ -504,6 +509,20 @@ export async function getJuryAuditLogs(): Promise<JuryAuditLog[]> {
   return getLocal<JuryAuditLog[]>(STORAGE_AUDIT, []);
 }
 
+// Helper generator ID juri (UUID v4 agar kompatibel dengan tipe UUID maupun TEXT di PostgreSQL/Supabase)
+export function generateJuryUuid(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    try {
+      return crypto.randomUUID();
+    } catch {}
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 // ==============================================================================
 // 4. JURY PROFILES SERVICE
 // ==============================================================================
@@ -512,13 +531,15 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
   const supabase = getSupabaseClient();
   const connected = isSupabaseConnected() && Boolean(supabase);
 
+  // Baca profil lokal yang ada saat ini terlebih dahulu
+  const localList = getLocal<UserProfile[]>(STORAGE_PROFILES, []).filter((p) => !deletedIds.has(p.id));
+
   // ==============================================================================
-  // A. SUPABASE TERHUBUNG: DATABASE SUPABASE ADALAH SINGLE SOURCE OF TRUTH (100%)
+  // A. SUPABASE TERHUBUNG: SINKRONISASI DATABASE SUPABASE DENGAN LOKAL
   // ==============================================================================
   if (connected && supabase) {
     try {
       // 1. Ambil seluruh data dari tabel public.profiles di Supabase
-      // Jangan filter case-sensitive .eq('role', 'jury') agar baris dengan role 'juri', 'Dewan Juri', atau NULL tetap terbaca
       const { data: profileRows, error: profileErr } = await supabase
         .from('profiles')
         .select('*')
@@ -526,7 +547,7 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
 
       let remoteList: UserProfile[] = [];
 
-      if (!profileErr && profileRows && Array.isArray(profileRows)) {
+      if (!profileErr && profileRows && Array.isArray(profileRows) && profileRows.length > 0) {
         remoteList = profileRows.map((p: any) => {
           const email = (p.email || '').trim().toLowerCase();
           const username = (p.username || '').trim().toLowerCase() || (email.includes('@') ? email.split('@')[0] : email) || p.id;
@@ -548,41 +569,88 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
         });
       }
 
-      // 2. Failsafe: Jika tabel profiles kosong, periksa apakah akun juri dimasukkan ke tabel admin_users
-      if (remoteList.length === 0) {
-        try {
-          const { data: adminRows } = await supabase
-            .from('admin_users')
-            .select('*')
-            .or('role.ilike.%jur%,role.ilike.%jury%')
-            .order('created_at', { ascending: true });
+      // 2. Periksa juga tabel admin_users untuk akun dengan peran dewan juri
+      try {
+        const { data: adminRows } = await supabase
+          .from('admin_users')
+          .select('*')
+          .or('role.ilike.%jur%,role.ilike.%jury%,role.ilike.%dewan juri%')
+          .order('created_at', { ascending: true });
 
-          if (adminRows && adminRows.length > 0) {
-            remoteList = adminRows.map((u: any) => {
-              const email = (u.email || '').trim().toLowerCase();
-              const username = (u.username || '').trim().toLowerCase() || (email.includes('@') ? email.split('@')[0] : u.id);
-              return {
-                id: u.id,
-                fullName: u.full_name || u.fullName || 'Dewan Juri',
-                email: email,
-                role: 'jury' as const,
-                institution: 'MWC NU Poncokusumo',
-                phone: u.phone || '',
-                isActive: u.is_active !== undefined ? Boolean(u.is_active) : true,
-                username: username,
-                password: u.password || 'santri2026',
-                createdAt: u.created_at || u.createdAt || new Date().toISOString(),
-                updatedAt: u.updated_at || u.updatedAt || new Date().toISOString(),
-              };
-            });
+        if (adminRows && adminRows.length > 0) {
+          const adminJuries: UserProfile[] = adminRows.map((u: any) => {
+            const email = (u.email || '').trim().toLowerCase();
+            const username = (u.username || '').trim().toLowerCase() || (email.includes('@') ? email.split('@')[0] : u.id);
+            return {
+              id: u.id,
+              fullName: u.full_name || u.name || u.fullName || 'Dewan Juri',
+              email: email,
+              role: 'jury' as const,
+              institution: u.division || 'MWC NU Poncokusumo',
+              phone: u.phone || '',
+              isActive: u.is_active !== undefined ? Boolean(u.is_active) : true,
+              username: username,
+              password: u.password || 'santri2026',
+              createdAt: u.created_at || u.createdAt || new Date().toISOString(),
+              updatedAt: u.updated_at || u.updatedAt || new Date().toISOString(),
+            };
+          });
+
+          // Gabungkan akun juri dari admin_users yang belum ada di remoteList
+          for (const aj of adminJuries) {
+            if (!remoteList.some((r) => r.id === aj.id || r.username.toLowerCase() === aj.username.toLowerCase() || r.email.toLowerCase() === aj.email.toLowerCase())) {
+              remoteList.push(aj);
+            }
           }
-        } catch {}
-      }
+        }
+      } catch {}
 
-      // JIKA DATA DARI SUPABASE BERHASIL DIAMBIL (TABEL PROFILES ADA & KONEKSI SUKSES):
+      // 3. JIKA QUERY SUPABASE TIDAK ERROR:
       if (!profileErr) {
-        if (remoteList.length > 0) {
-          // Bersihkan blacklist deletedIds lokal untuk akun yang jelas-jelas ada di database Supabase
+        // Jika di Supabase remote masih kosong:
+        if (remoteList.length === 0) {
+          // CEK APAKAH ADA PROFIL DI LOKAL YANG TELAH DIBUAT USER:
+          // PENTING: JANGAN MENGHAPUS PROFIL LOKAL JIKA USER BARU SAJA MENAMBAHKANNYA!
+          if (localList.length > 0) {
+            // Push dan sinkronkan data lokal yang baru dibuat ke Supabase
+            for (const lp of localList) {
+              try {
+                await supabase.from('profiles').upsert({
+                  id: lp.id,
+                  full_name: lp.fullName,
+                  email: lp.email,
+                  username: lp.username,
+                  password: lp.password,
+                  role: 'jury',
+                  institution: lp.institution,
+                  phone: lp.phone,
+                  is_active: lp.isActive,
+                  updated_at: lp.updatedAt,
+                });
+                await supabase.from('admin_users').upsert([
+                  {
+                    id: lp.id,
+                    name: lp.fullName,
+                    username: lp.username,
+                    email: lp.email,
+                    password: lp.password,
+                    role: 'Dewan Juri',
+                    division: lp.institution,
+                    phone: lp.phone,
+                    is_active: lp.isActive,
+                    updated_at: lp.updatedAt,
+                  },
+                ], { onConflict: 'username' });
+              } catch {}
+            }
+            return localList;
+          } else {
+            // Database Supabase memang bersih/kosong dan belum ada juri lokal
+            setLocal(STORAGE_PROFILES, []);
+            return [];
+          }
+        } else {
+          // Bersihkan blacklist deletedIds lokal untuk akun yang ada di database Supabase
           const currentDeleted = new Set(getDeletedProfileIds());
           let changedDeleted = false;
           remoteList.forEach((p) => {
@@ -595,17 +663,18 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
             setLocal(STORAGE_DELETED_PROFILES, Array.from(currentDeleted));
           }
 
-          // Filter akun yang mungkin baru saja dihapus di session aktif
           const validRemote = remoteList.filter((p) => !currentDeleted.has(p.id));
 
-          // SIMPAN LANGSUNG KE STORAGE LOKAL (100% PERSIS SUPABASE, TIDAK DICAMPUR DUMMY MOCK)
-          setLocal(STORAGE_PROFILES, validRemote);
-          return validRemote;
-        } else {
-          // Jika di database Supabase memang kosong (0 akun juri):
-          // Simpan kosong agar Vercel tidak menampilkan mock dummy!
-          setLocal(STORAGE_PROFILES, []);
-          return [];
+          // Merge dengan akun lokal yang baru saja ditambahkan pengguna agar tidak hilang
+          const merged = [...validRemote];
+          for (const lp of localList) {
+            if (!merged.some((m) => m.id === lp.id || (m.username && lp.username && m.username.toLowerCase() === lp.username.toLowerCase()) || (m.email && lp.email && m.email.toLowerCase() === lp.email.toLowerCase()))) {
+              merged.push(lp);
+            }
+          }
+
+          setLocal(STORAGE_PROFILES, merged);
+          return merged;
         }
       }
     } catch (err) {
@@ -617,9 +686,8 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
   // B. FALLBACK OFFLINE / SUPABASE BELUM TERHUBUNG:
   // Gunakan data lokal, dan jika belum ada data sama sekali baru gunakan INITIAL_JURY_PROFILES
   // ==============================================================================
-  const localList = getLocal<UserProfile[]>(STORAGE_PROFILES, []);
   if (localList.length > 0) {
-    return localList.filter((p) => !deletedIds.has(p.id));
+    return localList;
   }
 
   return INITIAL_JURY_PROFILES.filter((p) => !deletedIds.has(p.id));
@@ -630,7 +698,8 @@ export async function saveJuryProfile(
   adminName: string = 'Admin'
 ): Promise<{ success: boolean; data?: UserProfile; message?: string }> {
   const isNew = !profile.id;
-  const id = profile.id || `jury-${Date.now()}`;
+  // Gunakan ID yang ada atau generate UUID v4 baru (kompatibel penuh dengan tipe UUID di Supabase)
+  const id = profile.id || generateJuryUuid();
   const now = new Date().toISOString();
 
   // Hapus dari blacklist terhapus jika sebelumnya pernah ditandai
@@ -658,7 +727,7 @@ export async function saveJuryProfile(
     updatedAt: now,
   };
 
-  // Local storage update
+  // 1. Local storage update untuk profil juri
   const list = getLocal<UserProfile[]>(STORAGE_PROFILES, []);
   const existsIdx = list.findIndex((p) => p.id === id || p.email.toLowerCase() === finalProfile.email);
   let updatedList: UserProfile[];
@@ -685,9 +754,38 @@ export async function saveJuryProfile(
   }
   setLocal(STORAGE_PROFILES, updatedList);
 
-  // Supabase update
+  // 2. Sinkronkan juga ke daftar akun panitia lokal (getRegisteredAdminUsers / saveRegisteredAdminUsers)
+  // agar tampil juga di tab CMS PANITIA (Kelola Panitia / Users)
+  try {
+    const adminUsers = getRegisteredAdminUsers();
+    const existingAdminIdx = adminUsers.findIndex(
+      (u) => u.id === finalProfile.id || u.username.toLowerCase() === finalProfile.username.toLowerCase()
+    );
+    const adminUserEntry: AdminUser = {
+      id: finalProfile.id,
+      fullName: finalProfile.fullName,
+      username: finalProfile.username,
+      password: finalProfile.password,
+      role: 'Dewan Juri',
+      email: finalProfile.email,
+      phone: finalProfile.phone || '',
+      createdAt: finalProfile.createdAt,
+      isActive: finalProfile.isActive,
+    };
+    if (existingAdminIdx >= 0) {
+      adminUsers[existingAdminIdx] = { ...adminUsers[existingAdminIdx], ...adminUserEntry };
+    } else {
+      adminUsers.unshift(adminUserEntry);
+    }
+    saveRegisteredAdminUsers(adminUsers);
+  } catch (err) {
+    console.warn('Sync to registered admin users note:', err);
+  }
+
+  // 3. Supabase update (Simpan ke tabel profiles & tabel admin_users)
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
+    // 3a. Simpan ke tabel public.profiles
     try {
       const { error: fullErr } = await supabase.from('profiles').upsert({
         id: finalProfile.id,
@@ -716,7 +814,27 @@ export async function saveJuryProfile(
         });
       }
     } catch (err) {
-      console.warn('Supabase upsert profile note:', err);
+      console.warn('Supabase upsert profiles note:', err);
+    }
+
+    // 3b. Simpan juga ke tabel public.admin_users (agar terbaca di CMS Panitia & login panitia Supabase)
+    try {
+      await supabase.from('admin_users').upsert([
+        {
+          id: finalProfile.id,
+          name: finalProfile.fullName,
+          username: finalProfile.username,
+          email: finalProfile.email,
+          password: finalProfile.password,
+          role: 'Dewan Juri',
+          division: finalProfile.institution,
+          phone: finalProfile.phone,
+          is_active: finalProfile.isActive,
+          updated_at: finalProfile.updatedAt,
+        },
+      ], { onConflict: 'username' });
+    } catch (err) {
+      console.warn('Supabase upsert admin_users for jury note:', err);
     }
   }
 

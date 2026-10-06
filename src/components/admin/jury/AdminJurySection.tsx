@@ -451,55 +451,91 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
   // Subtab 2 Handlers: Save Judge
   const handleSaveJudge = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingJudge?.fullName || !editingJudge.email) return;
-
-    const res = await saveJuryProfile(
-      {
-        id: editingJudge.id,
-        fullName: editingJudge.fullName,
-        email: editingJudge.email,
-        username: editingJudge.username,
-        password: editingJudge.password,
-        phone: editingJudge.phone,
-        institution: editingJudge.institution,
-        isActive: editingJudge.isActive ?? true,
-      },
-      currentAdminName
-    );
-
-    const savedJuryId = res.data?.id || editingJudge.id;
-    if (savedJuryId) {
-      // Sync competition assignments for this judge
-      const currentAssigned = assignments.filter((a) => isAssignmentForJury(a, { id: savedJuryId, email: editingJudge.email, username: editingJudge.username }) && a.isActive);
-
-      // 1. Add newly checked competitions
-      for (const compId of editingJudgeCompIds) {
-        const compObj = competitions.find((c) => c.id === compId);
-        if (!compObj) continue;
-        const alreadyAssigned = currentAssigned.some((a) => {
-          if (a.competitionId === compId) return true;
-          const r = competitions.find((c) => c.id === a.competitionId) || resolveCompetition(competitions, a.competitionId, a.competitionTitle);
-          return r?.id === compId;
-        });
-        if (!alreadyAssigned) {
-          await assignJuryToCompetition(savedJuryId, compObj.id, currentAdminName, compObj.title, compObj.category, competitions);
-        }
-      }
-
-      // 2. Remove unchecked competitions
-      for (const a of currentAssigned) {
-        const resolvedComp = competitions.find((c) => c.id === a.competitionId) || resolveCompetition(competitions, a.competitionId, a.competitionTitle);
-        const effId = resolvedComp ? resolvedComp.id : a.competitionId;
-        if (!editingJudgeCompIds.includes(effId)) {
-          await removeJuryAssignment(a.id, currentAdminName);
-        }
-      }
+    if (!editingJudge?.fullName?.trim() || !editingJudge.email?.trim()) {
+      setFeedbackToast({
+        message: 'Mohon lengkapi Nama Lengkap dan Email resmi dewan juri.',
+        type: 'error',
+      });
+      return;
     }
 
-    setIsJudgeModalOpen(false);
-    setEditingJudge(null);
-    setEditingJudgeCompIds([]);
-    await loadAllData();
+    try {
+      const res = await saveJuryProfile(
+        {
+          id: editingJudge.id,
+          fullName: editingJudge.fullName.trim(),
+          email: editingJudge.email.trim(),
+          username: editingJudge.username?.trim(),
+          password: editingJudge.password?.trim(),
+          phone: editingJudge.phone?.trim(),
+          institution: editingJudge.institution?.trim(),
+          isActive: editingJudge.isActive ?? true,
+        },
+        currentAdminName
+      );
+
+      const savedJury = res.data;
+      const savedJuryId = savedJury?.id || editingJudge.id;
+
+      // Update state juries secara instan agar langsung tampil di tabel tanpa jeda waktu
+      if (savedJury) {
+        setJuries((prev) => {
+          const idx = prev.findIndex((j) => j.id === savedJury.id || j.email.toLowerCase() === savedJury.email.toLowerCase());
+          if (idx >= 0) {
+            return prev.map((j, i) => (i === idx ? savedJury : j));
+          }
+          return [savedJury, ...prev];
+        });
+      }
+
+      if (savedJuryId) {
+        // Sync competition assignments for this judge
+        const currentAssigned = assignments.filter((a) => isAssignmentForJury(a, { id: savedJuryId, email: editingJudge.email, username: editingJudge.username }) && a.isActive);
+
+        // 1. Add newly checked competitions
+        for (const compId of editingJudgeCompIds) {
+          const compObj = competitions.find((c) => c.id === compId);
+          if (!compObj) continue;
+          const alreadyAssigned = currentAssigned.some((a) => {
+            if (a.competitionId === compId) return true;
+            const r = competitions.find((c) => c.id === a.competitionId) || resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+            return r?.id === compId;
+          });
+          if (!alreadyAssigned) {
+            await assignJuryToCompetition(savedJuryId, compObj.id, currentAdminName, compObj.title, compObj.category, competitions);
+          }
+        }
+
+        // 2. Remove unchecked competitions
+        for (const a of currentAssigned) {
+          const resolvedComp = competitions.find((c) => c.id === a.competitionId) || resolveCompetition(competitions, a.competitionId, a.competitionTitle);
+          const effId = resolvedComp ? resolvedComp.id : a.competitionId;
+          if (!editingJudgeCompIds.includes(effId)) {
+            await removeJuryAssignment(a.id, currentAdminName);
+          }
+        }
+      }
+
+      const judgeName = editingJudge.fullName;
+      const wasEdit = Boolean(editingJudge.id);
+
+      setIsJudgeModalOpen(false);
+      setEditingJudge(null);
+      setEditingJudgeCompIds([]);
+
+      setFeedbackToast({
+        message: `Dewan Juri "${judgeName}" berhasil ${wasEdit ? 'diperbarui' : 'ditambahkan'} dan disinkronkan ke database!`,
+        type: 'success',
+      });
+
+      await loadAllData();
+    } catch (err: any) {
+      console.error('Error saving judge:', err);
+      setFeedbackToast({
+        message: `Gagal menyimpan dewan juri: ${err?.message || 'Terjadi kesalahan sistem'}`,
+        type: 'error',
+      });
+    }
   };
 
   // Subtab 2 Handlers: Delete Judge (Super Admin & Divisi Sekretariat)
@@ -1278,13 +1314,14 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {juries
-                  .filter((j) => {
+                {(() => {
+                  const filteredJudges = juries.filter((j) => {
                     if (judgeSearch) {
                       const q = judgeSearch.toLowerCase();
                       const match =
                         j.fullName.toLowerCase().includes(q) ||
                         j.email.toLowerCase().includes(q) ||
+                        (j.username || '').toLowerCase().includes(q) ||
                         (j.institution || '').toLowerCase().includes(q);
                       if (!match) return false;
                     }
@@ -1302,8 +1339,54 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                       return isAssigned;
                     }
                     return true;
-                  })
-                  .map((j) => {
+                  });
+
+                  if (filteredJudges.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={canManageJuryCredentials ? 7 : 6} className="py-12 px-4 text-center">
+                          <div className="max-w-md mx-auto space-y-3">
+                            <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto text-[#00D9F5]">
+                              <User className="w-6 h-6" />
+                            </div>
+                            <h5 className="font-bold text-white text-sm">
+                              {judgeSearch || judgeCompFilter !== 'ALL'
+                                ? 'Tidak ada dewan juri yang cocok dengan filter pencarian'
+                                : 'Belum Ada Data Dewan Juri Terdaftar'}
+                            </h5>
+                            <p className="text-white/50 text-xs">
+                              {judgeSearch || judgeCompFilter !== 'ALL'
+                                ? 'Coba ubah kata kunci pencarian atau ganti filter cabang lomba di atas.'
+                                : 'Super Admin dan Divisi Sekretariat & Administrasi dapat langsung menambahkan akun dewan juri baru ke sistem.'}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingJudge({
+                                  fullName: '',
+                                  email: '',
+                                  username: '',
+                                  password: 'santri2026',
+                                  phone: '',
+                                  institution: 'MWC NU Poncokusumo',
+                                  isActive: true,
+                                });
+                                setEditingJudgeCompIds([]);
+                                setIsModalPasswordVisible(false);
+                                setIsJudgeModalOpen(true);
+                              }}
+                              className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-md active:scale-95"
+                            >
+                              <Plus className="w-4 h-4" />
+                              <span>Tambah Dewan Juri Sekarang</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return filteredJudges.map((j) => {
                     const myAssigns = assignments.filter((a) => isAssignmentForJury(a, j) && a.isActive);
 
                     return (
@@ -1510,7 +1593,8 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                         </td>
                       </tr>
                     );
-                  })}
+                  });
+                })()}
               </tbody>
             </table>
           </div>

@@ -223,11 +223,21 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   });
 
   // Cek apakah akun yang sedang login adalah Super Admin (Sekretariat Utama)
-  const isSuperAdmin = 
+  const isSuperAdmin =
     adminRole === 'Sekretariat Utama HSN 2026' ||
     adminRole.toLowerCase().includes('sekretariat utama') ||
     adminRole.toLowerCase().includes('super admin') ||
     adminUser.toLowerCase() === 'admin';
+
+  // Cek apakah akun adalah Divisi Sekretariat & Administrasi (atau variasi ejaan)
+  const isSekretariatAdmin =
+    adminRole === 'Divisi Sekretariat & Administrasi' ||
+    adminRole.toLowerCase().includes('sekretariat') ||
+    adminRole.toLowerCase().includes('sekretarian') ||
+    adminRole.toLowerCase().includes('administrasi');
+
+  // Hak akses kelola panitia & dewan juri: Super Admin & Divisi Sekretariat & Administrasi
+  const canManageUsersAndJury = isSuperAdmin || isSekretariatAdmin;
 
   // Cek apakah akun adalah Divisi Regristrasi & Verifikator
   const isRegistrasiVerifikator =
@@ -256,12 +266,15 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     }
   }, [isOpen, initialTab]);
 
-  // Jika login selain super admin, pastikan tidak dapat mengakses tab users atau deployment
+  // Jika login selain wewenang, batasi tab users dan deployment
   useEffect(() => {
-    if (!isSuperAdmin && (activeTab === 'users' || activeTab === 'deployment')) {
+    if (!canManageUsersAndJury && activeTab === 'users') {
       setActiveTab('participants');
     }
-  }, [isSuperAdmin, activeTab]);
+    if (!isSuperAdmin && activeTab === 'deployment') {
+      setActiveTab('participants');
+    }
+  }, [canManageUsersAndJury, isSuperAdmin, activeTab]);
 
   // Filters for participants
   const [searchQuery, setSearchQuery] = useState('');
@@ -855,8 +868,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             <span>Berkas Arsip ({documents.length})</span>
           </button>
 
-          {/* Tab Khusus Super Admin: Kelola Panitia */}
-          {isSuperAdmin && (
+          {/* Tab Khusus Super Admin & Divisi Sekretariat: Kelola Panitia */}
+          {canManageUsersAndJury && (
             <button
               onClick={() => setActiveTab('users')}
               className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
@@ -2102,8 +2115,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             </div>
           )}
 
-          {/* TAB 5: KELOLA PANITIA / USERS (KHUSUS SUPER ADMIN) */}
-          {activeTab === 'users' && isSuperAdmin && <AdminUsersTab />}
+          {/* TAB 5: KELOLA PANITIA / USERS (SUPER ADMIN & DIVISI SEKRETARIAT) */}
+          {activeTab === 'users' && canManageUsersAndJury && <AdminUsersTab />}
 
           {/* TAB 6: DEPLOYMENT KE VERCEL & SUPABASE (KHUSUS SUPER ADMIN) */}
           {activeTab === 'deployment' && isSuperAdmin && <AdminDeploymentTab />}

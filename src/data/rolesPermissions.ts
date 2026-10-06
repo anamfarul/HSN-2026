@@ -69,16 +69,32 @@ export const ROLE_DEFINITIONS: Record<string, RolePermission> = {
     shortTitle: 'Sekretariat & Admin',
     badgeColor: 'bg-cyan-500/20 text-cyan-400',
     borderColor: 'border-cyan-500/40',
-    description: 'Pengelolaan surat-menyurat, berkas administrasi pendaftaran, rekapitulasi data dan absensi peserta, serta arsip dokumen resmi festival.',
+    description: 'Pengelolaan surat-menyurat, administrasi pendaftaran, akun dewan juri & panitia, serta arsip dokumen resmi festival.',
     capabilities: {
       verifyParticipants: 'VIEW_ONLY',
       manageCompetitions: 'VIEW_ONLY',
-      manageUsers: 'NONE',
+      manageUsers: 'FULL',
       exportData: true,
       manageDocuments: 'FULL',
       accessDeployment: false,
     },
-    allowedTabs: ['participants', 'stats', 'documents'],
+    allowedTabs: ['participants', 'stats', 'documents', 'users'],
+  },
+  'Dewan Juri': {
+    roleName: 'Dewan Juri',
+    shortTitle: 'Dewan Juri',
+    badgeColor: 'bg-emerald-500/20 text-emerald-300',
+    borderColor: 'border-emerald-500/40',
+    description: 'Dewan juri penilai perlombaan festival. Menilai karya dan performa peserta secara objektif melalui Portal Juri.',
+    capabilities: {
+      verifyParticipants: 'VIEW_ONLY',
+      manageCompetitions: 'VIEW_ONLY',
+      manageUsers: 'NONE',
+      exportData: false,
+      manageDocuments: 'VIEW_ONLY',
+      accessDeployment: false,
+    },
+    allowedTabs: ['participants'],
   },
   'Tim Publikasi & Media Center': {
     roleName: 'Tim Publikasi & Media Center',
@@ -105,11 +121,13 @@ ROLE_DEFINITIONS['Divisi Registrasi & Verifikator'] = ROLE_DEFINITIONS['Divisi R
 ROLE_DEFINITIONS['Divisi Acara & Regristasi'] = ROLE_DEFINITIONS['Divisi Sekretariat & Administrasi'];
 ROLE_DEFINITIONS['Divisi Acara & Registrasi'] = ROLE_DEFINITIONS['Divisi Sekretariat & Administrasi'];
 ROLE_DEFINITIONS['Divisi Acara & Panggung'] = ROLE_DEFINITIONS['Divisi Sekretariat & Administrasi'];
+ROLE_DEFINITIONS['Juri'] = ROLE_DEFINITIONS['Dewan Juri'];
 
 export const ALL_ROLES = [
   'Sekretariat Utama HSN 2026',
+  'Divisi Sekretariat & Administrasi',
+  'Dewan Juri',
   'Koordinator Teknis Lomba',
   'Divisi Regristrasi & Verifikator',
-  'Divisi Sekretariat & Administrasi',
   'Tim Publikasi & Media Center',
 ];
