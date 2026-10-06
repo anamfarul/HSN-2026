@@ -509,131 +509,120 @@ export async function getJuryAuditLogs(): Promise<JuryAuditLog[]> {
 // ==============================================================================
 export async function getJuryProfiles(): Promise<UserProfile[]> {
   const deletedIds = new Set(getDeletedProfileIds());
-
-  // Historical fallback recovery: Periksa seluruh versi penyimpanan agar tidak ada juri yang hilang
-  const historicalKeys = [
-    STORAGE_PROFILES,
-    'hsn2026_jury_profiles_v3',
-    'hsn2026_jury_profiles_v2',
-    'hsn2026_jury_profiles_v1',
-    'hsn2026_jury_profiles',
-  ];
-
-  const mergedLocalMap = new Map<string, UserProfile>();
-
-  // Inisialisasi awal dengan INITIAL_JURY_PROFILES
-  for (const initP of INITIAL_JURY_PROFILES) {
-    if (!deletedIds.has(initP.id)) {
-      mergedLocalMap.set(initP.id, {
-        ...initP,
-        username: initP.username || (initP.email.includes('@') ? initP.email.split('@')[0] : initP.email),
-        password: initP.password || 'santri2026',
-      });
-    }
-  }
-
-  // Muat dari seluruh historical storage keys
-  for (const key of historicalKeys) {
-    try {
-      const raw = localStorage.getItem(key);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          for (const item of parsed) {
-            if (item && item.id && !deletedIds.has(item.id)) {
-              const cleanEmail = (item.email || '').trim().toLowerCase();
-              const existing = mergedLocalMap.get(item.id) || (cleanEmail ? Array.from(mergedLocalMap.values()).find((p) => p.email.toLowerCase() === cleanEmail) : undefined);
-              const cleanUsername = item.username || existing?.username || (cleanEmail.includes('@') ? cleanEmail.split('@')[0] : cleanEmail) || item.id;
-              const cleanPassword = item.password || existing?.password || 'santri2026';
-
-              mergedLocalMap.set(item.id, {
-                ...existing,
-                ...item,
-                username: cleanUsername,
-                password: cleanPassword,
-                isActive: item.isActive !== undefined ? item.isActive : true,
-              });
-            }
-          }
-        }
-      }
-    } catch {}
-  }
-
-  const localList = Array.from(mergedLocalMap.values());
-
-  let remoteProfiles: UserProfile[] = [];
   const supabase = getSupabaseClient();
-  if (isSupabaseConnected() && supabase) {
+  const connected = isSupabaseConnected() && Boolean(supabase);
+
+  // ==============================================================================
+  // A. SUPABASE TERHUBUNG: DATABASE SUPABASE ADALAH SINGLE SOURCE OF TRUTH (100%)
+  // ==============================================================================
+  if (connected && supabase) {
     try {
-      const { data, error } = await supabase
+      // 1. Ambil seluruh data dari tabel public.profiles di Supabase
+      // Jangan filter case-sensitive .eq('role', 'jury') agar baris dengan role 'juri', 'Dewan Juri', atau NULL tetap terbaca
+      const { data: profileRows, error: profileErr } = await supabase
         .from('profiles')
         .select('*')
-        .eq('role', 'jury')
         .order('created_at', { ascending: true });
 
-      if (!error && data && data.length > 0) {
-        remoteProfiles = data
-          .filter((p) => !deletedIds.has(p.id))
-          .map((p) => {
-            const matchedLocal = localList.find(
-              (lp) => lp.id === p.id || lp.email.toLowerCase() === p.email.toLowerCase()
-            );
-            return {
-              id: p.id,
-              fullName: p.full_name || p.fullName || 'Dewan Juri',
-              email: p.email,
-              role: (p.role as any) || 'jury',
-              institution: p.institution || 'MWC NU Poncokusumo',
-              phone: p.phone || '',
-              isActive: p.is_active !== undefined ? p.is_active : (p.isActive ?? true),
-              username: matchedLocal?.username || (p.email.includes('@') ? p.email.split('@')[0] : p.email),
-              password: matchedLocal?.password || 'santri2026',
-              createdAt: p.created_at || p.createdAt,
-              updatedAt: p.updated_at || p.updatedAt,
-            };
+      let remoteList: UserProfile[] = [];
+
+      if (!profileErr && profileRows && Array.isArray(profileRows)) {
+        remoteList = profileRows.map((p: any) => {
+          const email = (p.email || '').trim().toLowerCase();
+          const username = (p.username || '').trim().toLowerCase() || (email.includes('@') ? email.split('@')[0] : email) || p.id;
+          const password = p.password || 'santri2026';
+
+          return {
+            id: p.id,
+            fullName: p.full_name || p.fullName || 'Dewan Juri',
+            email: email,
+            role: 'jury' as const,
+            institution: p.institution || 'MWC NU Poncokusumo',
+            phone: p.phone || '',
+            isActive: p.is_active !== undefined ? Boolean(p.is_active) : (p.isActive ?? true),
+            username: username,
+            password: password,
+            createdAt: p.created_at || p.createdAt || new Date().toISOString(),
+            updatedAt: p.updated_at || p.updatedAt || new Date().toISOString(),
+          };
+        });
+      }
+
+      // 2. Failsafe: Jika tabel profiles kosong, periksa apakah akun juri dimasukkan ke tabel admin_users
+      if (remoteList.length === 0) {
+        try {
+          const { data: adminRows } = await supabase
+            .from('admin_users')
+            .select('*')
+            .or('role.ilike.%jur%,role.ilike.%jury%')
+            .order('created_at', { ascending: true });
+
+          if (adminRows && adminRows.length > 0) {
+            remoteList = adminRows.map((u: any) => {
+              const email = (u.email || '').trim().toLowerCase();
+              const username = (u.username || '').trim().toLowerCase() || (email.includes('@') ? email.split('@')[0] : u.id);
+              return {
+                id: u.id,
+                fullName: u.full_name || u.fullName || 'Dewan Juri',
+                email: email,
+                role: 'jury' as const,
+                institution: 'MWC NU Poncokusumo',
+                phone: u.phone || '',
+                isActive: u.is_active !== undefined ? Boolean(u.is_active) : true,
+                username: username,
+                password: u.password || 'santri2026',
+                createdAt: u.created_at || u.createdAt || new Date().toISOString(),
+                updatedAt: u.updated_at || u.updatedAt || new Date().toISOString(),
+              };
+            });
+          }
+        } catch {}
+      }
+
+      // JIKA DATA DARI SUPABASE BERHASIL DIAMBIL (TABEL PROFILES ADA & KONEKSI SUKSES):
+      if (!profileErr) {
+        if (remoteList.length > 0) {
+          // Bersihkan blacklist deletedIds lokal untuk akun yang jelas-jelas ada di database Supabase
+          const currentDeleted = new Set(getDeletedProfileIds());
+          let changedDeleted = false;
+          remoteList.forEach((p) => {
+            if (currentDeleted.has(p.id)) {
+              currentDeleted.delete(p.id);
+              changedDeleted = true;
+            }
           });
+          if (changedDeleted) {
+            setLocal(STORAGE_DELETED_PROFILES, Array.from(currentDeleted));
+          }
+
+          // Filter akun yang mungkin baru saja dihapus di session aktif
+          const validRemote = remoteList.filter((p) => !currentDeleted.has(p.id));
+
+          // SIMPAN LANGSUNG KE STORAGE LOKAL (100% PERSIS SUPABASE, TIDAK DICAMPUR DUMMY MOCK)
+          setLocal(STORAGE_PROFILES, validRemote);
+          return validRemote;
+        } else {
+          // Jika di database Supabase memang kosong (0 akun juri):
+          // Simpan kosong agar Vercel tidak menampilkan mock dummy!
+          setLocal(STORAGE_PROFILES, []);
+          return [];
+        }
       }
     } catch (err) {
-      console.warn('Gagal membaca remote profiles:', err);
+      console.warn('Gagal membaca remote profiles dari Supabase:', err);
     }
   }
 
-  // Gabungkan profil remote dan profil lokal (menjamin juri baru yang ditambahkan di CMS TIDAK PERNAH HILANG)
-  const combinedMap = new Map<string, UserProfile>();
-
-  // 1. Masukkan remote profil
-  for (const r of remoteProfiles) {
-    if (!deletedIds.has(r.id)) {
-      combinedMap.set(r.id, r);
-    }
+  // ==============================================================================
+  // B. FALLBACK OFFLINE / SUPABASE BELUM TERHUBUNG:
+  // Gunakan data lokal, dan jika belum ada data sama sekali baru gunakan INITIAL_JURY_PROFILES
+  // ==============================================================================
+  const localList = getLocal<UserProfile[]>(STORAGE_PROFILES, []);
+  if (localList.length > 0) {
+    return localList.filter((p) => !deletedIds.has(p.id));
   }
 
-  // 2. Timpa / Tambahkan dari localList (memuat juri baru yang baru saja dibuat di CMS)
-  for (const l of localList) {
-    if (!deletedIds.has(l.id)) {
-      const existing = combinedMap.get(l.id) || Array.from(combinedMap.values()).find((p) => p.email.toLowerCase() === l.email.toLowerCase());
-      const merged: UserProfile = {
-        ...existing,
-        ...l,
-        username: l.username || existing?.username || (l.email.includes('@') ? l.email.split('@')[0] : l.email),
-        password: l.password || existing?.password || 'santri2026',
-      };
-      combinedMap.set(l.id, merged);
-    }
-  }
-
-  // 3. Pastikan daftar unik berdasarkan ID
-  const result: UserProfile[] = Array.from(combinedMap.values()).filter((p) => !deletedIds.has(p.id));
-
-  // Sync balik ke STORAGE_PROFILES agar selalu termutakhirkan
-  if (result.length > 0 && typeof window !== 'undefined') {
-    try {
-      localStorage.setItem(STORAGE_PROFILES, JSON.stringify(result));
-    } catch {}
-  }
-
-  return result.length > 0 ? result : INITIAL_JURY_PROFILES;
+  return INITIAL_JURY_PROFILES.filter((p) => !deletedIds.has(p.id));
 }
 
 export async function saveJuryProfile(
@@ -670,7 +659,7 @@ export async function saveJuryProfile(
   };
 
   // Local storage update
-  const list = getLocal<UserProfile[]>(STORAGE_PROFILES, INITIAL_JURY_PROFILES);
+  const list = getLocal<UserProfile[]>(STORAGE_PROFILES, []);
   const existsIdx = list.findIndex((p) => p.id === id || p.email.toLowerCase() === finalProfile.email);
   let updatedList: UserProfile[];
   if (existsIdx >= 0) {
@@ -696,11 +685,11 @@ export async function saveJuryProfile(
   }
   setLocal(STORAGE_PROFILES, updatedList);
 
-  // Supabase update (non-blocking)
+  // Supabase update
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
     try {
-      await supabase.from('profiles').upsert({
+      const { error: fullErr } = await supabase.from('profiles').upsert({
         id: finalProfile.id,
         full_name: finalProfile.fullName,
         email: finalProfile.email,
@@ -712,6 +701,20 @@ export async function saveJuryProfile(
         is_active: finalProfile.isActive,
         updated_at: finalProfile.updatedAt,
       });
+
+      // Jika error karena kolom username/password belum ada di schema Supabase, fallback upsert kolom standar
+      if (fullErr) {
+        await supabase.from('profiles').upsert({
+          id: finalProfile.id,
+          full_name: finalProfile.fullName,
+          email: finalProfile.email,
+          role: finalProfile.role,
+          institution: finalProfile.institution,
+          phone: finalProfile.phone,
+          is_active: finalProfile.isActive,
+          updated_at: finalProfile.updatedAt,
+        });
+      }
     } catch (err) {
       console.warn('Supabase upsert profile note:', err);
     }
@@ -726,7 +729,7 @@ export async function toggleJuryStatus(
   isActive: boolean,
   adminName: string = 'Admin'
 ): Promise<boolean> {
-  const list = getLocal<UserProfile[]>(STORAGE_PROFILES, INITIAL_JURY_PROFILES);
+  const list = getLocal<UserProfile[]>(STORAGE_PROFILES, []);
   const updated = list.map((p) => (p.id === juryId ? { ...p, isActive, updatedAt: new Date().toISOString() } : p));
   setLocal(STORAGE_PROFILES, updated);
 
@@ -755,7 +758,7 @@ export async function deleteJuryProfile(
   deletedProfiles.add(juryId);
   setLocal(STORAGE_DELETED_PROFILES, Array.from(deletedProfiles));
 
-  const list = getLocal<UserProfile[]>(STORAGE_PROFILES, INITIAL_JURY_PROFILES);
+  const list = getLocal<UserProfile[]>(STORAGE_PROFILES, []);
   const target = list.find((p) => p.id === juryId);
   const updated = list.filter((p) => p.id !== juryId);
   setLocal(STORAGE_PROFILES, updated);
@@ -785,6 +788,7 @@ export async function deleteJuryProfile(
     try {
       await supabase.from('jury_assignments').delete().eq('jury_id', juryId);
       await supabase.from('profiles').delete().eq('id', juryId);
+      await supabase.from('admin_users').delete().eq('id', juryId);
     } catch {}
   }
 
@@ -813,7 +817,10 @@ export function getAvailableCompetitions(): Competition[] {
 // ==============================================================================
 // 5. JURY ASSIGNMENTS SERVICE
 // ==============================================================================
-export async function getJuryAssignments(customCompetitions?: Competition[]): Promise<JuryAssignment[]> {
+export async function getJuryAssignments(
+  customCompetitions?: Competition[],
+  knownJuries?: UserProfile[]
+): Promise<JuryAssignment[]> {
   let rawList: JuryAssignment[] = [];
   let fetchedFromRemote = false;
   const supabase = getSupabaseClient();
@@ -931,7 +938,7 @@ export async function getJuryAssignments(customCompetitions?: Competition[]): Pr
   // Active competitions authoritative list from CMS Panitia
   const allComps = customCompetitions && customCompetitions.length > 0 ? customCompetitions : getAvailableCompetitions();
   const validCompMap = new Map(allComps.map((c) => [c.id, c]));
-  const juries = getLocal<UserProfile[]>(STORAGE_PROFILES, INITIAL_JURY_PROFILES);
+  const juries = knownJuries && knownJuries.length > 0 ? knownJuries : getLocal<UserProfile[]>(STORAGE_PROFILES, []);
 
   // Self-heal and strictly sanitize assignments: ONLY keep assignments that belong to valid competitions AND registered active juries!
   let normalizedList: JuryAssignment[] = rawList
@@ -953,7 +960,7 @@ export async function getJuryAssignments(customCompetitions?: Competition[]): Pr
       if (!comp) return null;
 
       // 4. Must match a registered active dewan juri (NO orphan / ghost / unassigned records allowed!)
-      let jury = juries.find((j) => (isAssignmentForJury(a, j) || j.id === a.juryId || (a.juryEmail && j.email?.toLowerCase() === a.juryEmail.toLowerCase())) && j.isActive && !deletedJuryIds.has(j.id));
+      let jury = juries.find((j) => (isAssignmentForJury(a, j) || j.id === a.juryId || (a.juryEmail && j.email?.toLowerCase() === a.juryEmail.toLowerCase())) && j.isActive);
       
       const juryIdToUse = jury?.id || a.juryId;
       const juryNameToUse = jury?.fullName || a.juryName || 'Dewan Juri';
@@ -2424,7 +2431,22 @@ export async function syncAllJuryDataToSupabase(customCompetitions?: Competition
         is_active: p.isActive ?? true,
         updated_at: new Date().toISOString(),
       });
-      if (!error) pCount++;
+      if (error) {
+        // Fallback coba kolom standar jika username/password belum ada di skema
+        const retryRes = await supabase.from('profiles').upsert({
+          id: p.id,
+          full_name: p.fullName,
+          email: p.email,
+          role: p.role || 'jury',
+          institution: p.institution || 'MWC NU Poncokusumo',
+          phone: p.phone || '',
+          is_active: p.isActive ?? true,
+          updated_at: new Date().toISOString(),
+        });
+        if (!retryRes.error) pCount++;
+      } else {
+        pCount++;
+      }
     }
 
     // 2. Sync Assignments (Strict authoritative sync - hapus penugasan terhapus di Supabase)
@@ -2568,9 +2590,9 @@ export async function fetchAllJuryDataFromSupabase(): Promise<{
   }
 
   try {
-    const [pList, aList, cList, sList] = await Promise.all([
-      getJuryProfiles(),
-      getJuryAssignments(),
+    const pList = await getJuryProfiles();
+    const [aList, cList, sList] = await Promise.all([
+      getJuryAssignments(undefined, pList),
       getScoringCriteria(),
       getJuryScores(),
     ]);

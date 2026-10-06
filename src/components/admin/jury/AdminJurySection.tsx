@@ -274,9 +274,9 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
   const loadAllData = async () => {
     setIsLoading(true);
     try {
-      const [jList, aList, sList, lList, progList] = await Promise.all([
-        getJuryProfiles(),
-        getJuryAssignments(competitions),
+      const jList = await getJuryProfiles();
+      const [aList, sList, lList, progList] = await Promise.all([
+        getJuryAssignments(competitions, jList),
         getJuryScores(),
         getJuryAuditLogs(),
         getScoringProgressSummary(competitions, participants),
@@ -899,17 +899,30 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0 flex-wrap sm:flex-nowrap">
-            {/* Sinkron Supabase */}
+            {/* Sinkron ke Supabase */}
             <button
               type="button"
               onClick={handleSyncToSupabase}
               disabled={isSyncingSupabase}
               className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:opacity-95 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
-              title="Simpan dan Sinkronkan Seluruh Data Juri ke Database Supabase"
+              title="Kirim dan Simpan Seluruh Data Juri dari CMS ke Database Supabase"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSupabase ? 'animate-spin' : ''}`} />
               <span className="hidden sm:inline">{isSyncingSupabase ? 'Menyinkronkan...' : 'Sinkron Supabase'}</span>
               <span className="sm:hidden">{isSyncingSupabase ? 'Sync...' : 'Sinkron'}</span>
+            </button>
+
+            {/* Tarik Data Supabase */}
+            <button
+              type="button"
+              onClick={handleFetchFromSupabase}
+              disabled={isFetchingSupabase}
+              className="px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-[#00D9F5] border border-[#00D9F5]/40 font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
+              title="Unduh dan Ambil Data Juri Paling Mutakhir Langsung dari Database Supabase"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isFetchingSupabase ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{isFetchingSupabase ? 'Mengambil...' : 'Tarik dari Supabase'}</span>
+              <span className="sm:hidden">{isFetchingSupabase ? 'Tarik...' : 'Tarik'}</span>
             </button>
 
             {/* Salin Tautan Portal */}

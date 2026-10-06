@@ -51,8 +51,8 @@ export function sanitizeSupabaseKey(rawKey: string): string {
 
 // Helper to get active credentials from environment or localStorage with automatic sanitization
 export function getSupabaseCredentials(): { url: string; anonKey: string } {
-  const envUrl = (import.meta as any).env?.VITE_SUPABASE_URL || '';
-  const envKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
+  const envUrl = (import.meta as any).env?.VITE_SUPABASE_URL || (import.meta as any).env?.VITE_SUPABASE_PROJECT_URL || (import.meta as any).env?.VITE_PUBLIC_SUPABASE_URL || '';
+  const envKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || (import.meta as any).env?.VITE_SUPABASE_KEY || (import.meta as any).env?.VITE_SUPABASE_PUBLIC_KEY || '';
 
   const rawStoredUrl = typeof window !== 'undefined' ? localStorage.getItem('hsn2026_supabase_url') || '' : '';
   const rawStoredKey = typeof window !== 'undefined' ? localStorage.getItem('hsn2026_supabase_anon_key') || '' : '';
