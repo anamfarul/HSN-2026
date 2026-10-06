@@ -253,6 +253,14 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
   const [activeTab, setActiveTab] = useState<'participants' | 'competitions' | 'works' | 'jury_scoring' | 'documents' | 'stats' | 'users' | 'deployment' | 'supabase'>('participants');
   const [pdfReportBlobUrl, setPdfReportBlobUrl] = useState<string | null>(null);
+  const [juryInitialSubTab, setJuryInitialSubTab] = useState<'dashboard' | 'judges' | 'assignments' | 'criteria'>('dashboard');
+  const [juryAutoOpenAdd, setJuryAutoOpenAdd] = useState(false);
+
+  const handleOpenJuryScoring = (subTab: 'judges' | 'dashboard' = 'judges', openModal: boolean = false) => {
+    setJuryInitialSubTab(subTab);
+    setJuryAutoOpenAdd(openModal);
+    setActiveTab('jury_scoring');
+  };
 
   // Jumlah karya peserta yang telah masuk
   const participantsWithWorksCount = participants.filter(
@@ -1834,6 +1842,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
               isSuperAdmin={isSuperAdmin}
               adminRole={adminRole}
               onOpenJuryPortal={onOpenJuryPortal}
+              initialSubTab={juryInitialSubTab}
+              autoOpenAddJudge={juryAutoOpenAdd}
             />
           )}
 
@@ -2116,7 +2126,9 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
           )}
 
           {/* TAB 5: KELOLA PANITIA / USERS (SUPER ADMIN & DIVISI SEKRETARIAT) */}
-          {activeTab === 'users' && canManageUsersAndJury && <AdminUsersTab />}
+          {activeTab === 'users' && canManageUsersAndJury && (
+            <AdminUsersTab onOpenJuryScoring={handleOpenJuryScoring} />
+          )}
 
           {/* TAB 6: DEPLOYMENT KE VERCEL & SUPABASE (KHUSUS SUPER ADMIN) */}
           {activeTab === 'deployment' && isSuperAdmin && <AdminDeploymentTab />}

@@ -598,7 +598,15 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
 
           // Gabungkan akun juri dari admin_users yang belum ada di remoteList
           for (const aj of adminJuries) {
-            if (!remoteList.some((r) => r.id === aj.id || r.username.toLowerCase() === aj.username.toLowerCase() || r.email.toLowerCase() === aj.email.toLowerCase())) {
+            const ajUser = String(aj.username || '').toLowerCase();
+            const ajEmail = String(aj.email || '').toLowerCase();
+            const exists = remoteList.some((r) => {
+              if (r.id === aj.id) return true;
+              const rUser = String(r.username || '').toLowerCase();
+              const rEmail = String(r.email || '').toLowerCase();
+              return (rUser && ajUser && rUser === ajUser) || (rEmail && ajEmail && rEmail === ajEmail);
+            });
+            if (!exists) {
               remoteList.push(aj);
             }
           }
@@ -630,12 +638,11 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
                 await supabase.from('admin_users').upsert([
                   {
                     id: lp.id,
-                    name: lp.fullName,
+                    full_name: lp.fullName,
                     username: lp.username,
                     email: lp.email,
                     password: lp.password,
                     role: 'Dewan Juri',
-                    division: lp.institution,
                     phone: lp.phone,
                     is_active: lp.isActive,
                     updated_at: lp.updatedAt,
@@ -646,7 +653,6 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
             return localList;
           } else {
             // Database Supabase memang bersih/kosong dan belum ada juri lokal
-            setLocal(STORAGE_PROFILES, []);
             return [];
           }
         } else {
@@ -668,7 +674,15 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
           // Merge dengan akun lokal yang baru saja ditambahkan pengguna agar tidak hilang
           const merged = [...validRemote];
           for (const lp of localList) {
-            if (!merged.some((m) => m.id === lp.id || (m.username && lp.username && m.username.toLowerCase() === lp.username.toLowerCase()) || (m.email && lp.email && m.email.toLowerCase() === lp.email.toLowerCase()))) {
+            const lpUser = String(lp.username || '').toLowerCase();
+            const lpEmail = String(lp.email || '').toLowerCase();
+            const alreadyInMerged = merged.some((m) => {
+              if (m.id === lp.id) return true;
+              const mUser = String(m.username || '').toLowerCase();
+              const mEmail = String(m.email || '').toLowerCase();
+              return (mUser && lpUser && mUser === lpUser) || (mEmail && lpEmail && mEmail === lpEmail);
+            });
+            if (!alreadyInMerged) {
               merged.push(lp);
             }
           }
@@ -694,10 +708,9 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
 }
 
 export async function saveJuryProfile(
-  profile: Partial<UserProfile> & { fullName: string; email: string },
+  profile: Partial<UserProfile> & { fullName: string; email?: string },
   adminName: string = 'Admin'
 ): Promise<{ success: boolean; data?: UserProfile; message?: string }> {
-  const isNew = !profile.id;
   // Gunakan ID yang ada atau generate UUID v4 baru (kompatibel penuh dengan tipe UUID di Supabase)
   const id = profile.id || generateJuryUuid();
   const now = new Date().toISOString();
@@ -709,13 +722,19 @@ export async function saveJuryProfile(
     setLocal(STORAGE_DELETED_PROFILES, Array.from(deletedSet));
   }
 
-  const cleanEmail = profile.email.trim().toLowerCase();
-  const cleanUsername = profile.username?.trim().toLowerCase() || (cleanEmail.includes('@') ? cleanEmail.split('@')[0] : cleanEmail);
-  const cleanPassword = profile.password?.trim() || 'santri2026';
+  const rawName = (profile.fullName || '').trim();
+  const cleanUsername =
+    (profile.username || '').trim().toLowerCase() ||
+    (profile.email && profile.email.includes('@') ? profile.email.split('@')[0].trim().toLowerCase() : '') ||
+    rawName.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 20) ||
+    `juri_${Date.now().toString().slice(-4)}`;
+  const cleanEmail =
+    (profile.email || '').trim().toLowerCase() || `${cleanUsername}@hsnponcokusumo.nu`;
+  const cleanPassword = (profile.password || '').trim() || 'santri2026';
 
   const finalProfile: UserProfile = {
     id,
-    fullName: profile.fullName.trim(),
+    fullName: rawName || 'Dewan Juri HSN 2026',
     email: cleanEmail,
     role: 'jury',
     institution: profile.institution?.trim() || 'MWC NU Poncokusumo',
@@ -729,7 +748,12 @@ export async function saveJuryProfile(
 
   // 1. Local storage update untuk profil juri
   const list = getLocal<UserProfile[]>(STORAGE_PROFILES, []);
-  const existsIdx = list.findIndex((p) => p.id === id || p.email.toLowerCase() === finalProfile.email);
+  const existsIdx = list.findIndex(
+    (p) =>
+      p.id === id ||
+      (p.email && finalProfile.email && String(p.email).toLowerCase() === String(finalProfile.email).toLowerCase()) ||
+      (p.username && finalProfile.username && String(p.username).toLowerCase() === String(finalProfile.username).toLowerCase())
+  );
   let updatedList: UserProfile[];
   if (existsIdx >= 0) {
     const old = list[existsIdx];
@@ -759,7 +783,10 @@ export async function saveJuryProfile(
   try {
     const adminUsers = getRegisteredAdminUsers();
     const existingAdminIdx = adminUsers.findIndex(
-      (u) => u.id === finalProfile.id || u.username.toLowerCase() === finalProfile.username.toLowerCase()
+      (u) =>
+        u.id === finalProfile.id ||
+        (u.username && finalProfile.username && String(u.username).toLowerCase() === String(finalProfile.username).toLowerCase()) ||
+        (u.email && finalProfile.email && String(u.email).toLowerCase() === String(finalProfile.email).toLowerCase())
     );
     const adminUserEntry: AdminUser = {
       id: finalProfile.id,
@@ -819,20 +846,35 @@ export async function saveJuryProfile(
 
     // 3b. Simpan juga ke tabel public.admin_users (agar terbaca di CMS Panitia & login panitia Supabase)
     try {
-      await supabase.from('admin_users').upsert([
+      const { error: adminErr } = await supabase.from('admin_users').upsert([
         {
           id: finalProfile.id,
-          name: finalProfile.fullName,
+          full_name: finalProfile.fullName,
           username: finalProfile.username,
           email: finalProfile.email,
           password: finalProfile.password,
           role: 'Dewan Juri',
-          division: finalProfile.institution,
           phone: finalProfile.phone,
           is_active: finalProfile.isActive,
           updated_at: finalProfile.updatedAt,
         },
       ], { onConflict: 'username' });
+
+      if (adminErr) {
+        await supabase.from('admin_users').upsert([
+          {
+            id: finalProfile.id,
+            name: finalProfile.fullName,
+            username: finalProfile.username,
+            email: finalProfile.email,
+            password: finalProfile.password,
+            role: 'Dewan Juri',
+            phone: finalProfile.phone,
+            is_active: finalProfile.isActive,
+            updated_at: finalProfile.updatedAt,
+          },
+        ], { onConflict: 'username' });
+      }
     } catch (err) {
       console.warn('Supabase upsert admin_users for jury note:', err);
     }

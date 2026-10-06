@@ -93,6 +93,8 @@ interface AdminJurySectionProps {
   isSuperAdmin: boolean;
   adminRole?: string;
   onOpenJuryPortal?: (juryId?: string) => void;
+  initialSubTab?: 'dashboard' | 'judges' | 'assignments' | 'criteria' | 'monitoring' | 'recap' | 'winners' | 'audit';
+  autoOpenAddJudge?: boolean;
 }
 
 export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
@@ -102,6 +104,8 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
   isSuperAdmin,
   adminRole = 'Sekretariat Utama HSN 2026',
   onOpenJuryPortal,
+  initialSubTab,
+  autoOpenAddJudge,
 }) => {
   // Wewenang Akses Hapus (Super Admin & Divisi Sekretariat & Administrasi / Divisi Sekretarian)
   const isSekretariatAdmin = useMemo(() => {
@@ -145,7 +149,13 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
   // Sub-tab Navigation
   const [subTab, setSubTab] = useState<
     'dashboard' | 'judges' | 'assignments' | 'criteria' | 'monitoring' | 'recap' | 'winners' | 'audit'
-  >('dashboard');
+  >(initialSubTab || 'dashboard');
+
+  useEffect(() => {
+    if (initialSubTab) {
+      setSubTab(initialSubTab);
+    }
+  }, [initialSubTab]);
 
   // Core Data States
   const [juries, setJuries] = useState<UserProfile[]>([]);
@@ -163,6 +173,25 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
   const [judgeCompFilter, setJudgeCompFilter] = useState<string>('ALL');
   const [isJudgeModalOpen, setIsJudgeModalOpen] = useState(false);
   const [editingJudge, setEditingJudge] = useState<Partial<UserProfile> | null>(null);
+
+  // Auto-open modal jika dipicu dari tab lain
+  useEffect(() => {
+    if (autoOpenAddJudge) {
+      setSubTab('judges');
+      setEditingJudge({
+        fullName: '',
+        email: '',
+        username: '',
+        password: 'santri2026',
+        phone: '',
+        institution: 'MWC NU Poncokusumo',
+        isActive: true,
+      });
+      setEditingJudgeCompIds([]);
+      setIsModalPasswordVisible(false);
+      setIsJudgeModalOpen(true);
+    }
+  }, [autoOpenAddJudge]);
   const [editingJudgeCompIds, setEditingJudgeCompIds] = useState<string[]>([]);
   const [revealedPasswords, setRevealedPasswords] = useState<Record<string, boolean>>({});
   const [isModalPasswordVisible, setIsModalPasswordVisible] = useState(false);
@@ -451,36 +480,54 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
   // Subtab 2 Handlers: Save Judge
   const handleSaveJudge = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingJudge?.fullName?.trim() || !editingJudge.email?.trim()) {
+    const fullName = (editingJudge?.fullName || '').trim();
+    if (!fullName) {
       setFeedbackToast({
-        message: 'Mohon lengkapi Nama Lengkap dan Email resmi dewan juri.',
+        message: 'Mohon masukkan Nama Lengkap dewan juri.',
         type: 'error',
       });
       return;
     }
 
+    const cleanUsername =
+      (editingJudge?.username || '').trim().toLowerCase() ||
+      (editingJudge?.email && editingJudge.email.includes('@') ? editingJudge.email.split('@')[0].trim().toLowerCase() : '') ||
+      fullName.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 20) ||
+      `juri_${Date.now().toString().slice(-4)}`;
+
+    const cleanEmail =
+      (editingJudge?.email || '').trim().toLowerCase() || `${cleanUsername}@hsnponcokusumo.nu`;
+
     try {
       const res = await saveJuryProfile(
         {
-          id: editingJudge.id,
-          fullName: editingJudge.fullName.trim(),
-          email: editingJudge.email.trim(),
-          username: editingJudge.username?.trim(),
-          password: editingJudge.password?.trim(),
-          phone: editingJudge.phone?.trim(),
-          institution: editingJudge.institution?.trim(),
-          isActive: editingJudge.isActive ?? true,
+          id: editingJudge?.id,
+          fullName: fullName,
+          email: cleanEmail,
+          username: cleanUsername,
+          password: editingJudge?.password?.trim() || 'santri2026',
+          phone: editingJudge?.phone?.trim() || '',
+          institution: editingJudge?.institution?.trim() || 'MWC NU Poncokusumo',
+          isActive: editingJudge?.isActive ?? true,
         },
         currentAdminName
       );
 
       const savedJury = res.data;
-      const savedJuryId = savedJury?.id || editingJudge.id;
+      const savedJuryId = savedJury?.id || editingJudge?.id;
 
       // Update state juries secara instan agar langsung tampil di tabel tanpa jeda waktu
       if (savedJury) {
         setJuries((prev) => {
-          const idx = prev.findIndex((j) => j.id === savedJury.id || j.email.toLowerCase() === savedJury.email.toLowerCase());
+          const sId = savedJury.id;
+          const sEmail = String(savedJury.email || '').toLowerCase();
+          const sUser = String(savedJury.username || '').toLowerCase();
+          const idx = prev.findIndex((j) => {
+            if (j.id === sId) return true;
+            const jEmail = String(j.email || '').toLowerCase();
+            const jUser = String(j.username || '').toLowerCase();
+            return (jEmail && sEmail && jEmail === sEmail) || (jUser && sUser && jUser === sUser);
+          });
           if (idx >= 0) {
             return prev.map((j, i) => (i === idx ? savedJury : j));
           }
@@ -490,7 +537,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
 
       if (savedJuryId) {
         // Sync competition assignments for this judge
-        const currentAssigned = assignments.filter((a) => isAssignmentForJury(a, { id: savedJuryId, email: editingJudge.email, username: editingJudge.username }) && a.isActive);
+        const currentAssigned = assignments.filter((a) => isAssignmentForJury(a, { id: savedJuryId, email: cleanEmail, username: cleanUsername }) && a.isActive);
 
         // 1. Add newly checked competitions
         for (const compId of editingJudgeCompIds) {
@@ -1218,21 +1265,14 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
       {subTab === 'judges' && (
         <div className="space-y-4">
           {/* Authorization Info Banner */}
-          <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-white/[0.02] border border-white/10 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 p-3.5 rounded-2xl bg-[#006B4F]/15 border border-emerald-500/35 text-xs shadow-md">
             <div className="flex items-center gap-2 flex-wrap">
-              {canDeleteJuryItems ? (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Otoritas Kredensial & Hapus Juri: Aktif ({adminRole})</span>
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                  <Lock className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Akses Terbatas (Khusus Super Admin & Divisi Sekretariat & Administrasi)</span>
-                </span>
-              )}
-              <span className="text-white/70 text-[11px]">
-                Akses kredensial login (Username & Password) serta wewenang kelola akun dewan juri aktif untuk <strong>Super Admin</strong> dan <strong>Divisi Sekretariat & Administrasi</strong> (termasuk variasi ejaan Divisi Sekretarian & Administrasi).
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-500/25 text-emerald-300 border border-emerald-500/50">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Wewenang Kelola & Tambah Dewan Juri: Aktif ({adminRole})</span>
+              </span>
+              <span className="text-white/80 text-[11px]">
+                Penambahan dewan juri baru, penerbitan kredensial login (Username & Password), penugasan cabang lomba, serta status aktif dilakukan resmi melalui menu <strong>Kelola Juri</strong> oleh <strong>Super Admin</strong> dan <strong>Divisi Sekretariat & Administrasi</strong>.
               </span>
             </div>
           </div>
@@ -1285,10 +1325,11 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                 setIsModalPasswordVisible(false);
                 setIsJudgeModalOpen(true);
               }}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] text-white font-bold text-xs flex items-center gap-1.5 shadow-md active:scale-95 w-fit shrink-0"
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:from-[#008F72] hover:to-[#00a887] text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-900/30 active:scale-95 w-fit shrink-0 cursor-pointer border border-emerald-400/30"
+              title="Tambah Akun Dewan Juri Baru (Super Admin & Divisi Sekretariat & Administrasi)"
             >
               <Plus className="w-4 h-4" />
-              <span>Tambah Dewan Juri</span>
+              <span>+ Tambah Dewan Juri</span>
             </button>
           </div>
 
@@ -1319,10 +1360,10 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                     if (judgeSearch) {
                       const q = judgeSearch.toLowerCase();
                       const match =
-                        j.fullName.toLowerCase().includes(q) ||
-                        j.email.toLowerCase().includes(q) ||
-                        (j.username || '').toLowerCase().includes(q) ||
-                        (j.institution || '').toLowerCase().includes(q);
+                        String(j.fullName || '').toLowerCase().includes(q) ||
+                        String(j.email || '').toLowerCase().includes(q) ||
+                        String(j.username || '').toLowerCase().includes(q) ||
+                        String(j.institution || '').toLowerCase().includes(q);
                       if (!match) return false;
                     }
                     if (judgeCompFilter === 'UNASSIGNED') {
@@ -1648,25 +1689,43 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                           type="text"
                           required
                           value={editingJudge.fullName || ''}
-                          onChange={(e) => setEditingJudge({ ...editingJudge, fullName: e.target.value })}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const prev = editingJudge.fullName || '';
+                            const cleanSlug = val.toLowerCase().trim().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').slice(0, 18);
+                            const prevSlug = prev.toLowerCase().trim().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').slice(0, 18);
+                            const currentUsername = editingJudge.username || '';
+                            const isUserAuto = !currentUsername || currentUsername === `juri_${prevSlug}` || currentUsername === prevSlug;
+                            const nextUser = isUserAuto ? (cleanSlug ? `juri_${cleanSlug}` : '') : currentUsername;
+                            const currentEmail = editingJudge.email || '';
+                            const isEmailAuto = !currentEmail || currentEmail === `${currentUsername}@hsnponcokusumo.nu` || currentEmail.endsWith('@hsnponcokusumo.nu');
+                            const nextEmail = isEmailAuto && nextUser ? `${nextUser}@hsnponcokusumo.nu` : currentEmail;
+                            setEditingJudge({
+                              ...editingJudge,
+                              fullName: val,
+                              username: nextUser,
+                              email: nextEmail,
+                            });
+                          }}
                           placeholder="Contoh: Ust. Ahmad Fauzan, M.Pd."
                           className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/15 text-white placeholder-white/30 focus:border-[#00D9F5] focus:ring-1 focus:ring-[#00D9F5] outline-none transition-all"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-white/80 font-semibold mb-1.5">
-                          Email Resmi (Untuk Login) <span className="text-rose-400">*</span>
-                        </label>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="block text-white/80 font-semibold">
+                            Email Resmi (Untuk Login)
+                          </label>
+                          <span className="text-[10px] text-white/40">Opsional</span>
+                        </div>
                         <input
                           type="email"
-                          required
                           value={editingJudge.email || ''}
                           onChange={(e) => {
                             const newEmail = e.target.value;
                             const prevEmail = editingJudge.email || '';
                             const currentUsername = editingJudge.username || '';
-                            // Auto-fill username if empty or matching previous email prefix
                             const nextUsername = (!currentUsername || currentUsername === prevEmail.split('@')[0])
                               ? (newEmail.includes('@') ? newEmail.split('@')[0] : newEmail)
                               : currentUsername;
@@ -1675,6 +1734,9 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                           placeholder="juri.nama@hsnponcokusumo.nu"
                           className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/15 text-white placeholder-white/30 focus:border-[#00D9F5] focus:ring-1 focus:ring-[#00D9F5] outline-none transition-all"
                         />
+                        <span className="text-[10px] text-white/40 block mt-1">
+                          Jika kosong, otomatis dibuat: <code>{editingJudge.username || 'username'}@hsnponcokusumo.nu</code>
+                        </span>
                       </div>
                     </div>
 
@@ -1760,16 +1822,30 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
 
                     {/* Penugasan Cabang Lomba (Sinkron dengan CMS Lomba) */}
                     <div className="pt-2 border-t border-white/10">
-                      <div className="flex items-center justify-between mb-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                         <label className="text-white/80 font-bold flex items-center gap-2">
                           <span>Tugaskan ke Cabang Lomba</span>
                           <span className="px-2 py-0.5 rounded-full bg-[#00D9F5]/10 border border-[#00D9F5]/30 text-[#00D9F5] text-[10px] font-mono">
                             {editingJudgeCompIds.length} Dipilih
                           </span>
                         </label>
-                        <span className="text-[10px] text-[#F2C96D] font-mono">
-                          {competitions.length} Cabang Tersedia
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingJudgeCompIds(competitions.map((c) => c.id))}
+                            className="text-[10px] text-[#00D9F5] hover:underline font-bold"
+                          >
+                            Pilih Semua ({competitions.length})
+                          </button>
+                          <span className="text-white/30 text-[10px]">•</span>
+                          <button
+                            type="button"
+                            onClick={() => setEditingJudgeCompIds([])}
+                            className="text-[10px] text-white/50 hover:underline"
+                          >
+                            Kosongkan
+                          </button>
+                        </div>
                       </div>
                       <div className="max-h-44 overflow-y-auto space-y-1.5 p-2 rounded-xl bg-[#020e19] border border-white/15 overscroll-contain">
                         {competitions.map((comp) => {
