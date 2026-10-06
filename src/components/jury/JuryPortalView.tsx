@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ShieldCheck, 
-  Shield,
   Lock, 
   LogIn, 
   LogOut, 
@@ -48,7 +47,6 @@ import {
   getStoredJuryProfile, 
   getStoredJurySession, 
   validateCurrentJurySession,
-  loginAsJuryDirectly,
   JuryAuthSession 
 } from '../../lib/juryAuthService';
 import { 
@@ -687,17 +685,6 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
               <ArrowLeft className="w-4 h-4" />
               <span>Kembali ke Beranda</span>
             </button>
-            {onOpenCMS && (
-              <button
-                onClick={onOpenCMS}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#006B4F]/60 to-[#008F72]/60 hover:from-[#006B4F] hover:to-[#008F72] border border-emerald-400/50 text-xs font-bold text-emerald-200 hover:text-white transition-all shadow-md active:scale-95"
-                title="Buka CMS Penilaian Juri Panitia (Kelola Juri, Kriteria, & Rekapitulasi)"
-              >
-                <Shield className="w-4 h-4 text-[#F2C96D]" />
-                <span className="hidden sm:inline">CMS Penilaian Juri</span>
-                <span className="sm:hidden">CMS</span>
-              </button>
-            )}
           </div>
           <div className="flex items-center gap-2 text-xs text-[#F2C96D] font-bold">
             <ShieldCheck className="w-4 h-4" />
@@ -722,47 +709,6 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
                 Silakan masuk menggunakan akun juri yang telah terdaftar di sistem panitia
               </p>
             </div>
-
-            {/* Deteksi Sesi CMS Panitia Aktif */}
-            {typeof window !== 'undefined' &&
-              (localStorage.getItem('hsn2026_admin_auth') === 'true' || sessionStorage.getItem('hsn2026_admin_auth') === 'true') && (
-                <div className="mb-5 p-3.5 rounded-2xl bg-gradient-to-r from-[#006B4F]/40 via-[#008F72]/30 to-[#00D9F5]/20 border border-emerald-400/40 flex items-center justify-between gap-3 shadow-lg">
-                  <div className="text-left">
-                    <span className="text-[10px] text-emerald-300 font-bold uppercase tracking-wider flex items-center gap-1">
-                      <ShieldCheck className="w-3.5 h-3.5 text-[#F2C96D]" />
-                      <span>Sesi CMS Panitia Aktif Terdeteksi</span>
-                    </span>
-                    <span className="font-bold text-white text-xs block truncate max-w-[210px]">
-                      {localStorage.getItem('hsn2026_admin_user') || sessionStorage.getItem('hsn2026_admin_user') || 'Administrator CMS'}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const adminUser = localStorage.getItem('hsn2026_admin_user') || sessionStorage.getItem('hsn2026_admin_user') || 'Admin CMS';
-                      const sess = loginAsJuryDirectly({
-                        id: 'user-admin-root',
-                        fullName: `${adminUser} (Panitia CMS)`,
-                        email: 'admin@hsnponcokusumo.nu',
-                        username: 'admin',
-                        role: 'super_admin',
-                        institution: 'Panitia Pelaksana CMS HSN 2026',
-                        isActive: true,
-                      });
-                      setSession(sess);
-                      setProfile(sess.profile);
-                      setSessionValidationStatus('valid');
-                      setSessionValidationNotice(null);
-                      setShowInternalAuthModal(false);
-                      setCurrentView('dashboard');
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:from-[#008F72] hover:to-[#00D9F5] text-white text-xs font-bold transition-all shadow-md active:scale-95 shrink-0 flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <LogIn className="w-3.5 h-3.5 text-[#F2C96D]" />
-                    <span>Masuk Langsung</span>
-                  </button>
-                </div>
-              )}
 
             {sessionValidationNotice && (
               <div className="mb-5 p-3.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs flex items-start gap-2.5 animate-pulse">
@@ -846,10 +792,10 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
                 <div className="text-[11px] text-white/70 space-y-1">
                   <span className="font-bold text-white block">Informasi Masuk Portal Penilaian:</span>
                   <p>
-                    Silakan gunakan <strong>Username atau Email</strong> serta <strong>Kata Sandi</strong> resmi yang telah diterbitkan oleh Sekretariat Panitia HSN 2026 melalui CMS Penilaian Juri.
+                    Silakan gunakan <strong>Username atau Email</strong> serta <strong>Kata Sandi</strong> resmi yang telah diterbitkan oleh Sekretariat Panitia HSN 2026.
                   </p>
                   <p className="text-[10px] text-white/50 pt-1">
-                    Bila belum menerima akun atau lupa kata sandi, silakan hubungi administrator panitia melalui tombol Buka CMS di bawah.
+                    Bila belum menerima akun atau lupa kata sandi, silakan hubungi sekretariat panitia.
                   </p>
                 </div>
               </div>
@@ -857,40 +803,9 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
           </div>
         </div>
 
-        {/* Footer Link & Connection directly to CMS PENILAIAN JURI */}
+        {/* Support Contact */}
         <div className="max-w-xl mx-auto w-full z-10 pt-4 pb-2 space-y-3">
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-[#006B4F]/30 via-[#031525] to-[#021c27] border border-emerald-500/40 text-center flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xl backdrop-blur-md">
-            <div className="flex items-center gap-3 text-left">
-              <div className="w-10 h-10 rounded-xl bg-[#006B4F] flex items-center justify-center text-[#F2C96D] shrink-0 shadow-md">
-                <ShieldCheck className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-black uppercase tracking-wider text-[#00D9F5]">
-                    SISTEM TERINTEGRASI PANITIA
-                  </span>
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                </div>
-                <div className="text-xs text-[#DDE7E8] font-medium">
-                  Portal Penilaian Juri ⇄ CMS Penilaian Juri
-                </div>
-              </div>
-            </div>
-
-            {onOpenCMS && (
-              <button
-                type="button"
-                onClick={onOpenCMS}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#006B4F] via-[#008F72] to-[#00D9F5] hover:opacity-95 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all shrink-0 border border-emerald-400/40"
-                title="Buka CMS Penilaian Juri Panitia (Kelola Juri, Kriteria & Rekap Nilai)"
-              >
-                <Shield className="w-4 h-4 text-[#F2C96D]" />
-                <span>Buka CMS Penilaian Juri</span>
-              </button>
-            )}
-          </div>
-
-          <div className="text-center text-[11px] text-white/50">
+          <div className="text-center text-xs text-white/60">
             Mengalami kendala akun dewan juri? Hubungi Panitia Sekretariat HSN di{' '}
             <a
               href="https://wa.me/6285731194085"
@@ -970,18 +885,6 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                 <span>Supabase Live</span>
               </span>
-            )}
-
-            {onOpenCMS && (
-              <button
-                onClick={onOpenCMS}
-                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#006B4F]/50 to-[#008F72]/50 hover:from-[#006B4F] hover:to-[#008F72] border border-emerald-400/50 text-emerald-200 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
-                title="Buka CMS Penilaian Juri Panitia (Kelola Juri, Kriteria & Rekap Nilai)"
-              >
-                <Shield className="w-3.5 h-3.5 text-[#F2C96D]" />
-                <span className="hidden sm:inline">CMS Penilaian Juri</span>
-                <span className="sm:hidden">CMS</span>
-              </button>
             )}
 
             {/* Institution Badge */}
@@ -1148,21 +1051,9 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
                         <>Belum ada penugasan dewan juri yang dibuat di CMS Penilaian Juri. Silakan buka CMS Penilaian Juri untuk menambahkan penugasan dewan juri.</>
                       )
                     ) : (
-                      <>Sekretariat Utama belum memasukkan nama Anda pada penugasan cabang lomba di CMS Penilaian Juri. Silakan hubungi panitia melalui CMS Penilaian Juri.</>
+                      <>Sekretariat Utama belum memasukkan nama Anda pada penugasan cabang lomba. Silakan hubungi sekretariat panitia.</>
                     )}
                   </p>
-                  {onOpenCMS && (
-                    <div className="pt-2">
-                      <button
-                        type="button"
-                        onClick={onOpenCMS}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:opacity-95 text-white text-xs font-bold transition-all shadow-md active:scale-95 border border-emerald-400/40"
-                      >
-                        <Shield className="w-4 h-4 text-[#F2C96D]" />
-                        <span>Buka CMS Penilaian Juri</span>
-                      </button>
-                    </div>
-                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -1265,18 +1156,6 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
                   <ArrowLeft className="w-3.5 h-3.5" />
                   <span>Kembali ke Daftar Lomba</span>
                 </button>
-
-                {onOpenCMS && (
-                  <button
-                    type="button"
-                    onClick={onOpenCMS}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#006B4F]/60 to-[#008F72]/60 hover:from-[#006B4F] hover:to-[#008F72] border border-emerald-400/50 text-xs font-bold text-emerald-200 hover:text-white transition-all shadow-md active:scale-95"
-                    title="Buka CMS Penilaian Juri Panitia"
-                  >
-                    <Shield className="w-3.5 h-3.5 text-[#F2C96D]" />
-                    <span>CMS Penilaian Juri</span>
-                  </button>
-                )}
               </div>
 
               {/* Mode Anonim Toggle (Requested for unbiased scoring) */}
@@ -1587,18 +1466,6 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
                   <ArrowLeft className="w-3.5 h-3.5" />
                   <span>Kembali ke Daftar Peserta</span>
                 </button>
-
-                {onOpenCMS && (
-                  <button
-                    type="button"
-                    onClick={onOpenCMS}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#006B4F]/60 to-[#008F72]/60 hover:from-[#006B4F] hover:to-[#008F72] border border-emerald-400/50 text-xs font-bold text-emerald-200 hover:text-white transition-all shadow-md active:scale-95"
-                    title="Buka CMS Penilaian Juri Panitia"
-                  >
-                    <Shield className="w-3.5 h-3.5 text-[#F2C96D]" />
-                    <span>CMS Penilaian Juri</span>
-                  </button>
-                )}
               </div>
 
               {/* Prev / Next Nav Buttons */}
@@ -1977,7 +1844,7 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
         )}
       </main>
 
-      {/* Footer Portal Juri (Terhubung langsung secara real-time ke CMS Penilaian Juri) */}
+      {/* Footer Portal Juri */}
       <footer className="mt-auto bg-[#031525] border-t border-white/10 px-4 sm:px-8 py-4">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
           <div className="flex items-center gap-3">
@@ -1987,23 +1854,11 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
             </div>
             <span className="text-white/30 hidden sm:inline">•</span>
             <span className="text-[#DDE7E8]/70 hidden sm:inline">
-              Terhubung langsung secara real-time ke CMS Penilaian Juri
+              Sistem Penilaian Resmi Festival Hari Santri Nasional 2026
             </span>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            {onOpenCMS && (
-              <button
-                type="button"
-                onClick={onOpenCMS}
-                className="px-3.5 py-1.5 rounded-xl bg-[#006B4F]/50 hover:bg-[#006B4F] border border-emerald-500/50 text-emerald-200 hover:text-white font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
-                title="Buka CMS Penilaian Juri Panitia (Kelola Juri, Kriteria & Rekap Nilai)"
-              >
-                <Shield className="w-3.5 h-3.5 text-[#F2C96D]" />
-                <span>Buka CMS Penilaian Juri</span>
-              </button>
-            )}
-
             <button
               type="button"
               onClick={onBackToMain}
@@ -2123,24 +1978,6 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
                 </button>
               </div>
             </form>
-
-            {/* Link Terintegrasi ke CMS Penilaian Juri */}
-            {onOpenCMS && (
-              <div className="pt-3 border-t border-white/10 text-center">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowInternalAuthModal(false);
-                    onOpenCMS();
-                  }}
-                  className="text-xs text-[#F2C96D] hover:underline font-bold inline-flex items-center gap-1.5"
-                  title="Buka CMS Penilaian Juri Panitia"
-                >
-                  <Shield className="w-3.5 h-3.5 text-[#F2C96D]" />
-                  <span>Buka CMS Penilaian Juri (Panitia)</span>
-                </button>
-              </div>
-            )}
           </div>
         </div>
       )}
