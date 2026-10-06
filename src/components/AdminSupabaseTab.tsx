@@ -48,6 +48,11 @@ import {
   saveRegisteredAdminUsers, 
   isUserDeleted 
 } from '../data/initialUsers';
+import {
+  syncAllJuryDataToSupabase,
+  fetchAllJuryDataFromSupabase,
+  JURY_SYSTEM_SETUP_SQL
+} from '../lib/juryService';
 
 export const WORK_SUBMISSION_SETUP_SQL = `-- ==============================================================================
 -- SKRIP TABEL & KOLOM APLOUD KARYA PESERTA: SUPABASE DATABASE
@@ -407,6 +412,10 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
   const [showCategorySqlModal, setShowCategorySqlModal] = useState(false);
   const [showPurgeSqlModal, setShowPurgeSqlModal] = useState(false);
   const [purgingMocks, setPurgingMocks] = useState(false);
+  const [syncingJury, setSyncingJury] = useState(false);
+  const [fetchingJury, setFetchingJury] = useState(false);
+  const [copiedJurySql, setCopiedJurySql] = useState(false);
+  const [showJurySqlModal, setShowJurySqlModal] = useState(false);
   const [showSqlViewer, setShowSqlViewer] = useState(false);
   const [pingTesting, setPingTesting] = useState(false);
   const [pingResult, setPingResult] = useState<string | null>(null);
@@ -538,6 +547,43 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
     setCopiedCategorySql(true);
     notify('Skrip SQL perbaikan kategori PAUD/RA/TK, PAGAR NUSA & GURU disalin! Jalankan di SQL Editor Supabase.');
     setTimeout(() => setCopiedCategorySql(false), 4000);
+  };
+
+  const handleCopyJurySql = () => {
+    navigator.clipboard.writeText(JURY_SYSTEM_SETUP_SQL);
+    setCopiedJurySql(true);
+    notify('Skrip SQL Sistem Penilaian Dewan Juri disalin! Jalankan di SQL Editor Supabase.');
+    setTimeout(() => setCopiedJurySql(false), 4000);
+  };
+
+  const handleSyncJuryToSupabase = async () => {
+    if (!isConnected) {
+      notify('Harap hubungkan ke Supabase terlebih dahulu.');
+      return;
+    }
+    setSyncingJury(true);
+    try {
+      const res = await syncAllJuryDataToSupabase();
+      notify(res.message);
+      setStatusMessage(res.message);
+    } catch (err: any) {
+      notify(`Gagal sinkronisasi data juri: ${err?.message || err}`);
+    } finally {
+      setSyncingJury(false);
+    }
+  };
+
+  const handleFetchJuryFromSupabase = async () => {
+    setFetchingJury(true);
+    try {
+      const res = await fetchAllJuryDataFromSupabase();
+      notify(res.message);
+      setStatusMessage(res.message);
+    } catch (err: any) {
+      notify(`Gagal memuat data juri: ${err?.message || err}`);
+    } finally {
+      setFetchingJury(false);
+    }
   };
 
   const handleSyncToSupabase = async () => {

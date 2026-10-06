@@ -62,8 +62,11 @@ import {
   validateCriteriaWeights,
   resolveCompetition,
   normalizeCompId,
-  isInitialMockParticipant
+  isInitialMockParticipant,
+  initJuryRealtimeSubscription,
+  isAssignmentForJury
 } from '../../lib/juryService';
+import { isSupabaseConnected } from '../../lib/supabaseClient';
 
 interface JuryPortalViewProps {
   onBackToMain: () => void;
@@ -106,6 +109,8 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
   const [assignments, setAssignments] = useState<JuryAssignment[]>([]);
   const [criteria, setCriteria] = useState<ScoringCriterion[]>([]);
   const [juryScores, setJuryScores] = useState<JuryScore[]>([]);
+  const [availableJuries, setAvailableJuries] = useState<UserProfile[]>([]);
+  const [selectedSupervisorJuryId, setSelectedSupervisorJuryId] = useState<string>('ALL');
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [copyToast, setCopyToast] = useState<string | null>(null);
 
@@ -121,23 +126,25 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
   const [participantFilter, setParticipantFilter] = useState<'ALL' | 'UNSCORED' | 'DRAFT' | 'SUBMITTED' | 'LOCKED'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Load available juries for supervisor preview
+  useEffect(() => {
+    getJuryProfiles().then(setAvailableJuries).catch(() => {});
+  }, []);
+
   // Load assignments and scores when logged in
   const refreshJuryData = async (juryId: string) => {
     setIsLoadingData(true);
     try {
       const allAssigns = await getJuryAssignments(competitions);
+      const activeProf = session?.profile || profile;
       const isSuper =
-        profile?.role === 'super_admin' ||
-        profile?.role === 'admin' ||
+        activeProf?.role === 'super_admin' ||
+        activeProf?.role === 'admin' ||
         juryId.startsWith('user-') ||
         juryId.startsWith('admin');
 
-      // Jika supervisor CMS, tampilkan penugasan aktif yang ada di CMS
-      // Jika dewan juri, tampilkan HANYA cabang lomba yang ditugaskan kepada juri ini di CMS
-      const myAssigns = isSuper
-        ? allAssigns.filter((a) => a.isActive)
-        : allAssigns.filter((a) => a.juryId === juryId && a.isActive);
-      setAssignments(myAssigns);
+      // Simpan seluruh penugasan aktif dari CMS (Supabase/local)
+      setAssignments(allAssigns.filter((a) => a.isActive));
 
       const allScores = await getJuryScores(undefined, isSuper ? undefined : juryId);
       setJuryScores(allScores);
@@ -152,7 +159,7 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
     if (session?.profile?.id) {
       refreshJuryData(session.profile.id);
     }
-  }, [session]);
+  }, [session, profile]);
 
   // Load criteria when competition is selected
   useEffect(() => {
@@ -161,12 +168,20 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
     }
   }, [selectedCompId]);
 
-  // Real-time synchronization listener (connected directly to CMS Penilaian Juri)
+  // Real-time synchronization listener (connected directly to Supabase Realtime & CMS Penilaian Juri)
   useEffect(() => {
-    const handleJuryUpdated = () => {
-      if (session?.profile?.id) {
-        refreshJuryData(session.profile.id);
+    const handleJuryUpdated = (e?: any) => {
+      // Jika event berisi sesi baru (misal pergantian juri dari CMS)
+      if (e?.detail?.key === 'session' && e.detail.session) {
+        setSession(e.detail.session);
+        setProfile(e.detail.session.profile);
       }
+
+      const activeProfId = session?.profile?.id || profile?.id;
+      if (activeProfId) {
+        refreshJuryData(activeProfId);
+      }
+      getJuryProfiles().then(setAvailableJuries).catch(() => {});
       if (selectedCompId) {
         getScoringCriteria(selectedCompId).then(setCriteria);
       }
@@ -176,13 +191,20 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
         handleJuryUpdated();
       }
     };
-    window.addEventListener('hsn2026_jury_data_updated', handleJuryUpdated);
+    window.addEventListener('hsn2026_jury_data_updated', handleJuryUpdated as any);
     window.addEventListener('storage', handleStorage);
+
+    // Aktifkan Supabase Realtime channel
+    const unsubscribeRealtime = initJuryRealtimeSubscription(() => {
+      handleJuryUpdated();
+    });
+
     return () => {
-      window.removeEventListener('hsn2026_jury_data_updated', handleJuryUpdated);
+      window.removeEventListener('hsn2026_jury_data_updated', handleJuryUpdated as any);
       window.removeEventListener('storage', handleStorage);
+      unsubscribeRealtime();
     };
-  }, [session, selectedCompId]);
+  }, [session, profile, selectedCompId, competitions]);
 
   // Validasi status juri langsung (cek apakah belum login atau sesi kadaluwarsa)
   useEffect(() => {
@@ -324,7 +346,51 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
       return [];
     }
 
-    const assigned = competitions.filter((c) => {
+    // 1. Jika dewan juri biasa (bukan Admin CMS):
+    // HANYA tampilkan cabang lomba yang secara eksplisit ditugaskan kepada akun juri ini di CMS!
+    if (!isAdminUser) {
+      return competitions.filter((c) => {
+        const cNorm = normalizeCompId(c.id).toLowerCase();
+        return assignments.some((a) => {
+          if (!a.isActive) return false;
+          if (!isAssignmentForJury(a, profile)) return false;
+
+          const aNorm = normalizeCompId(a.competitionId).toLowerCase();
+          return (
+            a.competitionId === c.id ||
+            aNorm === cNorm ||
+            (a.competitionTitle && a.competitionTitle.toLowerCase() === c.title.toLowerCase()) ||
+            resolveCompetition(competitions, a.competitionId, a.competitionTitle)?.id === c.id
+          );
+        });
+      });
+    }
+
+    // 2. Jika Admin / Supervisor CMS:
+    // Jika memilih juri tertentu dari dropdown pratinjau supervisi:
+    if (selectedSupervisorJuryId !== 'ALL') {
+      const targetJury = availableJuries.find((j) => j.id === selectedSupervisorJuryId);
+      if (!targetJury) return [];
+      return competitions.filter((c) => {
+        const cNorm = normalizeCompId(c.id).toLowerCase();
+        return assignments.some((a) => {
+          if (!a.isActive) return false;
+          if (!isAssignmentForJury(a, targetJury)) return false;
+
+          const aNorm = normalizeCompId(a.competitionId).toLowerCase();
+          return (
+            a.competitionId === c.id ||
+            aNorm === cNorm ||
+            (a.competitionTitle && a.competitionTitle.toLowerCase() === c.title.toLowerCase()) ||
+            resolveCompetition(competitions, a.competitionId, a.competitionTitle)?.id === c.id
+          );
+        });
+      });
+    }
+
+    // 3. Jika Admin dalam mode "Semua Penugasan Aktif":
+    // HANYA tampilkan cabang lomba yang benar-benar memiliki penugasan dewan juri aktif di CMS!
+    return competitions.filter((c) => {
       const cNorm = normalizeCompId(c.id).toLowerCase();
       return assignments.some((a) => {
         if (!a.isActive) return false;
@@ -337,9 +403,21 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
         );
       });
     });
+  }, [competitions, assignments, profile, isAdminUser, selectedSupervisorJuryId, availableJuries]);
 
-    return assigned;
-  }, [competitions, assignments, profile]);
+  // Jika cabang lomba yang dipilih dihapus penugasannya di CMS / Supabase secara realtime, kembalikan ke dashboard
+  useEffect(() => {
+    if (selectedCompId) {
+      const exists = assignedCompetitions.some((c) => c.id === selectedCompId);
+      if (!exists) {
+        setSelectedCompId(null);
+        setSelectedParticipantId(null);
+        if (currentView !== 'dashboard') {
+          setCurrentView('dashboard');
+        }
+      }
+    }
+  }, [assignedCompetitions, selectedCompId, currentView]);
 
   // Participants in selected competition (Hanya peserta riil, bukan mock/dummy)
   const currentCompParticipants = useMemo(() => {
@@ -847,6 +925,16 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
                 <span className="text-xs text-white font-bold hidden sm:inline">
                   Festival HSN 2026
                 </span>
+                {isSupabaseConnected() ? (
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span>Live Real-time</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/10 text-white/50 border border-white/10">
+                    <span>Lokal</span>
+                  </span>
+                )}
               </div>
               <h1 className="text-sm sm:text-base font-extrabold text-white">
                 {profile.fullName}
@@ -871,6 +959,13 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
               <Copy className="w-3.5 h-3.5 text-[#F2C96D]" />
               <span className="hidden lg:inline">Salin Link</span>
             </button>
+
+            {isSupabaseConnected() && (
+              <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>Supabase Live</span>
+              </span>
+            )}
 
             {onOpenCMS && (
               <button
@@ -909,6 +1004,44 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
         {/* SUBVIEW 1: JURY DASHBOARD */}
         {currentView === 'dashboard' && (
           <div className="space-y-6">
+            {/* Mode Supervisi CMS (Jika Admin/Panitia Membuka Portal Juri) */}
+            {isAdminUser && (
+              <div className="p-4 rounded-2xl bg-[#020e19] border border-emerald-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center shrink-0 border border-emerald-500/30">
+                    <ShieldCheck className="w-4 h-4 text-[#F2C96D]" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-emerald-300 font-bold uppercase tracking-wider block">
+                      Mode Supervisi Administrator CMS Penilaian Juri
+                    </span>
+                    <span className="text-xs text-white/80">
+                      Tersinkronisasi Real-Time dengan Database Supabase & Penugasan CMS
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <label className="text-[11px] text-white/60 font-medium">Pratinjau Juri:</label>
+                  <select
+                    value={selectedSupervisorJuryId}
+                    onChange={(e) => setSelectedSupervisorJuryId(e.target.value)}
+                    className="px-3 py-1.5 rounded-xl bg-[#031525] border border-white/20 text-xs text-white focus:border-[#00D9F5] outline-none max-w-[260px] truncate"
+                  >
+                    <option value="ALL">Semua Cabang Terisi Juri ({assignments.length} penugasan aktif)</option>
+                    {availableJuries.map((j) => {
+                      const count = assignments.filter((a) => isAssignmentForJury(a, j) && a.isActive).length;
+                      return (
+                        <option key={j.id} value={j.id}>
+                          {j.fullName} ({count === 0 ? 'Belum ditugaskan' : `${count} lomba`})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              </div>
+            )}
+
             {/* Welcome Banner & Overall Progress */}
             <div className="rounded-3xl p-6 sm:p-8 bg-gradient-to-r from-[#006B4F]/40 via-[#031525] to-[#022238] border border-[#00D9F5]/30 relative overflow-hidden shadow-2xl">
               <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -922,9 +1055,17 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
                   </h2>
                   <p className="text-xs sm:text-sm text-[#DDE7E8]/80 mt-1 max-w-2xl leading-relaxed">
                     {assignedCompetitions.length > 0 ? (
-                      <>Anda ditugaskan pada <strong className="text-[#F2C96D]">{assignedCompetitions.length} cabang perlombaan</strong>. Mohon berikan penilaian secara objektif, amanah, dan berlandaskan kriteria teknis yang telah ditetapkan panitia.</>
+                      <>
+                        {isAdminUser
+                          ? `Mode Supervisi CMS Panitia: Menampilkan ${assignedCompetitions.length} cabang perlombaan yang memiliki penugasan dewan juri aktif di CMS.`
+                          : <>Anda ditugaskan pada <strong className="text-[#F2C96D]">{assignedCompetitions.length} cabang perlombaan</strong>. Mohon berikan penilaian secara objektif, amanah, dan berlandaskan kriteria teknis yang telah ditetapkan panitia.</>}
+                      </>
                     ) : (
-                      <>Saat ini belum ada cabang perlombaan yang ditugaskan kepada akun Anda di CMS Penilaian Juri. Penugasan dewan juri dikelola secara resmi oleh panitia melalui CMS.</>
+                      <>
+                        {isAdminUser
+                          ? 'Saat ini belum ada cabang perlombaan yang ditugaskan kepada dewan juri di CMS Penilaian Juri. Penugasan dewan juri dikelola melalui CMS Penilaian Juri.'
+                          : 'Saat ini belum ada cabang perlombaan yang ditugaskan kepada akun Anda di CMS Penilaian Juri. Penugasan dewan juri dikelola secara resmi oleh panitia melalui CMS.'}
+                      </>
                     )}
                   </p>
                 </div>
@@ -995,9 +1136,15 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
                   <FolderOpen className="w-12 h-12 text-white/30 mx-auto mb-1" />
                   <h4 className="text-base font-bold text-white">Belum Ada Penugasan Lomba</h4>
                   <p className="text-xs text-white/60 max-w-md mx-auto leading-relaxed">
-                    {isAdminUser
-                      ? 'Belum ada cabang lomba yang ditugaskan kepada dewan juri di CMS Penilaian Juri. Silakan buka CMS Penilaian Juri untuk menambahkan penugasan dewan juri.'
-                      : 'Sekretariat Utama belum memasukkan nama Anda pada penugasan cabang lomba. Silakan hubungi admin panitia melalui CMS Penilaian Juri.'}
+                    {isAdminUser ? (
+                      selectedSupervisorJuryId !== 'ALL' ? (
+                        <>Dewan juri ini belum ditugaskan pada cabang lomba manapun di CMS Penilaian Juri. Silakan buka tab <strong>Penugasan Juri</strong> di CMS untuk memberikan penugasan.</>
+                      ) : (
+                        <>Belum ada penugasan dewan juri yang dibuat di CMS Penilaian Juri. Silakan buka CMS Penilaian Juri untuk menambahkan penugasan dewan juri.</>
+                      )
+                    ) : (
+                      <>Sekretariat Utama belum memasukkan nama Anda pada penugasan cabang lomba di CMS Penilaian Juri. Silakan hubungi panitia melalui CMS Penilaian Juri.</>
+                    )}
                   </p>
                   {onOpenCMS && (
                     <div className="pt-2">

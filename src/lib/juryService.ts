@@ -19,10 +19,10 @@ import {
 } from '../data/initialJuryData';
 import { COMPETITIONS } from '../data/initialData';
 
-// Storage keys for local fallback (v6: strictly synchronized with CMS Panitia Cabang Lomba)
+// Storage keys for local fallback (v7: strictly synchronized with CMS Panitia Cabang Lomba & Supabase Realtime)
 export const STORAGE_PROFILES = 'hsn2026_jury_profiles_v4';
 const STORAGE_CRITERIA = 'hsn2026_scoring_criteria_v4';
-const STORAGE_ASSIGNMENTS = 'hsn2026_jury_assignments_v6';
+const STORAGE_ASSIGNMENTS = 'hsn2026_jury_assignments_v7';
 const STORAGE_SCORES = 'hsn2026_jury_scores_v4';
 const STORAGE_RESULTS = 'hsn2026_competition_results_v4';
 const STORAGE_AUDIT = 'hsn2026_jury_audit_logs_v4';
@@ -45,7 +45,17 @@ export function getDeletedCriteriaIds(): string[] {
 export const isMockAssignment = (a: any): boolean => {
   if (!a) return false;
   const id = String(a.id || '').toLowerCase();
-  return /^assign-0\d\d$/.test(id) || id.includes('mock') || id.includes('dummy');
+  const jId = String(a.juryId || a.jury_id || '').toLowerCase();
+  const cId = String(a.competitionId || a.competition_id || '').toLowerCase();
+  return (
+    /^assign-0\d\d$/.test(id) ||
+    id.includes('mock') ||
+    id.includes('dummy') ||
+    jId.includes('mock') ||
+    jId.includes('dummy') ||
+    cId.includes('mock') ||
+    cId.includes('dummy')
+  );
 };
 
 // Cleanup any old legacy storage keys to eliminate outdated / mismatched competitions and purge dummy scores
@@ -59,6 +69,7 @@ if (typeof window !== 'undefined') {
       'hsn2026_jury_assignments_v3',
       'hsn2026_jury_assignments_v4',
       'hsn2026_jury_assignments_v5',
+      'hsn2026_jury_assignments_v6',
     ];
     legacyKeys.forEach((k) => localStorage.removeItem(k));
 
@@ -205,6 +216,116 @@ export const isMockScore = (s: JuryScore): boolean => {
   );
 };
 
+/**
+ * Helper authoritative untuk memeriksa apakah penugasan (assignment) cocok dengan dewan juri tertentu.
+ * Menjamin konsistensi 100% antara CMS PENILAIAN JURI dan PORTAL JURI (/juri).
+ * Menghandle pencocokan ID langsung, normalisasi alias (misal juri-001 <-> jury-001), email, dan username.
+ */
+export function isAssignmentForJury(
+  assignment: JuryAssignment,
+  jury: { id?: string; email?: string; username?: string; role?: string } | null
+): boolean {
+  if (!assignment || !jury) return false;
+  if (!assignment.isActive) return false;
+
+  const aJuryId = (assignment.juryId || '').toLowerCase().trim();
+  const jId = (jury.id || '').toLowerCase().trim();
+
+  // 1. Direct ID match
+  if (aJuryId && jId && aJuryId === jId) return true;
+
+  // 2. Normalized alias e.g. juri-001 vs jury-001
+  const normA = aJuryId.replace(/^juri-/, 'jury-');
+  const normJ = jId.replace(/^juri-/, 'jury-');
+  if (normA && normJ && normA === normJ) return true;
+
+  // 3. Email match (case-insensitive)
+  if (jury.email && assignment.juryEmail) {
+    if (jury.email.toLowerCase().trim() === assignment.juryEmail.toLowerCase().trim()) return true;
+  }
+
+  // 4. Username match
+  if (jury.username) {
+    const cleanUser = jury.username.toLowerCase().trim();
+    if (aJuryId === cleanUser || normA === cleanUser) return true;
+  }
+
+  return false;
+}
+
+// Multi-subscriber registry untuk Supabase Realtime channel agar CMS dan Portal tidak saling memutus koneksi
+type RealtimeCallback = (tableName: string, payload: any) => void;
+const realtimeListeners = new Set<RealtimeCallback>();
+let activeRealtimeChannel: any = null;
+
+export function initJuryRealtimeSubscription(onUpdate?: RealtimeCallback): () => void {
+  if (onUpdate) {
+    realtimeListeners.add(onUpdate);
+  }
+
+  const supabase = getSupabaseClient();
+  if (!isSupabaseConnected() || !supabase) {
+    return () => {
+      if (onUpdate) realtimeListeners.delete(onUpdate);
+    };
+  }
+
+  try {
+    if (!activeRealtimeChannel) {
+      const channelName = 'jury_realtime_hub';
+      const channel = supabase.channel(channelName);
+
+      const handleTableChange = (table: string, payload: any) => {
+        if (typeof window !== 'undefined') {
+          try {
+            window.dispatchEvent(
+              new CustomEvent('hsn2026_jury_data_updated', {
+                detail: { key: table, payload, source: 'supabase_realtime', timestamp: Date.now() },
+              })
+            );
+          } catch {}
+        }
+        realtimeListeners.forEach((listener) => {
+          try {
+            listener(table, payload);
+          } catch (e) {
+            console.warn('Realtime listener error:', e);
+          }
+        });
+      };
+
+      channel
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'jury_assignments' }, (p) => handleTableChange('jury_assignments', p))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, (p) => handleTableChange('jury_profiles', p))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'scoring_criteria' }, (p) => handleTableChange('scoring_criteria', p))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'jury_scores' }, (p) => handleTableChange('jury_scores', p))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'competition_results' }, (p) => handleTableChange('competition_results', p))
+        .on('broadcast', { event: 'jury_updated' }, (p) => {
+          const key = p?.payload?.key || 'all';
+          handleTableChange(key, p?.payload);
+        })
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            // Connected to Supabase Realtime
+          }
+        });
+
+      activeRealtimeChannel = channel;
+    }
+
+    return () => {
+      if (onUpdate) {
+        realtimeListeners.delete(onUpdate);
+      }
+    };
+  } catch (err) {
+    console.warn('Error subscribing to jury realtime:', err);
+    return () => {
+      if (onUpdate) realtimeListeners.delete(onUpdate);
+    };
+  }
+}
+
 export function notifyJuryDataChanged(key?: string, data?: any): void {
   if (typeof window !== 'undefined') {
     try {
@@ -215,6 +336,17 @@ export function notifyJuryDataChanged(key?: string, data?: any): void {
       );
     } catch {}
   }
+
+  // Broadcast ke seluruh tab & perangkat lain via Supabase Realtime
+  try {
+    if (activeRealtimeChannel) {
+      activeRealtimeChannel.send({
+        type: 'broadcast',
+        event: 'jury_updated',
+        payload: { key, timestamp: Date.now() },
+      });
+    }
+  } catch {}
 }
 
 function getLocal<T>(key: string, defaultVal: T): T {
@@ -557,10 +689,13 @@ export async function saveJuryProfile(
         id: finalProfile.id,
         full_name: finalProfile.fullName,
         email: finalProfile.email,
+        username: finalProfile.username,
+        password: finalProfile.password,
         role: finalProfile.role,
         institution: finalProfile.institution,
         phone: finalProfile.phone,
         is_active: finalProfile.isActive,
+        updated_at: finalProfile.updatedAt,
       });
     } catch (err) {
       console.warn('Supabase upsert profile note:', err);
@@ -593,6 +728,7 @@ export async function toggleJuryStatus(
       await supabase.from('profiles').update({ is_active: isActive }).eq('id', juryId);
     } catch {}
   }
+  notifyJuryDataChanged('jury_profiles', updated);
   return true;
 }
 
@@ -637,6 +773,8 @@ export async function deleteJuryProfile(
     } catch {}
   }
 
+  notifyJuryDataChanged('jury_profiles', updated);
+  notifyJuryDataChanged('jury_assignments', updatedAssignments);
   return true;
 }
 
@@ -662,70 +800,113 @@ export function getAvailableCompetitions(): Competition[] {
 // ==============================================================================
 export async function getJuryAssignments(customCompetitions?: Competition[]): Promise<JuryAssignment[]> {
   let rawList: JuryAssignment[] = [];
+  let fetchedFromRemote = false;
   const supabase = getSupabaseClient();
+
   if (isSupabaseConnected() && supabase) {
     try {
-      const { data, error } = await supabase
-        .from('jury_assignments')
-        .select(`
-          id,
-          jury_id,
-          competition_id,
-          assigned_by,
-          is_active,
-          created_at,
-          profiles:jury_id (full_name, email, institution),
-          competitions:competition_id (title, category)
-        `)
-        .eq('is_active', true);
+      let data: any[] | null = null;
+      let error: any = null;
 
-      if (!error && data && data.length > 0) {
+      // 1. Coba query lengkap dengan relasi profiles dan competitions jika tersedia
+      try {
+        const res = await supabase
+          .from('jury_assignments')
+          .select(`
+            id,
+            jury_id,
+            competition_id,
+            assigned_by,
+            is_active,
+            created_at,
+            profiles:jury_id (full_name, email, institution),
+            competitions:competition_id (title, category)
+          `)
+          .eq('is_active', true);
+        if (!res.error && res.data) {
+          data = res.data;
+        } else {
+          error = res.error;
+        }
+      } catch (e) {
+        error = e;
+      }
+
+      // 2. Jika join error (foreign key belum terbentuk di Supabase), fallback ke query langsung tanpa join
+      if (error || !data) {
+        const plainRes = await supabase
+          .from('jury_assignments')
+          .select('*')
+          .eq('is_active', true);
+        if (!plainRes.error && plainRes.data) {
+          data = plainRes.data;
+          error = null;
+        }
+      }
+
+      if (!error && data !== null) {
+        fetchedFromRemote = true;
         rawList = data.map((d: any) => ({
           id: d.id,
-          juryId: d.jury_id,
-          competitionId: d.competition_id,
-          assignedBy: d.assigned_by,
-          isActive: d.is_active,
-          createdAt: d.created_at,
-          juryName: d.profiles?.full_name,
-          juryEmail: d.profiles?.email,
-          juryInstitution: d.profiles?.institution,
-          competitionTitle: d.competitions?.title,
-          competitionCategory: d.competitions?.category,
+          juryId: d.jury_id || d.juryId,
+          competitionId: normalizeCompId(d.competition_id || d.competitionId),
+          assignedBy: d.assigned_by || d.assignedBy || 'Admin CMS',
+          isActive: d.is_active !== undefined ? d.is_active : (d.isActive ?? true),
+          createdAt: d.created_at || d.createdAt,
+          juryName: d.jury_name || d.juryName || d.profiles?.full_name,
+          juryEmail: d.jury_email || d.juryEmail || d.profiles?.email,
+          juryInstitution: d.jury_institution || d.juryInstitution || d.profiles?.institution,
+          competitionTitle: d.competition_title || d.competitionTitle || d.competitions?.title,
+          competitionCategory: d.competition_category || d.competitionCategory || d.competitions?.category,
         }));
       }
-    } catch {}
+    } catch (err) {
+      console.warn('Gagal membaca penugasan dari Supabase:', err);
+    }
   }
 
-  // Gabungkan penugasan remote Supabase dan local storage agar penugasan juri CMS selalu sinkron
-  const localAssignments = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, INITIAL_JURY_ASSIGNMENTS);
-  const combinedAssignMap = new Map<string, JuryAssignment>();
-
-  for (const r of rawList) {
-    const key = `${r.juryId}:${r.competitionId}`;
-    combinedAssignMap.set(key, r);
+  // Jika remote Supabase aktif dan berhasil di-fetch:
+  // Data Supabase adalah SINGLE SOURCE OF TRUTH (Jika kosong di Supabase, jangan munculkan penugasan phantom!)
+  if (fetchedFromRemote) {
+    if (rawList.length === 0) {
+      setLocal(STORAGE_ASSIGNMENTS, []);
+      return [];
+    }
+  } else {
+    // Fallback offline: gunakan local storage (default kosong jika belum ada penugasan di CMS)
+    const localAssignments = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, []);
+    rawList = localAssignments;
+    if (!rawList || rawList.length === 0) {
+      return [];
+    }
   }
-  for (const l of localAssignments) {
-    const key = `${l.juryId}:${l.competitionId}`;
-    const existing = combinedAssignMap.get(key);
-    combinedAssignMap.set(key, { ...existing, ...l });
-  }
 
-  rawList = Array.from(combinedAssignMap.values()).filter((a) => !isMockAssignment(a));
+  // Bersihkan penugasan mock/dummy
+  rawList = rawList.filter((a) => !isMockAssignment(a));
+  if (rawList.length === 0) {
+    setLocal(STORAGE_ASSIGNMENTS, []);
+    return [];
+  }
 
   // Filter out any explicitly deleted assignments and profiles
   const deletedAssignIds = new Set(getDeletedAssignmentIds());
   const deletedJuryIds = new Set(getDeletedProfileIds());
   rawList = rawList.filter((a) => !deletedAssignIds.has(a.id) && !deletedJuryIds.has(a.juryId));
+  if (rawList.length === 0) {
+    setLocal(STORAGE_ASSIGNMENTS, []);
+    return [];
+  }
 
   // Active competitions authoritative list from CMS Panitia
   const allComps = customCompetitions && customCompetitions.length > 0 ? customCompetitions : getAvailableCompetitions();
   const validCompMap = new Map(allComps.map((c) => [c.id, c]));
   const juries = getLocal<UserProfile[]>(STORAGE_PROFILES, INITIAL_JURY_PROFILES);
 
-  // Self-heal and strictly sanitize assignments: ONLY keep assignments that belong to valid competitions in CMS Panitia!
+  // Self-heal and strictly sanitize assignments: ONLY keep assignments that belong to valid competitions AND registered active juries!
   let normalizedList: JuryAssignment[] = rawList
     .map((a) => {
+      if (!a || !a.isActive) return null;
+
       // 1. Direct ID match first
       let comp = validCompMap.get(a.competitionId);
       // 2. Alias match if not found
@@ -740,18 +921,25 @@ export async function getJuryAssignments(customCompetitions?: Competition[]): Pr
       // If competition does not exist in CMS Panitia, drop this assignment!
       if (!comp) return null;
 
-      const jury = juries.find((j) => j.id === a.juryId);
+      // 4. Must match a registered active dewan juri (NO orphan / ghost / unassigned records allowed!)
+      const jury = juries.find((j) => isAssignmentForJury(a, j) && j.isActive && !deletedJuryIds.has(j.id));
+      if (!jury) return null;
+
       return {
-        ...a,
+        id: a.id || `assign-${jury.id}-${comp.id}`,
+        juryId: jury.id,
         competitionId: comp.id,
         competitionTitle: comp.title,
         competitionCategory: comp.category,
-        juryName: jury?.fullName || a.juryName,
-        juryEmail: jury?.email || a.juryEmail,
-        juryInstitution: jury?.institution || a.juryInstitution,
+        juryName: jury.fullName || a.juryName,
+        juryEmail: jury.email || a.juryEmail,
+        juryInstitution: jury.institution || a.juryInstitution,
+        assignedBy: a.assignedBy || 'Admin CMS',
+        isActive: true,
+        createdAt: a.createdAt || new Date().toISOString(),
       };
     })
-    .filter((a): a is NonNullable<typeof a> => a !== null);
+    .filter((a): a is NonNullable<typeof a> => a !== null) as JuryAssignment[];
 
   // Strictly deduplicate assignments by juryId + competitionId to avoid ghost duplicates
   const uniqueAssignMap = new Map<string, JuryAssignment>();
@@ -823,31 +1011,40 @@ export async function assignJuryToCompetition(
   const current = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, INITIAL_JURY_ASSIGNMENTS)
     .filter((a) => allComps.some((c) => c.id === a.competitionId));
 
+  const juries = await getJuryProfiles();
+  const matchedJury = juries.find((j) => (isAssignmentForJury({ juryId } as any, j) || j.id === juryId || j.email.toLowerCase() === juryId.toLowerCase()) && j.isActive);
+  if (!matchedJury) {
+    return { success: false, message: 'Dewan juri tidak ditemukan atau tidak aktif di CMS.' };
+  }
+  const canonicalJuryId = matchedJury.id;
+
   const exists = current.some((a) => {
-    return a.juryId === juryId && a.competitionId === effectiveCompId && a.isActive;
+    if (!a.isActive) return false;
+    const sameComp = a.competitionId === effectiveCompId || normalizeCompId(a.competitionId) === normalizeCompId(effectiveCompId);
+    if (!sameComp) return false;
+    return isAssignmentForJury(a, matchedJury);
   });
 
   if (exists) {
     return { success: false, message: 'Juri ini telah ditugaskan pada cabang lomba tersebut.' };
   }
 
-  const juries = await getJuryProfiles();
-  const matchedJury = juries.find((j) => j.id === juryId);
-
+  const assignmentId = `assign-${canonicalJuryId}-${effectiveCompId}`;
   const newAssignment: JuryAssignment = {
-    id: `assign-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-    juryId,
+    id: assignmentId,
+    juryId: canonicalJuryId,
     competitionId: effectiveCompId,
     isActive: true,
-    juryName: matchedJury?.fullName,
-    juryEmail: matchedJury?.email,
-    juryInstitution: matchedJury?.institution,
+    juryName: matchedJury.fullName,
+    juryEmail: matchedJury.email,
+    juryInstitution: matchedJury.institution,
     competitionTitle: effectiveCompTitle,
     competitionCategory: effectiveCompCat,
+    assignedBy: adminName,
     createdAt: new Date().toISOString(),
   };
 
-  const updated = [...current.filter((a) => !(a.juryId === juryId && a.competitionId === effectiveCompId)), newAssignment];
+  const updated = [...current.filter((a) => !(isAssignmentForJury(a, matchedJury) && a.competitionId === effectiveCompId)), newAssignment];
   setLocal(STORAGE_ASSIGNMENTS, updated);
 
   createAuditLog({
@@ -855,20 +1052,43 @@ export async function assignJuryToCompetition(
     entityType: 'jury_assignment',
     entityId: newAssignment.id,
     newValue: newAssignment,
-    notes: `Juri ${matchedJury?.fullName || juryId} ditugaskan pada lomba ${effectiveCompTitle} oleh: ${adminName}`,
+    notes: `Juri ${matchedJury.fullName} ditugaskan pada lomba ${effectiveCompTitle} oleh: ${adminName}`,
   });
 
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
     try {
-      await supabase.from('jury_assignments').upsert({
-        jury_id: juryId,
+      const payload = {
+        id: assignmentId,
+        jury_id: canonicalJuryId,
+        jury_name: matchedJury.fullName,
+        jury_email: matchedJury.email,
+        jury_institution: matchedJury.institution || '',
         competition_id: effectiveCompId,
+        competition_title: effectiveCompTitle,
+        competition_category: effectiveCompCat,
+        assigned_by: adminName,
         is_active: true,
-      }, { onConflict: 'jury_id,competition_id' });
-    } catch {}
+        created_at: newAssignment.createdAt,
+      };
+
+      // Coba upsert dengan primary key 'id'
+      const { error: upsertErr } = await supabase.from('jury_assignments').upsert(payload, { onConflict: 'id' });
+      if (upsertErr) {
+        // Fallback: hapus duplikat lama untuk kombinasi jury_id & competition_id lalu insert
+        await supabase
+          .from('jury_assignments')
+          .delete()
+          .eq('jury_id', canonicalJuryId)
+          .eq('competition_id', effectiveCompId);
+        await supabase.from('jury_assignments').insert(payload);
+      }
+    } catch (err) {
+      console.warn('Gagal menyimpan penugasan ke Supabase:', err);
+    }
   }
 
+  notifyJuryDataChanged('jury_assignments', updated);
   return { success: true };
 }
 
@@ -881,7 +1101,7 @@ export async function removeJuryAssignment(
   deletedAssignments.add(assignmentId);
   setLocal(STORAGE_DELETED_ASSIGNMENTS, Array.from(deletedAssignments));
 
-  const current = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, INITIAL_JURY_ASSIGNMENTS);
+  const current = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, []);
   const target = current.find((a) => a.id === assignmentId);
   const updated = current.filter((a) => a.id !== assignmentId);
   setLocal(STORAGE_ASSIGNMENTS, updated);
@@ -899,10 +1119,21 @@ export async function removeJuryAssignment(
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
     try {
+      // Hapus berdasarkan jury_id dan competition_id serta ID agar pasti terhapus di Supabase
+      if (target?.juryId && target?.competitionId) {
+        await supabase
+          .from('jury_assignments')
+          .delete()
+          .eq('jury_id', target.juryId)
+          .eq('competition_id', target.competitionId);
+      }
       await supabase.from('jury_assignments').delete().eq('id', assignmentId);
-    } catch {}
+    } catch (err) {
+      console.warn('Gagal menghapus penugasan di Supabase:', err);
+    }
   }
 
+  notifyJuryDataChanged('jury_assignments', updated);
   return true;
 }
 
@@ -938,9 +1169,15 @@ export async function removeAllAssignmentsForCompetition(
   if (isSupabaseConnected() && supabase) {
     try {
       await supabase.from('jury_assignments').delete().eq('competition_id', competitionId);
-    } catch {}
+      if (normTarget !== competitionId) {
+        await supabase.from('jury_assignments').delete().eq('competition_id', normTarget);
+      }
+    } catch (err) {
+      console.warn('Gagal menghapus penugasan lomba di Supabase:', err);
+    }
   }
 
+  notifyJuryDataChanged('jury_assignments', updated);
   return true;
 }
 
@@ -948,8 +1185,13 @@ export async function removeAllAssignmentsForJudge(
   juryId: string,
   adminName: string = 'Admin'
 ): Promise<boolean> {
+  const normJ = juryId.toLowerCase().trim();
+  const normAlias = normJ.replace(/^juri-/, 'jury-');
   const current = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, []);
-  const isMatch = (a: JuryAssignment) => a.juryId === juryId;
+  const isMatch = (a: JuryAssignment) => {
+    const aJId = (a.juryId || '').toLowerCase().trim();
+    return aJId === normJ || aJId === normAlias || aJId.replace(/^juri-/, 'jury-') === normAlias;
+  };
   const removed = current.filter(isMatch);
   const updated = current.filter((a) => !isMatch(a));
   setLocal(STORAGE_ASSIGNMENTS, updated);
@@ -970,9 +1212,47 @@ export async function removeAllAssignmentsForJudge(
   if (isSupabaseConnected() && supabase) {
     try {
       await supabase.from('jury_assignments').delete().eq('jury_id', juryId);
-    } catch {}
+      if (normAlias !== juryId) {
+        await supabase.from('jury_assignments').delete().eq('jury_id', normAlias);
+      }
+    } catch (err) {
+      console.warn('Gagal menghapus penugasan dewan juri di Supabase:', err);
+    }
   }
 
+  notifyJuryDataChanged('jury_assignments', updated);
+  return true;
+}
+
+/**
+ * Kosongkan seluruh penugasan juri (Reset ke 0 penugasan di CMS & Supabase)
+ */
+export async function clearAllJuryAssignments(adminName: string = 'Admin'): Promise<boolean> {
+  const current = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, []);
+  setLocal(STORAGE_ASSIGNMENTS, []);
+
+  const deletedAssignments = new Set(getDeletedAssignmentIds());
+  current.forEach((a) => deletedAssignments.add(a.id));
+  setLocal(STORAGE_DELETED_ASSIGNMENTS, Array.from(deletedAssignments));
+
+  createAuditLog({
+    action: 'CLEAR_ALL_ASSIGNMENTS',
+    entityType: 'jury_assignment',
+    entityId: 'all',
+    oldValue: current,
+    notes: `Seluruh penugasan dewan juri (${current.length} penugasan) direset/dikosongkan oleh: ${adminName}`,
+  });
+
+  const supabase = getSupabaseClient();
+  if (isSupabaseConnected() && supabase) {
+    try {
+      await supabase.from('jury_assignments').delete().neq('id', 'keep-none-sentinel');
+    } catch (err) {
+      console.warn('Gagal membersihkan seluruh penugasan di Supabase:', err);
+    }
+  }
+
+  notifyJuryDataChanged('jury_assignments', []);
   return true;
 }
 
@@ -1101,6 +1381,7 @@ export async function saveScoringCriterion(
     } catch {}
   }
 
+  notifyJuryDataChanged('scoring_criteria', updated);
   return { success: true, data: finalCrit };
 }
 
@@ -1131,6 +1412,8 @@ export async function deleteScoringCriterion(
       await supabase.from('scoring_criteria').delete().eq('id', criterionId);
     } catch {}
   }
+
+  notifyJuryDataChanged('scoring_criteria', updated);
   return true;
 }
 
@@ -1281,6 +1564,7 @@ export async function saveScoreDraft(params: {
     }
   }
 
+  notifyJuryDataChanged('jury_scores', scoreRecord);
   return { success: true, data: scoreRecord };
 }
 
@@ -1384,6 +1668,7 @@ export async function submitFinalScore(params: {
     } catch {}
   }
 
+  notifyJuryDataChanged('jury_scores', finalScoreRecord);
   return { success: true, data: finalScoreRecord };
 }
 
@@ -1430,6 +1715,7 @@ export async function reopenJuryScore(
     } catch {}
   }
 
+  notifyJuryDataChanged('jury_scores', updatedRecord);
   return { success: true };
 }
 
@@ -1471,6 +1757,7 @@ export async function lockCompetitionScores(
     } catch {}
   }
 
+  notifyJuryDataChanged('jury_scores', updatedList);
   return { success: true, count: lockedCount };
 }
 
@@ -1813,4 +2100,400 @@ export async function getScoringProgressSummary(
       isPublished,
     };
   });
+}
+
+// ==============================================================================
+// 10. BATCH SYNC & FULL INTEGRATION WITH SUPABASE DATABASE
+// ==============================================================================
+
+export const JURY_SYSTEM_SETUP_SQL = `-- ==============================================================================
+-- SKRIP TABEL DATABASE SISTEM PENILAIAN DEWAN JURI: SUPABASE POSTGRESQL
+-- Festival Hari Santri Nasional 2026 - MWC NU Poncokusumo
+-- Salin dan jalankan di: Supabase Dashboard -> SQL Editor -> New Query -> Run
+-- ==============================================================================
+
+-- 1. TABEL PROFIL DEWAN JURI & KREDENSIAL LOGIN (profiles)
+CREATE TABLE IF NOT EXISTS public.profiles (
+    id TEXT PRIMARY KEY,
+    full_name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    username TEXT,
+    password TEXT,
+    role TEXT NOT NULL DEFAULT 'jury',
+    institution TEXT,
+    phone TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    last_login TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 2. TABEL PENUGASAN JURI KE CABANG LOMBA (jury_assignments)
+CREATE TABLE IF NOT EXISTS public.jury_assignments (
+    id TEXT PRIMARY KEY,
+    jury_id TEXT NOT NULL,
+    competition_id TEXT NOT NULL,
+    competition_title TEXT,
+    competition_category TEXT,
+    assigned_by TEXT DEFAULT 'Admin CMS',
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(jury_id, competition_id)
+);
+
+-- 3. TABEL KRITERIA DAN BOBOT PENILAIAN (scoring_criteria)
+CREATE TABLE IF NOT EXISTS public.scoring_criteria (
+    id TEXT PRIMARY KEY,
+    competition_id TEXT NOT NULL,
+    criterion_name TEXT NOT NULL,
+    description TEXT,
+    max_score NUMERIC NOT NULL DEFAULT 100,
+    weight NUMERIC NOT NULL DEFAULT 25,
+    sort_order INTEGER NOT NULL DEFAULT 1,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 4. TABEL NILAI JURI DRAF & FINAL (jury_scores)
+CREATE TABLE IF NOT EXISTS public.jury_scores (
+    id TEXT PRIMARY KEY,
+    competition_id TEXT NOT NULL,
+    participant_id TEXT NOT NULL,
+    jury_id TEXT NOT NULL,
+    scores JSONB NOT NULL DEFAULT '{}'::jsonb,
+    total_score NUMERIC NOT NULL DEFAULT 0,
+    feedback TEXT,
+    notes TEXT,
+    status TEXT NOT NULL DEFAULT 'draft',
+    submitted_at TIMESTAMPTZ,
+    locked_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(competition_id, participant_id, jury_id)
+);
+
+-- 5. TABEL PENETAPAN JUARA & HASIL PLENO (competition_results)
+CREATE TABLE IF NOT EXISTS public.competition_results (
+    id TEXT PRIMARY KEY,
+    competition_id TEXT NOT NULL,
+    participant_id TEXT NOT NULL,
+    winner_title TEXT,
+    rank INTEGER NOT NULL DEFAULT 1,
+    average_score NUMERIC NOT NULL DEFAULT 0,
+    final_score NUMERIC NOT NULL DEFAULT 0,
+    is_published BOOLEAN NOT NULL DEFAULT false,
+    decision_notes TEXT,
+    determined_by TEXT,
+    determined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(competition_id, participant_id)
+);
+
+-- 6. TABEL AUDIT LOG AKTIVITAS JURI (jury_audit_logs)
+CREATE TABLE IF NOT EXISTS public.jury_audit_logs (
+    id TEXT PRIMARY KEY,
+    jury_id TEXT,
+    jury_name TEXT,
+    action TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT,
+    old_value JSONB,
+    new_value JSONB,
+    ip_address TEXT,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 6b. PASTIKAN KOLOM-KOLOM PENDUKUNG TERSEDIA PADA TABEL YANG SUDAH DIBUAT
+ALTER TABLE IF EXISTS public.jury_assignments
+  ADD COLUMN IF NOT EXISTS jury_name TEXT,
+  ADD COLUMN IF NOT EXISTS jury_email TEXT,
+  ADD COLUMN IF NOT EXISTS jury_institution TEXT,
+  ADD COLUMN IF NOT EXISTS competition_title TEXT,
+  ADD COLUMN IF NOT EXISTS competition_category TEXT,
+  ADD COLUMN IF NOT EXISTS assigned_by TEXT DEFAULT 'Admin CMS',
+  ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+
+ALTER TABLE IF EXISTS public.profiles
+  ADD COLUMN IF NOT EXISTS username TEXT,
+  ADD COLUMN IF NOT EXISTS password TEXT,
+  ADD COLUMN IF NOT EXISTS institution TEXT,
+  ADD COLUMN IF NOT EXISTS phone TEXT,
+  ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true,
+  ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;
+
+-- 7. ENABLE ROW LEVEL SECURITY (RLS) DENGAN AKSES AMAN
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.jury_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.scoring_criteria ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.jury_scores ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.competition_results ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.jury_audit_logs ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  DROP POLICY IF EXISTS "Public all profiles" ON public.profiles;
+  CREATE POLICY "Public all profiles" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
+
+  DROP POLICY IF EXISTS "Public all jury_assignments" ON public.jury_assignments;
+  CREATE POLICY "Public all jury_assignments" ON public.jury_assignments FOR ALL USING (true) WITH CHECK (true);
+
+  DROP POLICY IF EXISTS "Public all scoring_criteria" ON public.scoring_criteria;
+  CREATE POLICY "Public all scoring_criteria" ON public.scoring_criteria FOR ALL USING (true) WITH CHECK (true);
+
+  DROP POLICY IF EXISTS "Public all jury_scores" ON public.jury_scores;
+  CREATE POLICY "Public all jury_scores" ON public.jury_scores FOR ALL USING (true) WITH CHECK (true);
+
+  DROP POLICY IF EXISTS "Public all competition_results" ON public.competition_results;
+  CREATE POLICY "Public all competition_results" ON public.competition_results FOR ALL USING (true) WITH CHECK (true);
+
+  DROP POLICY IF EXISTS "Public all jury_audit_logs" ON public.jury_audit_logs;
+  CREATE POLICY "Public all jury_audit_logs" ON public.jury_audit_logs FOR ALL USING (true) WITH CHECK (true);
+END $$;
+
+-- 8. AKTIFKAN REPLIKASI REALTIME SUPABASE UNTUK SINKRONISASI OTOMATIS
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.jury_assignments;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.scoring_criteria;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.jury_scores;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.competition_results;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+NOTIFY pgrst, 'reload schema';
+`;
+
+/**
+ * Sinkronisasi Seluruh Data CMS Penilaian Juri ke Supabase
+ */
+export async function syncAllJuryDataToSupabase(customCompetitions?: Competition[]): Promise<{
+  success: boolean;
+  message: string;
+  details?: {
+    profiles: number;
+    assignments: number;
+    criteria: number;
+    scores: number;
+    results: number;
+  };
+}> {
+  const supabase = getSupabaseClient();
+  if (!isSupabaseConnected() || !supabase) {
+    return {
+      success: false,
+      message: 'Koneksi database Supabase belum terkonfigurasi. Silakan periksa URL & Anon Key di Tab Database Supabase.',
+    };
+  }
+
+  try {
+    const profiles = await getJuryProfiles();
+    const assignments = await getJuryAssignments(customCompetitions);
+    const criteria = await getScoringCriteria();
+    const scores = await getJuryScores();
+    const results = getLocal<CompetitionResult[]>(STORAGE_RESULTS, []);
+
+    // 1. Sync Profiles
+    let pCount = 0;
+    for (const p of profiles) {
+      const { error } = await supabase.from('profiles').upsert({
+        id: p.id,
+        full_name: p.fullName,
+        email: p.email,
+        username: p.username || (p.email.includes('@') ? p.email.split('@')[0] : p.email),
+        password: p.password || 'santri2026',
+        role: p.role || 'jury',
+        institution: p.institution || 'MWC NU Poncokusumo',
+        phone: p.phone || '',
+        is_active: p.isActive ?? true,
+        updated_at: new Date().toISOString(),
+      });
+      if (!error) pCount++;
+    }
+
+    // 2. Sync Assignments (Strict authoritative sync - hapus penugasan terhapus di Supabase)
+    let aCount = 0;
+    const activeAssignments = assignments.filter((a) => a.isActive);
+    const activeAssignIds = activeAssignments.map((a) => a.id);
+
+    try {
+      if (activeAssignIds.length > 0) {
+        const { data: remoteRows } = await supabase.from('jury_assignments').select('id');
+        if (remoteRows && remoteRows.length > 0) {
+          const staleIds = remoteRows.map((r: any) => r.id).filter((id: string) => !activeAssignIds.includes(id));
+          for (const sId of staleIds) {
+            await supabase.from('jury_assignments').delete().eq('id', sId);
+          }
+        }
+      } else {
+        // Jika di CMS belum ada penugasan sama sekali, bersihkan seluruh baris di tabel Supabase
+        await supabase.from('jury_assignments').delete().neq('id', 'keep-none-sentinel');
+      }
+    } catch (delErr) {
+      console.warn('Catatan pembersihan penugasan usang di Supabase:', delErr);
+    }
+
+    for (const a of activeAssignments) {
+      const { error } = await supabase.from('jury_assignments').upsert({
+        id: a.id,
+        jury_id: a.juryId,
+        jury_name: a.juryName || '',
+        jury_email: a.juryEmail || '',
+        jury_institution: a.juryInstitution || '',
+        competition_id: a.competitionId,
+        competition_title: a.competitionTitle || '',
+        competition_category: a.competitionCategory || '',
+        assigned_by: a.assignedBy || 'Admin CMS',
+        is_active: a.isActive,
+        created_at: a.createdAt || new Date().toISOString(),
+      });
+      if (!error) aCount++;
+    }
+
+    // 3. Sync Criteria
+    let cCount = 0;
+    for (const c of criteria) {
+      const { error } = await supabase.from('scoring_criteria').upsert({
+        id: c.id,
+        competition_id: c.competitionId,
+        criterion_name: c.criterionName,
+        description: c.description || '',
+        max_score: c.maxScore || 100,
+        weight: c.weight || 25,
+        sort_order: c.sortOrder || 1,
+        is_active: c.isActive ?? true,
+        updated_at: new Date().toISOString(),
+      });
+      if (!error) cCount++;
+    }
+
+    // 4. Sync Scores
+    let sCount = 0;
+    for (const s of scores) {
+      if (isMockScore(s)) continue;
+      const { error } = await supabase.from('jury_scores').upsert({
+        id: s.id,
+        competition_id: normalizeCompId(s.competitionId),
+        participant_id: s.participantId,
+        jury_id: s.juryId,
+        scores: s.scores || {},
+        total_score: s.totalScore || 0,
+        notes: s.notes || '',
+        status: s.status || 'draft',
+        submitted_at: s.submittedAt || (s.status === 'submitted' ? new Date().toISOString() : null),
+        updated_at: s.updatedAt || new Date().toISOString(),
+      }, { onConflict: 'jury_id,participant_id,competition_id' });
+      if (!error) sCount++;
+    }
+
+    // 5. Sync Results
+    let rCount = 0;
+    for (const r of results) {
+      const { error } = await supabase.from('competition_results').upsert({
+        id: r.id || `res-${r.competitionId}-${r.participantId}`,
+        competition_id: r.competitionId,
+        participant_id: r.participantId,
+        winner_title: r.winnerTitle,
+        rank: r.rank,
+        average_score: r.averageScore,
+        final_score: r.finalScore,
+        is_published: r.isPublished ?? false,
+        decision_notes: r.decisionNotes || '',
+        determined_at: r.determinedAt || new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'competition_id,participant_id' });
+      if (!error) rCount++;
+    }
+
+    // Broadcast update to all connected clients
+    notifyJuryDataChanged('all_jury_data_synced', {
+      timestamp: Date.now(),
+      details: { profiles: pCount, assignments: aCount, criteria: cCount, scores: sCount, results: rCount },
+    });
+
+    return {
+      success: true,
+      message: `Sinkronisasi ke Supabase berhasil: ${pCount} akun juri, ${aCount} penugasan, ${cCount} kriteria, ${sCount} lembar nilai, ${rCount} hasil juara tersimpan aman secara realtime.`,
+      details: {
+        profiles: pCount,
+        assignments: aCount,
+        criteria: cCount,
+        scores: sCount,
+        results: rCount,
+      },
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: `Gagal sinkronisasi data ke Supabase: ${err?.message || err}`,
+    };
+  }
+}
+
+/**
+ * Unduh dan Segarkan Seluruh Data Juri dari Supabase ke State Lokal
+ */
+export async function fetchAllJuryDataFromSupabase(): Promise<{
+  success: boolean;
+  message: string;
+  details?: {
+    profiles: number;
+    assignments: number;
+    criteria: number;
+    scores: number;
+  };
+}> {
+  const supabase = getSupabaseClient();
+  if (!isSupabaseConnected() || !supabase) {
+    return {
+      success: false,
+      message: 'Koneksi database Supabase belum terkonfigurasi.',
+    };
+  }
+
+  try {
+    const [pList, aList, cList, sList] = await Promise.all([
+      getJuryProfiles(),
+      getJuryAssignments(),
+      getScoringCriteria(),
+      getJuryScores(),
+    ]);
+
+    notifyJuryDataChanged('all_jury_data_fetched', {
+      timestamp: Date.now(),
+      counts: { profiles: pList.length, assignments: aList.length, criteria: cList.length, scores: sList.length },
+    });
+
+    return {
+      success: true,
+      message: `Berhasil memuat data terkini dari Supabase: ${pList.length} juri, ${aList.length} penugasan, ${cList.length} kriteria, ${sList.length} nilai.`,
+      details: {
+        profiles: pList.length,
+        assignments: aList.length,
+        criteria: cList.length,
+        scores: sList.length,
+      },
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: `Gagal memuat data dari Supabase: ${err?.message || err}`,
+    };
+  }
 }

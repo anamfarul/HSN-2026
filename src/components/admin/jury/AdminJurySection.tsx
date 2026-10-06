@@ -76,8 +76,14 @@ import {
   getScoringProgressSummary,
   resolveCompetition,
   normalizeCompId,
-  ParticipantScoreRow
+  ParticipantScoreRow,
+  syncAllJuryDataToSupabase,
+  fetchAllJuryDataFromSupabase,
+  initJuryRealtimeSubscription,
+  isAssignmentForJury,
+  JURY_SYSTEM_SETUP_SQL
 } from '../../../lib/juryService';
+import { isSupabaseConnected } from '../../../lib/supabaseClient';
 import { exportScoreRecapCSV, exportScoreRecapPDF, exportBeritaAcaraPDF } from '../../../lib/juryReportService';
 
 interface AdminJurySectionProps {
@@ -286,11 +292,18 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
         const comp = competitions.find((c) => c.id === a.competitionId) || resolveCompetition(competitions, a.competitionId, a.competitionTitle);
         if (!comp) continue;
 
-        const key = `${a.juryId}:${comp.id}`;
+        const matchedJudge = jList.find((j) => isAssignmentForJury(a, j));
+        const canonicalJuryId = matchedJudge ? matchedJudge.id : a.juryId;
+
+        const key = `${canonicalJuryId}:${comp.id}`;
         if (!seenKey.has(key)) {
           seenKey.add(key);
           strictlyValidAssignments.push({
             ...a,
+            juryId: canonicalJuryId,
+            juryName: matchedJudge?.fullName || a.juryName,
+            juryEmail: matchedJudge?.email || a.juryEmail,
+            juryInstitution: matchedJudge?.institution || a.juryInstitution,
             competitionId: comp.id,
             competitionTitle: comp.title,
             competitionCategory: comp.category,
@@ -313,7 +326,52 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
     loadAllData();
   }, [competitions, participants]);
 
-  // Real-time synchronization listener (connected directly to Portal Penilaian Juri)
+  const [isSyncingSupabase, setIsSyncingSupabase] = useState(false);
+  const [isFetchingSupabase, setIsFetchingSupabase] = useState(false);
+
+  const handleSyncToSupabase = async () => {
+    setIsSyncingSupabase(true);
+    try {
+      const res = await syncAllJuryDataToSupabase(competitions);
+      setFeedbackToast({
+        message: res.message,
+        type: res.success ? 'success' : 'error',
+      });
+      if (res.success) {
+        await loadAllData();
+      }
+    } catch (err: any) {
+      setFeedbackToast({
+        message: `Gagal sinkronisasi data ke Supabase: ${err?.message || err}`,
+        type: 'error',
+      });
+    } finally {
+      setIsSyncingSupabase(false);
+    }
+  };
+
+  const handleFetchFromSupabase = async () => {
+    setIsFetchingSupabase(true);
+    try {
+      const res = await fetchAllJuryDataFromSupabase();
+      setFeedbackToast({
+        message: res.message,
+        type: res.success ? 'success' : 'error',
+      });
+      if (res.success) {
+        await loadAllData();
+      }
+    } catch (err: any) {
+      setFeedbackToast({
+        message: `Gagal memuat data dari Supabase: ${err?.message || err}`,
+        type: 'error',
+      });
+    } finally {
+      setIsFetchingSupabase(false);
+    }
+  };
+
+  // Real-time synchronization listener (connected directly to Supabase Realtime & Portal Penilaian Juri)
   useEffect(() => {
     const handleJuryUpdated = () => {
       loadAllData();
@@ -328,9 +386,16 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
     };
     window.addEventListener('hsn2026_jury_data_updated', handleJuryUpdated);
     window.addEventListener('storage', handleStorage);
+
+    // Aktifkan Realtime Channel Supabase untuk update multi-device
+    const unsubscribeRealtime = initJuryRealtimeSubscription(() => {
+      handleJuryUpdated();
+    });
+
     return () => {
       window.removeEventListener('hsn2026_jury_data_updated', handleJuryUpdated);
       window.removeEventListener('storage', handleStorage);
+      unsubscribeRealtime();
     };
   }, [selectedCompId, competitions, participants]);
 
@@ -400,7 +465,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
     const savedJuryId = res.data?.id || editingJudge.id;
     if (savedJuryId) {
       // Sync competition assignments for this judge
-      const currentAssigned = assignments.filter((a) => a.juryId === savedJuryId && a.isActive);
+      const currentAssigned = assignments.filter((a) => isAssignmentForJury(a, { id: savedJuryId, email: editingJudge.email, username: editingJudge.username }) && a.isActive);
 
       // 1. Add newly checked competitions
       for (const compId of editingJudgeCompIds) {
@@ -848,35 +913,64 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
         </div>
       </div>
 
-      {/* Sub-Tabs Navigation Bar */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 border-b border-white/10 text-xs">
-        {[
-          { key: 'dashboard', label: 'Dashboard', icon: BarChart3 },
-          { key: 'judges', label: 'Kelola Juri', icon: Users },
-          { key: 'assignments', label: 'Penugasan Juri', icon: ClipboardList },
-          { key: 'criteria', label: 'Kriteria & Bobot', icon: Layers },
-          { key: 'monitoring', label: 'Monitoring Penilaian', icon: Eye },
-          { key: 'recap', label: 'Rekap Nilai', icon: FileText },
-          { key: 'winners', label: 'Penetapan Juara', icon: Trophy },
-          { key: 'audit', label: 'Audit Log Juri', icon: History },
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isActive = subTab === tab.key;
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setSubTab(tab.key as any)}
-              className={`px-3.5 py-2 rounded-xl font-bold flex items-center gap-1.5 transition-all shrink-0 ${
-                isActive
-                  ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-white shadow-md'
-                  : 'bg-white/5 hover:bg-white/10 text-white/70 hover:text-white'
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5" />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
+      {/* Sub-Tabs Navigation Bar & Supabase Real-time Sync Status */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-white/10 text-xs">
+        <div className="flex items-center gap-1.5 overflow-x-auto">
+          {[
+            { key: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+            { key: 'judges', label: 'Kelola Juri', icon: Users },
+            { key: 'assignments', label: 'Penugasan Juri', icon: ClipboardList },
+            { key: 'criteria', label: 'Kriteria & Bobot', icon: Layers },
+            { key: 'monitoring', label: 'Monitoring Penilaian', icon: Eye },
+            { key: 'recap', label: 'Rekap Nilai', icon: FileText },
+            { key: 'winners', label: 'Penetapan Juara', icon: Trophy },
+            { key: 'audit', label: 'Audit Log Juri', icon: History },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isActive = subTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setSubTab(tab.key as any)}
+                className={`px-3.5 py-2 rounded-xl font-bold flex items-center gap-1.5 transition-all shrink-0 ${
+                  isActive
+                    ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-white shadow-md'
+                    : 'bg-white/5 hover:bg-white/10 text-white/70 hover:text-white'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Supabase Realtime Status & Quick Sync Action */}
+        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+          {isSupabaseConnected() ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span className="hidden md:inline">Supabase Real-time:</span>
+              <span>Tersinkron</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-amber-500/15 text-amber-300 border border-amber-500/30">
+              <AlertTriangle className="w-3 h-3 text-amber-400" />
+              <span>Penyimpanan Lokal</span>
+            </span>
+          )}
+
+          <button
+            type="button"
+            onClick={handleSyncToSupabase}
+            disabled={isSyncingSupabase}
+            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:opacity-95 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
+            title="Simpan dan Sinkronkan Seluruh Data Juri ke Database Supabase"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSupabase ? 'animate-spin' : ''}`} />
+            <span>{isSyncingSupabase ? 'Menyinkronkan...' : 'Sinkron Supabase'}</span>
+          </button>
+        </div>
       </div>
 
       {/* ============================================================================== */}
@@ -1171,11 +1265,11 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                       if (!match) return false;
                     }
                     if (judgeCompFilter === 'UNASSIGNED') {
-                      const myActive = assignments.filter((a) => a.juryId === j.id && a.isActive);
+                      const myActive = assignments.filter((a) => isAssignmentForJury(a, j) && a.isActive);
                       return myActive.length === 0;
                     }
                     if (judgeCompFilter !== 'ALL') {
-                      const myActive = assignments.filter((a) => a.juryId === j.id && a.isActive);
+                      const myActive = assignments.filter((a) => isAssignmentForJury(a, j) && a.isActive);
                       const isAssigned = myActive.some((a) => {
                         if (a.competitionId === judgeCompFilter) return true;
                         const r = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
@@ -1186,7 +1280,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                     return true;
                   })
                   .map((j) => {
-                    const myAssigns = assignments.filter((a) => a.juryId === j.id && a.isActive);
+                    const myAssigns = assignments.filter((a) => isAssignmentForJury(a, j) && a.isActive);
 
                     return (
                       <tr key={j.id} className="hover:bg-white/[0.02]">
@@ -1331,7 +1425,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                               });
                               const myActiveCompIds = Array.from(new Set(
                                 assignments
-                                  .filter((a) => a.juryId === j.id && a.isActive)
+                                  .filter((a) => isAssignmentForJury(a, j) && a.isActive)
                                   .map((a) => {
                                     const resolved = competitions.find((c) => c.id === a.competitionId) || resolveCompetition(competitions, a.competitionId, a.competitionTitle);
                                     return resolved ? resolved.id : null;
@@ -1715,7 +1809,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
           if (!assignSearch.trim()) return true;
           const q = assignSearch.toLowerCase();
           const matchJury = j.fullName.toLowerCase().includes(q) || (j.institution || '').toLowerCase().includes(q);
-          const myAss = assignments.filter((a) => a.juryId === j.id && a.isActive);
+          const myAss = assignments.filter((a) => isAssignmentForJury(a, j) && a.isActive);
           const matchComp = myAss.some((a) => {
             const c = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
             return (c?.title || a.competitionTitle || '').toLowerCase().includes(q);
@@ -1725,7 +1819,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
 
         return (
           <div className="space-y-6">
-            {/* Authorization Info Banner */}
+            {/* Authorization Info Banner & Live Sync Status */}
             <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-white/[0.02] border border-white/10 text-xs">
               <div className="flex items-center gap-2">
                 {canDeleteJuryItems ? (
@@ -1739,9 +1833,22 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                     <span>Akses Hapus Terbatas (Khusus Super Admin & Divisi Sekretariat & Administrasi)</span>
                   </span>
                 )}
-                <span className="text-white/60 text-[11px]">
-                  Membatalkan dan menghapus penugasan dewan juri aktif untuk Super Admin dan Divisi Sekretariat & Administrasi.
+                <span className="text-white/60 text-[11px] hidden lg:inline">
+                  Penugasan tersinkron secara real-time ke Portal Juri (/juri).
                 </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSyncToSupabase}
+                  disabled={isSyncingSupabase}
+                  className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-white/90 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
+                  title="Simpan Penugasan Juri ke Supabase"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isSyncingSupabase ? 'animate-spin' : ''}`} />
+                  <span>{isSyncingSupabase ? 'Menyinkronkan...' : 'Sinkron Penugasan'}</span>
+                </button>
               </div>
             </div>
 
@@ -1913,9 +2020,8 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                   ).length;
 
                   // Juries who are available to be added to this comp
-                  const assignedJuryIds = compAssigns.map((a) => a.juryId);
                   const availableJuries = juries.filter(
-                    (j) => j.isActive && !assignedJuryIds.includes(j.id)
+                    (j) => j.isActive && !compAssigns.some((a) => isAssignmentForJury(a, j))
                   );
 
                   return (
@@ -1993,7 +2099,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                         ) : (
                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                             {compAssigns.map((a) => {
-                              const judgeObj = juries.find((j) => j.id === a.juryId);
+                              const judgeObj = juries.find((j) => isAssignmentForJury(a, j));
                               const juryFullName = judgeObj?.fullName || a.juryName || a.juryId;
                               const juryInst = judgeObj?.institution || a.juryInstitution;
 
@@ -2099,7 +2205,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                   </thead>
                   <tbody className="divide-y divide-white/5">
                     {filteredJuriesForView.map((j) => {
-                      const myAssigns = assignments.filter((a) => a.juryId === j.id && a.isActive);
+                      const myAssigns = assignments.filter((a) => isAssignmentForJury(a, j) && a.isActive);
 
                       return (
                         <tr key={j.id} className="hover:bg-white/[0.02]">
@@ -2257,7 +2363,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                     {juries
                       .filter((j) => j.isActive)
                       .map((j) => {
-                        const myAssigns = assignments.filter((a) => a.juryId === j.id && a.isActive);
+                        const myAssigns = assignments.filter((a) => isAssignmentForJury(a, j) && a.isActive);
 
                         return (
                           <tr key={j.id} className="hover:bg-white/[0.02]">

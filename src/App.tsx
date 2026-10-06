@@ -655,17 +655,21 @@ export default function App() {
               const target = allJuries.find(
                 (j) =>
                   j.id === juryId ||
+                  j.id.replace(/^juri-/, 'jury-') === juryId.replace(/^juri-/, 'jury-') ||
                   j.username?.toLowerCase() === juryId.toLowerCase() ||
                   j.email.toLowerCase() === juryId.toLowerCase()
               );
               if (target) {
-                loginAsJuryDirectly(target);
+                const sess = loginAsJuryDirectly(target);
+                try {
+                  window.dispatchEvent(new CustomEvent('hsn2026_jury_data_updated', { detail: { key: 'session', session: sess } }));
+                } catch {}
               }
             } catch {}
           } else {
             // Admin membuka portal juri dari CMS -> login otomatis sebagai Administrator CMS / Supervisor
             const adminUser = (typeof window !== 'undefined' ? localStorage.getItem('hsn2026_admin_user') : null) || 'Admin CMS';
-            loginAsJuryDirectly({
+            const sess = loginAsJuryDirectly({
               id: 'user-admin-root',
               fullName: `${adminUser} (Panitia CMS)`,
               email: 'admin@hsnponcokusumo.nu',
@@ -674,6 +678,9 @@ export default function App() {
               institution: 'Panitia Pelaksana CMS HSN 2026',
               isActive: true,
             });
+            try {
+              window.dispatchEvent(new CustomEvent('hsn2026_jury_data_updated', { detail: { key: 'session', session: sess } }));
+            } catch {}
           }
           setIsAdminModalOpen(false);
           handleOpenJury(juryId);
