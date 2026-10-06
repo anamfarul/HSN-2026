@@ -865,16 +865,32 @@ export async function getJuryAssignments(customCompetitions?: Competition[]): Pr
     }
   }
 
+  // Ambil data lokal terlebih dahulu untuk sinkronisasi hybrid
+  const localAssignments = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, []);
+
   // Jika remote Supabase aktif dan berhasil di-fetch:
-  // Data Supabase adalah SINGLE SOURCE OF TRUTH (Jika kosong di Supabase, jangan munculkan penugasan phantom!)
+  // Gabungkan remote Supabase dan data lokal (hindari terhapusnya penugasan yang baru ditambahkan admin!)
   if (fetchedFromRemote) {
-    if (rawList.length === 0) {
-      setLocal(STORAGE_ASSIGNMENTS, []);
-      return [];
+    const mergedMap = new Map<string, JuryAssignment>();
+    // 1. Masukkan data remote dari Supabase
+    for (const r of rawList) {
+      if (r && r.isActive) {
+        const key = `${r.juryId}:${r.competitionId}`;
+        mergedMap.set(key, r);
+      }
     }
+    // 2. Pertahankan data lokal yang aktif dan belum disinkronkan ke remote
+    for (const l of localAssignments) {
+      if (l && l.isActive) {
+        const key = `${l.juryId}:${l.competitionId}`;
+        if (!mergedMap.has(key)) {
+          mergedMap.set(key, l);
+        }
+      }
+    }
+    rawList = Array.from(mergedMap.values());
   } else {
-    // Fallback offline: gunakan local storage (default kosong jika belum ada penugasan di CMS)
-    const localAssignments = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, []);
+    // Fallback offline / Supabase belum terkoneksi: gunakan local storage
     rawList = localAssignments;
     if (!rawList || rawList.length === 0) {
       return [];
@@ -922,18 +938,22 @@ export async function getJuryAssignments(customCompetitions?: Competition[]): Pr
       if (!comp) return null;
 
       // 4. Must match a registered active dewan juri (NO orphan / ghost / unassigned records allowed!)
-      const jury = juries.find((j) => isAssignmentForJury(a, j) && j.isActive && !deletedJuryIds.has(j.id));
-      if (!jury) return null;
+      let jury = juries.find((j) => (isAssignmentForJury(a, j) || j.id === a.juryId || (a.juryEmail && j.email?.toLowerCase() === a.juryEmail.toLowerCase())) && j.isActive && !deletedJuryIds.has(j.id));
+      
+      const juryIdToUse = jury?.id || a.juryId;
+      const juryNameToUse = jury?.fullName || a.juryName || 'Dewan Juri';
+      const juryEmailToUse = jury?.email || a.juryEmail || '';
+      const juryInstToUse = jury?.institution || a.juryInstitution || 'MWC NU Poncokusumo';
 
       return {
-        id: a.id || `assign-${jury.id}-${comp.id}`,
-        juryId: jury.id,
+        id: a.id || `assign-${juryIdToUse}-${comp.id}`,
+        juryId: juryIdToUse,
         competitionId: comp.id,
         competitionTitle: comp.title,
         competitionCategory: comp.category,
-        juryName: jury.fullName || a.juryName,
-        juryEmail: jury.email || a.juryEmail,
-        juryInstitution: jury.institution || a.juryInstitution,
+        juryName: juryNameToUse,
+        juryEmail: juryEmailToUse,
+        juryInstitution: juryInstToUse,
         assignedBy: a.assignedBy || 'Admin CMS',
         isActive: true,
         createdAt: a.createdAt || new Date().toISOString(),
@@ -1030,6 +1050,18 @@ export async function assignJuryToCompetition(
   }
 
   const assignmentId = `assign-${canonicalJuryId}-${effectiveCompId}`;
+
+  // Pastikan ID penugasan ini dihapus dari daftar blacklist penugasan yang pernah dihapus
+  const deletedAssigns = new Set(getDeletedAssignmentIds());
+  if (deletedAssigns.has(assignmentId)) {
+    deletedAssigns.delete(assignmentId);
+  }
+  // Hapus juga variasi ID yang merujuk juri dan lomba yang sama dari blacklist
+  const cleanedDeletedList = Array.from(deletedAssigns).filter(
+    (id) => !(id.includes(canonicalJuryId) && id.includes(effectiveCompId))
+  );
+  setLocal(STORAGE_DELETED_ASSIGNMENTS, cleanedDeletedList);
+
   const newAssignment: JuryAssignment = {
     id: assignmentId,
     juryId: canonicalJuryId,
@@ -1044,7 +1076,10 @@ export async function assignJuryToCompetition(
     createdAt: new Date().toISOString(),
   };
 
-  const updated = [...current.filter((a) => !(isAssignmentForJury(a, matchedJury) && a.competitionId === effectiveCompId)), newAssignment];
+  const updated = [
+    ...current.filter((a) => !(isAssignmentForJury(a, matchedJury) && a.competitionId === effectiveCompId)),
+    newAssignment,
+  ];
   setLocal(STORAGE_ASSIGNMENTS, updated);
 
   createAuditLog({
@@ -1058,30 +1093,80 @@ export async function assignJuryToCompetition(
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
     try {
-      const payload = {
+      // 1. Pastikan profil juri ada di Supabase terlebih dahulu agar relasi foreign key aman
+      try {
+        await supabase.from('profiles').upsert(
+          {
+            id: matchedJury.id,
+            full_name: matchedJury.fullName,
+            email: matchedJury.email,
+            username: matchedJury.username,
+            password: matchedJury.password,
+            role: matchedJury.role || 'jury',
+            institution: matchedJury.institution || '',
+            phone: matchedJury.phone || '',
+            is_active: matchedJury.isActive ?? true,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'id' }
+        );
+      } catch (pErr) {
+        console.warn('Catatan upsert profil juri ke Supabase:', pErr);
+      }
+
+      // 2. Siapkan payload penugasan
+      const fullPayload = {
         id: assignmentId,
         jury_id: canonicalJuryId,
-        jury_name: matchedJury.fullName,
-        jury_email: matchedJury.email,
-        jury_institution: matchedJury.institution || '',
         competition_id: effectiveCompId,
         competition_title: effectiveCompTitle,
         competition_category: effectiveCompCat,
         assigned_by: adminName,
         is_active: true,
         created_at: newAssignment.createdAt,
+        jury_name: matchedJury.fullName,
+        jury_email: matchedJury.email,
+        jury_institution: matchedJury.institution || '',
       };
 
-      // Coba upsert dengan primary key 'id'
-      const { error: upsertErr } = await supabase.from('jury_assignments').upsert(payload, { onConflict: 'id' });
+      // Coba upsert dengan payload lengkap
+      let { error: upsertErr } = await supabase
+        .from('jury_assignments')
+        .upsert(fullPayload, { onConflict: 'jury_id,competition_id' });
+
       if (upsertErr) {
-        // Fallback: hapus duplikat lama untuk kombinasi jury_id & competition_id lalu insert
-        await supabase
+        const resId = await supabase
           .from('jury_assignments')
-          .delete()
-          .eq('jury_id', canonicalJuryId)
-          .eq('competition_id', effectiveCompId);
-        await supabase.from('jury_assignments').insert(payload);
+          .upsert(fullPayload, { onConflict: 'id' });
+        upsertErr = resId.error;
+      }
+
+      // 3. Fallback jika kolom jury_name/jury_email/jury_institution belum dibuat di tabel Supabase
+      if (upsertErr) {
+        const compactPayload = {
+          id: assignmentId,
+          jury_id: canonicalJuryId,
+          competition_id: effectiveCompId,
+          competition_title: effectiveCompTitle,
+          competition_category: effectiveCompCat,
+          assigned_by: adminName,
+          is_active: true,
+          created_at: newAssignment.createdAt,
+        };
+
+        const { error: compactErr } = await supabase
+          .from('jury_assignments')
+          .upsert(compactPayload, { onConflict: 'id' });
+
+        if (compactErr) {
+          // Fallback delete lalu insert
+          await supabase
+            .from('jury_assignments')
+            .delete()
+            .eq('jury_id', canonicalJuryId)
+            .eq('competition_id', effectiveCompId);
+          await supabase.from('jury_assignments').insert(compactPayload);
+        }
       }
     } catch (err) {
       console.warn('Gagal menyimpan penugasan ke Supabase:', err);

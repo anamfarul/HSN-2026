@@ -543,6 +543,29 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
     const jId = overrideJuryId || assignJuryId;
     if (!jId || !cId) return;
     const targetComp = competitions.find((c) => c.id === cId) || resolveCompetition(competitions, cId);
+    const matchedJudge = juries.find((j) => isAssignmentForJury({ juryId: jId } as any, j) || j.id === jId);
+    
+    // Optimistic update state penugasan agar langsung tampil seketika di daftar lomba tanpa delay
+    if (targetComp && matchedJudge) {
+      const newAssignItem: JuryAssignment = {
+        id: `assign-${matchedJudge.id}-${targetComp.id}`,
+        juryId: matchedJudge.id,
+        competitionId: targetComp.id,
+        competitionTitle: targetComp.title,
+        competitionCategory: targetComp.category,
+        juryName: matchedJudge.fullName,
+        juryEmail: matchedJudge.email,
+        juryInstitution: matchedJudge.institution,
+        assignedBy: currentAdminName,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      };
+      setAssignments((prev) => {
+        const filtered = prev.filter((a) => !(isAssignmentForJury(a, matchedJudge) && a.competitionId === targetComp.id));
+        return [...filtered, newAssignItem];
+      });
+    }
+
     const res = await assignJuryToCompetition(
       jId,
       targetComp ? targetComp.id : cId,
@@ -553,6 +576,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
     );
     if (!res.success) {
       setFeedbackToast({ message: res.message || 'Gagal menugaskan juri', type: 'error' });
+      await loadAllData();
       return;
     }
     if (!overrideJuryId) setAssignJuryId('');
@@ -859,16 +883,6 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                 <span className="text-xs font-black uppercase tracking-wider text-emerald-400">
                   CMS PENILAIAN JURI TERHUBUNG KE PORTAL JURI
                 </span>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                  Live Sync Aktif
-                </span>
-                {isSupabaseConnected() && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Supabase Realtime
-                  </span>
-                )}
                 <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-white/10 text-[#00D9F5] border border-[#00D9F5]/30">
                   Route: /juri
                 </span>
@@ -932,8 +946,8 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
         </div>
       </div>
 
-      {/* Sub-Tabs Navigation Bar (Leap-free, fully responsive and visible) */}
-      <div className="pb-2 border-b border-white/10 text-xs overflow-x-auto">
+      {/* Sub-Tabs Navigation Bar (Leap-free, fully responsive, sticky and visible) */}
+      <div className="pb-2 border-b border-white/10 text-xs overflow-x-auto sticky top-0 z-20 bg-[#031525]/95 backdrop-blur-md">
         <div className="flex items-center gap-1.5 min-w-max py-0.5">
           {[
             { key: 'dashboard', label: 'Dashboard', icon: BarChart3 },
@@ -1825,9 +1839,6 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                     <span>Akses Hapus Terbatas (Khusus Super Admin & Divisi Sekretariat & Administrasi)</span>
                   </span>
                 )}
-                <span className="text-white/60 text-[11px] hidden lg:inline">
-                  Penugasan tersinkron secara real-time ke Portal Juri (/juri).
-                </span>
               </div>
 
               <div className="flex items-center gap-2">

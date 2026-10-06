@@ -1015,8 +1015,8 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
                     <span className="text-[10px] text-emerald-300 font-bold uppercase tracking-wider block">
                       Mode Supervisi Administrator CMS Penilaian Juri
                     </span>
-                    <span className="text-xs text-white/80">
-                      Tersinkronisasi Real-Time dengan Database Supabase & Penugasan CMS
+                    <span className="text-xs text-white/60">
+                      Hak akses supervisi & pratinjau penilaian
                     </span>
                   </div>
                 </div>

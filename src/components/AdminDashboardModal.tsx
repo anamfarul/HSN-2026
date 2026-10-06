@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { ParticipantRegistration, Competition, DownloadDoc, CategoryGeneration } from '../types';
+import { ParticipantRegistration, Competition, DownloadDoc, CategoryGeneration, JuryAssignment } from '../types';
 import { AdminLoginView } from './AdminLoginView';
 import { AdminUsersTab } from './AdminUsersTab';
 import { AdminDeploymentTab } from './AdminDeploymentTab';
@@ -10,6 +10,7 @@ import { AdminWorksTab } from './AdminWorksTab';
 import { AdminAddressStatsSection } from './AdminAddressStatsSection';
 import { AdminJurySection } from './admin/jury/AdminJurySection';
 import { generateParticipantReportPDF, printElementSafely } from '../lib/pdfGenerator';
+import { getJuryAssignments } from '../lib/juryService';
 import { ROLE_DEFINITIONS } from '../data/rolesPermissions';
 import { normalizePanitiaRole } from '../data/initialUsers';
 import { 
@@ -124,6 +125,26 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [supabaseConnected, setSupabaseConnected] = useState<boolean>(isSupabaseLive ?? isSupabaseConnected());
   const [isCheckingSupabase, setIsCheckingSupabase] = useState<boolean>(false);
   const [isRefreshingParticipants, setIsRefreshingParticipants] = useState<boolean>(false);
+  const [modalJuryAssignments, setModalJuryAssignments] = useState<JuryAssignment[]>([]);
+
+  // Sinkronisasi data penugasan juri untuk ditampilkan di katalog & tabel lomba
+  useEffect(() => {
+    if (isOpen) {
+      getJuryAssignments(competitions)
+        .then((data) => setModalJuryAssignments(data || []))
+        .catch(() => {});
+    }
+  }, [isOpen, competitions]);
+
+  useEffect(() => {
+    const handleJuryUpdated = () => {
+      getJuryAssignments(competitions)
+        .then((data) => setModalJuryAssignments(data || []))
+        .catch(() => {});
+    };
+    window.addEventListener('hsn_jury_data_updated', handleJuryUpdated);
+    return () => window.removeEventListener('hsn_jury_data_updated', handleJuryUpdated);
+  }, [competitions]);
 
   // Uji koneksi Supabase saat CMS dibuka
   useEffect(() => {
@@ -680,7 +701,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   title="Status Database Supabase - Klik untuk membuka panel Supabase"
                 >
                   <Database className="w-3 h-3" />
-                  <span>{isCheckingSupabase ? 'Memeriksa Supabase...' : supabaseConnected ? 'Supabase: Terhubung (Live)' : 'Supabase: Belum Terhubung'}</span>
+                  <span>{isCheckingSupabase ? 'Memeriksa...' : supabaseConnected ? 'Supabase: Terhubung' : 'Supabase: Belum Terhubung'}</span>
                   <span className={`w-2 h-2 rounded-full ${supabaseConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
                 </button>
               </div>
@@ -736,7 +757,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
         </div>
 
         {/* Admin Nav Tabs */}
-        <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 pt-3 pb-2 border-b border-white/10 bg-[#020e19]">
+        <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 pt-3 pb-2 border-b border-white/10 bg-[#020e19] sticky top-0 z-30 shadow-md">
           <button
             onClick={() => setActiveTab('participants')}
             className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
@@ -1415,6 +1436,38 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                                   <div className="text-[11px] text-[#00D9F5] font-semibold mt-0.5 flex items-center gap-1">
                                     <span>Sasaran: {comp.targetAudience || `Kategori ${comp.category}`}</span>
                                   </div>
+                                  {/* Status Penugasan Juri di Daftar Lomba */}
+                                  <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                                    {(() => {
+                                      const assignedJudges = modalJuryAssignments.filter(
+                                        (a) => a.isActive && (a.competitionId === comp.id || a.competitionTitle?.toLowerCase() === comp.title.toLowerCase())
+                                      );
+                                      if (assignedJudges.length > 0) {
+                                        return (
+                                          <button
+                                            type="button"
+                                            onClick={() => setActiveTab('jury_scoring')}
+                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 transition-all cursor-pointer"
+                                            title="Buka CMS Penilaian Juri untuk melihat atau mengelola penugasan juri"
+                                          >
+                                            <Award className="w-3 h-3 text-[#F2C96D] shrink-0" />
+                                            <span>Juri: {assignedJudges.map((j) => j.juryName).join(', ')}</span>
+                                          </button>
+                                        );
+                                      }
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={() => setActiveTab('jury_scoring')}
+                                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-white/5 text-white/50 border border-white/10 hover:border-[#F2C96D]/40 hover:text-[#F2C96D] transition-all cursor-pointer"
+                                          title="Tugaskan dewan juri di tab Penilaian Juri"
+                                        >
+                                          <Users className="w-3 h-3 text-white/40 shrink-0" />
+                                          <span>Belum ada juri</span>
+                                        </button>
+                                      );
+                                    })()}
+                                  </div>
                                   <p className="text-[11px] text-[#DDE7E8]/70 mt-1 line-clamp-2 leading-relaxed">
                                     {comp.description}
                                   </p>
@@ -1573,9 +1626,42 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                                 {comp.title}
                               </h4>
 
-                              <p className="text-xs text-[#00D9F5] font-medium mb-2.5">
+                              <p className="text-xs text-[#00D9F5] font-medium mb-1.5">
                                 Sasaran: {comp.targetAudience}
                               </p>
+
+                              {/* Status Penugasan Juri di Kartu Lomba */}
+                              <div className="mb-2.5 flex items-center gap-1.5 flex-wrap">
+                                {(() => {
+                                  const assignedJudges = modalJuryAssignments.filter(
+                                    (a) => a.isActive && (a.competitionId === comp.id || a.competitionTitle?.toLowerCase() === comp.title.toLowerCase())
+                                  );
+                                  if (assignedJudges.length > 0) {
+                                    return (
+                                      <button
+                                        type="button"
+                                        onClick={() => setActiveTab('jury_scoring')}
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 transition-all cursor-pointer"
+                                        title={`Dewan Juri Bertugas: ${assignedJudges.map((j) => j.juryName).join(', ')}`}
+                                      >
+                                        <Award className="w-3 h-3 text-[#F2C96D] shrink-0" />
+                                        <span>Juri: {assignedJudges.map((j) => j.juryName).join(', ')}</span>
+                                      </button>
+                                    );
+                                  }
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={() => setActiveTab('jury_scoring')}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-white/5 text-white/50 border border-white/10 hover:border-[#F2C96D]/40 hover:text-[#F2C96D] transition-all cursor-pointer"
+                                      title="Tugaskan dewan juri di tab Penilaian Juri"
+                                    >
+                                      <Users className="w-3 h-3 text-white/40 shrink-0" />
+                                      <span>Belum ada juri</span>
+                                    </button>
+                                  );
+                                })()}
+                              </div>
 
                               <p className="text-xs text-[#DDE7E8]/80 leading-relaxed mb-4 line-clamp-3">
                                 {comp.description}
