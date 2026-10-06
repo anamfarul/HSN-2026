@@ -1517,199 +1517,234 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
 
           {/* Modal Form Tambah / Edit Juri via Portal */}
           {typeof document !== 'undefined' && isJudgeModalOpen && editingJudge && createPortal(
-            <div className="fixed inset-0 z-[99990] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" style={{ zIndex: 99990 }}>
-              <div className="max-w-md w-full rounded-3xl bg-[#031525] border border-white/20 p-6 shadow-2xl space-y-4 animate-scale-up text-white" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <User className="w-4 h-4 text-[#00D9F5]" />
-                    <span>{editingJudge.id ? 'Edit Profil & Penugasan Juri' : 'Tambah Dewan Juri Baru'}</span>
-                  </h4>
+            <div 
+              className="fixed inset-0 z-[99990] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
+              style={{ zIndex: 99990 }}
+              onClick={() => setIsJudgeModalOpen(false)}
+            >
+              <div 
+                className="max-w-2xl w-full max-h-[92vh] sm:max-h-[88vh] rounded-3xl bg-[#031525] border border-white/20 shadow-2xl flex flex-col animate-scale-up text-white overflow-hidden my-auto" 
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Modal Header */}
+                <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-white/10 shrink-0 bg-[#031525] z-10">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-[#00D9F5]/10 border border-[#00D9F5]/25 flex items-center justify-center text-[#00D9F5] shrink-0">
+                      <User className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm sm:text-base font-bold text-white leading-tight">
+                        {editingJudge.id ? 'Edit Profil & Penugasan Juri' : 'Tambah Dewan Juri Baru'}
+                      </h4>
+                      <p className="text-[11px] text-white/50">
+                        {editingJudge.id ? 'Perbarui data akun resmi dan penugasan cabang lomba juri' : 'Lengkapi informasi akun, kredensial login, dan penugasan cabang lomba'}
+                      </p>
+                    </div>
+                  </div>
                   <button
                     type="button"
                     onClick={() => setIsJudgeModalOpen(false)}
-                    className="p-1 rounded-lg text-white/60 hover:text-white"
+                    className="p-1.5 rounded-xl text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+                    aria-label="Tutup"
                   >
-                    <X className="w-4 h-4" />
+                    <X className="w-5 h-5" />
                   </button>
                 </div>
 
-                <form onSubmit={handleSaveJudge} className="space-y-3 text-xs">
-                  <div>
-                    <label className="block text-white/70 font-semibold mb-1">Nama Lengkap & Gelar</label>
-                    <input
-                      type="text"
-                      required
-                      value={editingJudge.fullName || ''}
-                      onChange={(e) => setEditingJudge({ ...editingJudge, fullName: e.target.value })}
-                      placeholder="Contoh: Ust. Ahmad Fauzan, M.Pd."
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/15 text-white focus:border-[#00D9F5] outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-white/70 font-semibold mb-1">Email Resmi (Untuk Login)</label>
-                    <input
-                      type="email"
-                      required
-                      value={editingJudge.email || ''}
-                      onChange={(e) => {
-                        const newEmail = e.target.value;
-                        const prevEmail = editingJudge.email || '';
-                        const currentUsername = editingJudge.username || '';
-                        // Auto-fill username if empty or matching previous email prefix
-                        const nextUsername = (!currentUsername || currentUsername === prevEmail.split('@')[0])
-                          ? (newEmail.includes('@') ? newEmail.split('@')[0] : newEmail)
-                          : currentUsername;
-                        setEditingJudge({ ...editingJudge, email: newEmail, username: nextUsername });
-                      }}
-                      placeholder="juri.nama@hsnponcokusumo.nu"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/15 text-white focus:border-[#00D9F5] outline-none"
-                    />
-                  </div>
-
-                  {/* USERNAME & PASSWORD LOGIN DEWAN JURI */}
-                  {(canManageJuryCredentials || !editingJudge.id) && (
-                    <div className="p-3.5 rounded-2xl bg-[#006B4F]/15 border border-emerald-500/35 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                          <Key className="w-3.5 h-3.5 text-[#F2C96D]" />
-                          <span>Kredensial Login Dewan Juri</span>
-                        </span>
-                        <span className="text-[10px] font-bold text-[#F2C96D] bg-[#F2C96D]/15 px-2 py-0.5 rounded-md border border-[#F2C96D]/30">
-                          {editingJudge.id ? 'Kelola Kredensial' : 'Wajib Diisi'}
-                        </span>
+                <form onSubmit={handleSaveJudge} className="flex flex-col flex-1 min-h-0 overflow-hidden text-xs">
+                  {/* Scrollable Form Body */}
+                  <div className="p-5 sm:p-6 overflow-y-auto space-y-4 flex-1 overscroll-contain">
+                    {/* Grid: Nama & Email */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                      <div>
+                        <label className="block text-white/80 font-semibold mb-1.5">
+                          Nama Lengkap & Gelar <span className="text-rose-400">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={editingJudge.fullName || ''}
+                          onChange={(e) => setEditingJudge({ ...editingJudge, fullName: e.target.value })}
+                          placeholder="Contoh: Ust. Ahmad Fauzan, M.Pd."
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/15 text-white placeholder-white/30 focus:border-[#00D9F5] focus:ring-1 focus:ring-[#00D9F5] outline-none transition-all"
+                        />
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-white/80 text-[11px] font-semibold mb-1">
-                            Username Login Juri
-                          </label>
-                          <input
-                            type="text"
-                            value={editingJudge.username || ''}
-                            onChange={(e) => setEditingJudge({ ...editingJudge, username: e.target.value })}
-                            placeholder="Contoh: juri.fauzan"
-                            className="w-full px-3 py-2 rounded-xl bg-[#020e19] border border-emerald-500/40 text-emerald-200 text-xs font-mono focus:border-[#00D9F5] outline-none"
-                          />
-                          <span className="text-[10px] text-white/40 block mt-0.5">Dapat digunakan login juri selain email</span>
+                      <div>
+                        <label className="block text-white/80 font-semibold mb-1.5">
+                          Email Resmi (Untuk Login) <span className="text-rose-400">*</span>
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          value={editingJudge.email || ''}
+                          onChange={(e) => {
+                            const newEmail = e.target.value;
+                            const prevEmail = editingJudge.email || '';
+                            const currentUsername = editingJudge.username || '';
+                            // Auto-fill username if empty or matching previous email prefix
+                            const nextUsername = (!currentUsername || currentUsername === prevEmail.split('@')[0])
+                              ? (newEmail.includes('@') ? newEmail.split('@')[0] : newEmail)
+                              : currentUsername;
+                            setEditingJudge({ ...editingJudge, email: newEmail, username: nextUsername });
+                          }}
+                          placeholder="juri.nama@hsnponcokusumo.nu"
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/15 text-white placeholder-white/30 focus:border-[#00D9F5] focus:ring-1 focus:ring-[#00D9F5] outline-none transition-all"
+                        />
+                      </div>
+                    </div>
+
+                    {/* USERNAME & PASSWORD LOGIN DEWAN JURI */}
+                    {(canManageJuryCredentials || !editingJudge.id) && (
+                      <div className="p-4 rounded-2xl bg-[#006B4F]/15 border border-emerald-500/35 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                            <Key className="w-3.5 h-3.5 text-[#F2C96D]" />
+                            <span>Kredensial Login Dewan Juri</span>
+                          </span>
+                          <span className="text-[10px] font-bold text-[#F2C96D] bg-[#F2C96D]/15 px-2.5 py-0.5 rounded-md border border-[#F2C96D]/30">
+                            {editingJudge.id ? 'Kelola Kredensial' : 'Wajib Diisi'}
+                          </span>
                         </div>
 
-                        <div>
-                          <label className="block text-white/80 text-[11px] font-semibold mb-1">
-                            Password Login Juri
-                          </label>
-                          <div className="relative">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-white/80 text-[11px] font-semibold mb-1">
+                              Username Login Juri
+                            </label>
                             <input
-                              type={isModalPasswordVisible ? 'text' : 'password'}
-                              value={editingJudge.password || ''}
-                              onChange={(e) => setEditingJudge({ ...editingJudge, password: e.target.value })}
-                              placeholder="Default: santri2026"
-                              className="w-full px-3 py-2 pr-9 rounded-xl bg-[#020e19] border border-emerald-500/40 text-[#F2C96D] text-xs font-mono focus:border-[#00D9F5] outline-none"
+                              type="text"
+                              value={editingJudge.username || ''}
+                              onChange={(e) => setEditingJudge({ ...editingJudge, username: e.target.value })}
+                              placeholder="Contoh: juri.fauzan"
+                              className="w-full px-3 py-2 rounded-xl bg-[#020e19] border border-emerald-500/40 text-emerald-200 text-xs font-mono placeholder-white/30 focus:border-[#00D9F5] outline-none"
                             />
-                            <button
-                              type="button"
-                              onClick={() => setIsModalPasswordVisible(!isModalPasswordVisible)}
-                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/50 hover:text-white"
-                              title={isModalPasswordVisible ? 'Sembunyikan Sandi' : 'Tampilkan Sandi'}
-                            >
-                              {isModalPasswordVisible ? <EyeOff className="w-3.5 h-3.5 text-[#F2C96D]" /> : <Eye className="w-3.5 h-3.5" />}
-                            </button>
+                            <span className="text-[10px] text-white/40 block mt-1">Dapat digunakan login juri selain email</span>
                           </div>
-                          <span className="text-[10px] text-white/40 block mt-0.5">Default sandi juri: santri2026</span>
+
+                          <div>
+                            <label className="block text-white/80 text-[11px] font-semibold mb-1">
+                              Password Login Juri
+                            </label>
+                            <div className="relative">
+                              <input
+                                type={isModalPasswordVisible ? 'text' : 'password'}
+                                value={editingJudge.password || ''}
+                                onChange={(e) => setEditingJudge({ ...editingJudge, password: e.target.value })}
+                                placeholder="Default: santri2026"
+                                className="w-full px-3 py-2 pr-9 rounded-xl bg-[#020e19] border border-emerald-500/40 text-[#F2C96D] text-xs font-mono placeholder-white/30 focus:border-[#00D9F5] outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setIsModalPasswordVisible(!isModalPasswordVisible)}
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/50 hover:text-white"
+                                title={isModalPasswordVisible ? 'Sembunyikan Sandi' : 'Tampilkan Sandi'}
+                              >
+                                {isModalPasswordVisible ? <EyeOff className="w-3.5 h-3.5 text-[#F2C96D]" /> : <Eye className="w-3.5 h-3.5" />}
+                              </button>
+                            </div>
+                            <span className="text-[10px] text-white/40 block mt-1">Default sandi juri: santri2026</span>
+                          </div>
                         </div>
                       </div>
+                    )}
+
+                    {/* Grid: WhatsApp & Instansi */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                      <div>
+                        <label className="block text-white/80 font-semibold mb-1.5">Nomor WhatsApp</label>
+                        <input
+                          type="text"
+                          value={editingJudge.phone || ''}
+                          onChange={(e) => setEditingJudge({ ...editingJudge, phone: e.target.value })}
+                          placeholder="0857-xxxx-xxxx"
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/15 text-white placeholder-white/30 focus:border-[#00D9F5] outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-white/80 font-semibold mb-1.5">Asal Lembaga / Instansi</label>
+                        <input
+                          type="text"
+                          value={editingJudge.institution || ''}
+                          onChange={(e) => setEditingJudge({ ...editingJudge, institution: e.target.value })}
+                          placeholder="LP Ma’arif NU / Pesantren / Universitas"
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/15 text-white placeholder-white/30 focus:border-[#00D9F5] outline-none"
+                        />
+                      </div>
                     </div>
-                  )}
 
-                  <div>
-                    <label className="block text-white/70 font-semibold mb-1">Nomor WhatsApp</label>
-                    <input
-                      type="text"
-                      value={editingJudge.phone || ''}
-                      onChange={(e) => setEditingJudge({ ...editingJudge, phone: e.target.value })}
-                      placeholder="0857-xxxx-xxxx"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/15 text-white focus:border-[#00D9F5] outline-none"
-                    />
-                  </div>
+                    {/* Penugasan Cabang Lomba (Sinkron dengan CMS Lomba) */}
+                    <div className="pt-2 border-t border-white/10">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-white/80 font-bold flex items-center gap-2">
+                          <span>Tugaskan ke Cabang Lomba</span>
+                          <span className="px-2 py-0.5 rounded-full bg-[#00D9F5]/10 border border-[#00D9F5]/30 text-[#00D9F5] text-[10px] font-mono">
+                            {editingJudgeCompIds.length} Dipilih
+                          </span>
+                        </label>
+                        <span className="text-[10px] text-[#F2C96D] font-mono">
+                          {competitions.length} Cabang Tersedia
+                        </span>
+                      </div>
+                      <div className="max-h-44 overflow-y-auto space-y-1.5 p-2 rounded-xl bg-[#020e19] border border-white/15 overscroll-contain">
+                        {competitions.map((comp) => {
+                          const isChecked = editingJudgeCompIds.includes(comp.id);
+                          return (
+                            <label
+                              key={comp.id}
+                              className={`flex items-start gap-2.5 p-2 rounded-lg cursor-pointer transition-all ${
+                                isChecked
+                                  ? 'bg-[#006B4F]/25 border border-emerald-500/40 text-white'
+                                  : 'hover:bg-white/5 border border-transparent text-white/70'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setEditingJudgeCompIds([...editingJudgeCompIds, comp.id]);
+                                  } else {
+                                    setEditingJudgeCompIds(editingJudgeCompIds.filter((id) => id !== comp.id));
+                                  }
+                                }}
+                                className="mt-0.5 w-4 h-4 accent-[#006B4F] shrink-0"
+                              />
+                              <div className="text-[11px] leading-tight flex-1">
+                                <span className="font-bold text-white block">
+                                  [{comp.category}] {comp.title}
+                                </span>
+                                <span className="text-[10px] text-white/50 block mt-0.5">
+                                  {comp.targetAudience || 'Peserta Terdaftar'}
+                                </span>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
 
-                  <div>
-                    <label className="block text-white/70 font-semibold mb-1">Asal Lembaga / Instansi</label>
-                    <input
-                      type="text"
-                      value={editingJudge.institution || ''}
-                      onChange={(e) => setEditingJudge({ ...editingJudge, institution: e.target.value })}
-                      placeholder="LP Ma’arif NU / Pesantren / Universitas"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#020e19] border border-white/15 text-white focus:border-[#00D9F5] outline-none"
-                    />
-                  </div>
-
-                  {/* Penugasan Cabang Lomba (Sinkron dengan CMS Lomba) */}
-                  <div className="pt-2 border-t border-white/10">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="text-white/80 font-bold">
-                        Tugaskan ke Cabang Lomba ({editingJudgeCompIds.length} Dipilih)
+                    <div className="flex items-center gap-2.5 pt-1">
+                      <input
+                        type="checkbox"
+                        id="judge_active_chk"
+                        checked={editingJudge.isActive ?? true}
+                        onChange={(e) => setEditingJudge({ ...editingJudge, isActive: e.target.checked })}
+                        className="w-4 h-4 accent-[#006B4F]"
+                      />
+                      <label htmlFor="judge_active_chk" className="text-white font-medium cursor-pointer text-xs">
+                        Akun juri berstatus Aktif
                       </label>
-                      <span className="text-[10px] text-[#F2C96D] font-mono">
-                        {competitions.length} Cabang Tersedia
-                      </span>
                     </div>
-                    <div className="max-h-40 overflow-y-auto space-y-1.5 p-2 rounded-xl bg-[#020e19] border border-white/15">
-                      {competitions.map((comp) => {
-                        const isChecked = editingJudgeCompIds.includes(comp.id);
-                        return (
-                          <label
-                            key={comp.id}
-                            className={`flex items-start gap-2 p-1.5 rounded-lg cursor-pointer transition-colors ${
-                              isChecked
-                                ? 'bg-[#006B4F]/25 border border-emerald-500/40 text-white'
-                                : 'hover:bg-white/5 text-white/70'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setEditingJudgeCompIds([...editingJudgeCompIds, comp.id]);
-                                } else {
-                                  setEditingJudgeCompIds(editingJudgeCompIds.filter((id) => id !== comp.id));
-                                }
-                              }}
-                              className="mt-0.5 w-3.5 h-3.5 accent-[#006B4F] shrink-0"
-                            />
-                            <div className="text-[11px] leading-tight">
-                              <span className="font-bold text-white block">
-                                [{comp.category}] {comp.title}
-                              </span>
-                              <span className="text-[10px] text-white/50 block">
-                                {comp.targetAudience || 'Peserta Terdaftar'}
-                              </span>
-                            </div>
-                          </label>
-                        );
-                      })}
+
+                    <div className="p-3 rounded-xl bg-white/5 border border-white/5 text-[11px] text-white/60">
+                      Sandi default juri: <strong className="text-[#00D9F5]">santri2026</strong>. Juri dapat menggunakan sandi tersebut atau menggunakan tautan reset resmi.
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 pt-1">
-                    <input
-                      type="checkbox"
-                      id="judge_active_chk"
-                      checked={editingJudge.isActive ?? true}
-                      onChange={(e) => setEditingJudge({ ...editingJudge, isActive: e.target.checked })}
-                      className="w-4 h-4 accent-[#006B4F]"
-                    />
-                    <label htmlFor="judge_active_chk" className="text-white font-medium cursor-pointer">
-                      Akun juri berstatus Aktif
-                    </label>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-white/5 border border-white/5 text-[11px] text-white/60">
-                    Sandi default juri: <strong className="text-[#00D9F5]">santri2026</strong>. Juri dapat menggunakan sandi tersebut atau menggunakan tautan reset resmi.
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2 pt-3 border-t border-white/10">
+                  {/* Pinned Sticky Footer Actions */}
+                  <div className="p-4 sm:px-6 bg-[#02101d] border-t border-white/10 flex flex-wrap items-center justify-between gap-2.5 shrink-0">
                     {editingJudge.id ? (
                       <button
                         type="button"
@@ -1759,13 +1794,13 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                       <button
                         type="button"
                         onClick={() => setIsJudgeModalOpen(false)}
-                        className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold"
+                        className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold transition-all text-xs"
                       >
                         Batal
                       </button>
                       <button
                         type="submit"
-                        className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] text-white font-bold shadow-md"
+                        className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:from-[#008F72] hover:to-[#00a887] text-white font-bold shadow-md transition-all active:scale-95 text-xs"
                       >
                         Simpan Data Juri
                       </button>
@@ -2620,9 +2655,16 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
 
           {/* Modal Form Tambah / Edit Kriteria via Portal */}
           {typeof document !== 'undefined' && isCriteriaModalOpen && editingCriterion && createPortal(
-            <div className="fixed inset-0 z-[99990] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" style={{ zIndex: 99990 }}>
-              <div className="max-w-md w-full rounded-3xl bg-[#031525] border border-white/20 p-6 shadow-2xl space-y-4 animate-scale-up text-white" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-between pb-3 border-b border-white/10">
+            <div 
+              className="fixed inset-0 z-[99990] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto" 
+              style={{ zIndex: 99990 }}
+              onClick={() => setIsCriteriaModalOpen(false)}
+            >
+              <div 
+                className="max-w-md w-full max-h-[92vh] rounded-3xl bg-[#031525] border border-white/20 p-5 sm:p-6 shadow-2xl flex flex-col space-y-4 animate-scale-up text-white overflow-y-auto my-auto" 
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
                   <h4 className="text-sm font-bold text-white flex items-center gap-2">
                     <Layers className="w-4 h-4 text-[#F2C96D]" />
                     <span>{editingCriterion.id ? 'Edit Kriteria Penilaian' : 'Tambah Kriteria Penilaian'}</span>
@@ -3873,12 +3915,12 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
       {/* In-App Safe Delete Confirmation Modal via Portal */}
       {typeof document !== 'undefined' && deleteModal && createPortal(
         <div 
-          className="fixed inset-0 z-[999999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in"
+          className="fixed inset-0 z-[999999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto animate-fade-in"
           style={{ zIndex: 999999 }}
           onClick={() => !isDeleting && setDeleteModal(null)}
         >
           <div 
-            className="max-w-md w-full rounded-3xl bg-[#031525] border border-rose-500/40 p-6 shadow-2xl space-y-4 animate-scale-up text-white"
+            className="max-w-md w-full rounded-3xl bg-[#031525] border border-rose-500/40 p-6 shadow-2xl space-y-4 animate-scale-up text-white my-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-3 pb-3 border-b border-white/10">
