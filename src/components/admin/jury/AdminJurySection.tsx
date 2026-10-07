@@ -4444,7 +4444,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px]">
                   {[
                     { key: 'admin_users', label: 'admin_users (Akun Panitia/Juri)', ready: juryDbStatus?.tables?.admin_users },
-                    { key: 'profiles', label: 'profiles / jury_profiles (Profil Juri)', ready: juryDbStatus?.tables?.profiles || juryDbStatus?.tables?.jury_profiles },
+                    { key: 'profiles', label: 'profiles / jury_profiles / profile_juri (Profil Juri)', ready: juryDbStatus?.tables?.profiles || juryDbStatus?.tables?.jury_profiles || juryDbStatus?.tables?.profile_juri },
                     { key: 'jury_assignments', label: 'jury_assignments (Penugasan)', ready: juryDbStatus?.tables?.jury_assignments },
                     { key: 'scoring_criteria', label: 'scoring_criteria (Kriteria & Bobot)', ready: juryDbStatus?.tables?.scoring_criteria },
                     { key: 'jury_scores', label: 'jury_scores (Nilai & Draf)', ready: juryDbStatus?.tables?.jury_scores },

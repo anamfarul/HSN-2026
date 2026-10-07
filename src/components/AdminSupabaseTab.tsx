@@ -407,6 +407,21 @@ CREATE TABLE IF NOT EXISTS public.jury_profiles (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS public.profile_juri (
+    id TEXT PRIMARY KEY,
+    full_name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    username TEXT,
+    password TEXT,
+    role TEXT NOT NULL DEFAULT 'jury',
+    institution TEXT,
+    phone TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    last_login TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS public.jury_assignments (
     id TEXT PRIMARY KEY,
     jury_id TEXT NOT NULL,
@@ -496,6 +511,11 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'jury_profiles') THEN
     DROP POLICY IF EXISTS "Public all jury_profiles" ON public.jury_profiles;
     CREATE POLICY "Public all jury_profiles" ON public.jury_profiles FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'profile_juri') THEN
+    DROP POLICY IF EXISTS "Public all profile_juri" ON public.profile_juri;
+    CREATE POLICY "Public all profile_juri" ON public.profile_juri FOR ALL USING (true) WITH CHECK (true);
   END IF;
 
   DROP POLICY IF EXISTS "Public all jury_assignments" ON public.jury_assignments;
