@@ -496,6 +496,28 @@ CREATE TABLE IF NOT EXISTS public.jury_audit_logs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE IF EXISTS public.jury_assignments
+  ADD COLUMN IF NOT EXISTS jury_name TEXT,
+  ADD COLUMN IF NOT EXISTS jury_email TEXT,
+  ADD COLUMN IF NOT EXISTS jury_institution TEXT,
+  ADD COLUMN IF NOT EXISTS competition_title TEXT,
+  ADD COLUMN IF NOT EXISTS competition_category TEXT,
+  ADD COLUMN IF NOT EXISTS assigned_by TEXT DEFAULT 'Admin CMS',
+  ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'jury_assignments_jury_id_competition_id_key'
+  ) THEN
+    BEGIN
+      ALTER TABLE public.jury_assignments ADD CONSTRAINT jury_assignments_jury_id_competition_id_key UNIQUE(jury_id, competition_id);
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_jury_assignments_lookup ON public.jury_assignments(jury_id, competition_id);
+
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.jury_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.jury_assignments ENABLE ROW LEVEL SECURITY;
