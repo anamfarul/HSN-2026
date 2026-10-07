@@ -1601,8 +1601,8 @@ export async function assignJuryToCompetition(
           full_desc: (targetComp as any).fullDesc || (targetComp as any).description || targetComp.title,
           is_active: true,
         };
-        const { error: cErr } = await supabase.from('competitions').upsert(compPayload, { onConflict: 'id' });
-        if (cErr && (cErr.message || '').toLowerCase().includes('uuid')) {
+        await supabase.from('competitions').upsert(compPayload, { onConflict: 'id' });
+        if (stableCompUuid !== effectiveCompId) {
           await supabase.from('competitions').upsert({ ...compPayload, id: stableCompUuid }, { onConflict: 'id' });
         }
       } catch {}
@@ -1642,9 +1642,9 @@ export async function assignJuryToCompetition(
           }
         } catch {}
 
-        // Simpan ke profiles
+        // Simpan ke profiles (dukung baik ID teks maupun UUID)
         try {
-          const { error: prfErr } = await supabase.from('profiles').upsert({
+          await supabase.from('profiles').upsert({
             id: canonicalJuryId,
             full_name: matchedJury.fullName,
             email: matchedJury.email,
@@ -1654,8 +1654,10 @@ export async function assignJuryToCompetition(
             phone: matchedJury.phone || '',
             is_active: matchedJury.isActive ?? true,
           }, { onConflict: 'id' });
+        } catch {}
 
-          if (prfErr && (prfErr.message || '').toLowerCase().includes('uuid')) {
+        if (stableJuryUuid !== canonicalJuryId) {
+          try {
             await supabase.from('profiles').upsert({
               id: stableJuryUuid,
               full_name: matchedJury.fullName,
@@ -1666,8 +1668,8 @@ export async function assignJuryToCompetition(
               phone: matchedJury.phone || '',
               is_active: matchedJury.isActive ?? true,
             }, { onConflict: 'id' });
-          }
-        } catch {}
+          } catch {}
+        }
 
         // Simpan ke admin_users
         try {
@@ -1682,6 +1684,21 @@ export async function assignJuryToCompetition(
             is_active: matchedJury.isActive ?? true,
           }], { onConflict: 'id' });
         } catch {}
+
+        if (stableJuryUuid !== canonicalJuryId) {
+          try {
+            await supabase.from('admin_users').upsert([{
+              id: stableJuryUuid,
+              full_name: matchedJury.fullName,
+              username: matchedJury.username || (matchedJury.email.includes('@') ? matchedJury.email.split('@')[0] : matchedJury.email),
+              email: matchedJury.email,
+              password: matchedJury.password || 'santri2026',
+              role: 'Dewan Juri',
+              phone: matchedJury.phone || '',
+              is_active: matchedJury.isActive ?? true,
+            }], { onConflict: 'id' });
+          } catch {}
+        }
       } catch (pErr) {
         console.warn('Catatan sync akun juri pendukung penugasan ke Supabase:', pErr);
       }
@@ -1751,7 +1768,31 @@ export async function assignJuryToCompetition(
       // 5. Jika belum ada atau update di atas belum berhasil, lakukan INSERT/UPSERT multi-skema
       if (!supabaseSynced) {
         const candidatePayloads = [
-          // 5a. Skema standar Supabase: ID UUID v4 + stableJuryUuid + effectiveCompId
+          // 5a. Skema UUID Assignment ID + Canonical Jury ID + Effective Comp ID (Sangat umum di Supabase)
+          {
+            full: {
+              id: stableAssignUuid,
+              jury_id: canonicalJuryId,
+              competition_id: effectiveCompId,
+              competition_title: effectiveCompTitle,
+              competition_category: effectiveCompCat,
+              assigned_by: adminName,
+              is_active: true,
+              created_at: newAssignment.createdAt,
+              jury_name: matchedJury.fullName,
+              jury_email: matchedJury.email,
+              jury_institution: matchedJury.institution || '',
+            },
+            compact: {
+              id: stableAssignUuid,
+              jury_id: canonicalJuryId,
+              competition_id: effectiveCompId,
+              assigned_by: adminName,
+              is_active: true,
+              created_at: newAssignment.createdAt,
+            },
+          },
+          // 5b. Skema UUID Assignment ID + UUID Jury ID + Effective Comp ID
           {
             full: {
               id: stableAssignUuid,
@@ -1775,7 +1816,7 @@ export async function assignJuryToCompetition(
               created_at: newAssignment.createdAt,
             },
           },
-          // 5b. Skema Text ID: canonicalJuryId + effectiveCompId
+          // 5c. Skema Text ID: assignmentId string + canonicalJuryId + effectiveCompId
           {
             full: {
               id: assignmentId,
@@ -1799,29 +1840,7 @@ export async function assignJuryToCompetition(
               created_at: newAssignment.createdAt,
             },
           },
-          // 5c. Skema Auto ID (tanpa id eksplisit, biarkan database men-generate id)
-          {
-            full: {
-              jury_id: stableJuryUuid,
-              competition_id: effectiveCompId,
-              competition_title: effectiveCompTitle,
-              competition_category: effectiveCompCat,
-              assigned_by: adminName,
-              is_active: true,
-              created_at: newAssignment.createdAt,
-              jury_name: matchedJury.fullName,
-              jury_email: matchedJury.email,
-              jury_institution: matchedJury.institution || '',
-            },
-            compact: {
-              jury_id: stableJuryUuid,
-              competition_id: effectiveCompId,
-              assigned_by: adminName,
-              is_active: true,
-              created_at: newAssignment.createdAt,
-            },
-          },
-          // 5d. Skema Auto ID dengan canonical ID
+          // 5d. Skema Auto ID (tanpa id eksplisit, biarkan database auto-generate) + canonical ID
           {
             full: {
               jury_id: canonicalJuryId,
@@ -1843,7 +1862,53 @@ export async function assignJuryToCompetition(
               created_at: newAssignment.createdAt,
             },
           },
-          // 5e. Skema UUID untuk competition_id
+          // 5e. Skema Auto ID + stableJuryUuid
+          {
+            full: {
+              jury_id: stableJuryUuid,
+              competition_id: effectiveCompId,
+              competition_title: effectiveCompTitle,
+              competition_category: effectiveCompCat,
+              assigned_by: adminName,
+              is_active: true,
+              created_at: newAssignment.createdAt,
+              jury_name: matchedJury.fullName,
+              jury_email: matchedJury.email,
+              jury_institution: matchedJury.institution || '',
+            },
+            compact: {
+              jury_id: stableJuryUuid,
+              competition_id: effectiveCompId,
+              assigned_by: adminName,
+              is_active: true,
+              created_at: newAssignment.createdAt,
+            },
+          },
+          // 5f. Skema UUID untuk competition_id + canonicalJuryId
+          {
+            full: {
+              id: stableAssignUuid,
+              jury_id: canonicalJuryId,
+              competition_id: stableCompUuid,
+              competition_title: effectiveCompTitle,
+              competition_category: effectiveCompCat,
+              assigned_by: adminName,
+              is_active: true,
+              created_at: newAssignment.createdAt,
+              jury_name: matchedJury.fullName,
+              jury_email: matchedJury.email,
+              jury_institution: matchedJury.institution || '',
+            },
+            compact: {
+              id: stableAssignUuid,
+              jury_id: canonicalJuryId,
+              competition_id: stableCompUuid,
+              assigned_by: adminName,
+              is_active: true,
+              created_at: newAssignment.createdAt,
+            },
+          },
+          // 5g. Skema UUID untuk competition_id + stableJuryUuid
           {
             full: {
               id: stableAssignUuid,
@@ -2165,7 +2230,7 @@ export async function getScoringCriteria(competitionId?: string): Promise<Scorin
     try {
       let query = supabase.from('scoring_criteria').select('*').order('sort_order', { ascending: true });
       if (normCompId && competitionId) {
-        const compIds = Array.from(new Set([normCompId, competitionId]));
+        const compIds = Array.from(new Set([normCompId, competitionId, getStableUuid(normCompId)]));
         query = query.in('competition_id', compIds);
       } else if (competitionId) {
         query = query.eq('competition_id', competitionId);
@@ -2173,16 +2238,16 @@ export async function getScoringCriteria(competitionId?: string): Promise<Scorin
       const { data, error } = await query;
       if (!error && data && data.length > 0) {
         remoteCriteria = data
-          .filter((d) => !deletedCriteria.has(d.id))
-          .map((d) => ({
-            id: d.id,
+          .filter((d: any) => !deletedCriteria.has(d.id))
+          .map((d: any) => ({
+            id: String(d.id),
             competitionId: normalizeCompId(d.competition_id),
-            criterionName: d.criterion_name,
+            criterionName: d.criterion_name || d.name || d.title || 'Kriteria Penilaian',
             description: d.description || '',
-            maxScore: Number(d.max_score) || 100,
+            maxScore: Number(d.max_score || d.maxScore) || 100,
             weight: Number(d.weight) || 0,
-            sortOrder: Number(d.sort_order) || 1,
-            isActive: d.is_active !== undefined ? Boolean(d.is_active) : true,
+            sortOrder: Number(d.sort_order || d.sortOrder) || 1,
+            isActive: d.is_active !== undefined ? Boolean(d.is_active) : (d.isActive !== undefined ? Boolean(d.isActive) : true),
             createdAt: d.created_at,
             updatedAt: d.updated_at,
           }));
@@ -2199,11 +2264,21 @@ export async function getScoringCriteria(competitionId?: string): Promise<Scorin
     }));
 
   const criteriaMap = new Map<string, ScoringCriterion>();
+  // 1. Masukkan data remote dari Supabase sebagai acuan utama
   for (const r of remoteCriteria) {
     criteriaMap.set(r.id, r);
   }
+  // 2. Tambahkan data lokal yang belum ada di remote
   for (const l of normalizedAll) {
-    criteriaMap.set(l.id, l);
+    const isAlreadyInRemote = Array.from(criteriaMap.values()).some((r) => 
+      r.id === l.id || 
+      r.id === getStableUuid(l.id) || 
+      getStableUuid(r.id) === getStableUuid(l.id) ||
+      (r.competitionId === l.competitionId && r.criterionName.trim().toLowerCase() === l.criterionName.trim().toLowerCase())
+    );
+    if (!isAlreadyInRemote) {
+      criteriaMap.set(l.id, l);
+    }
   }
   const mergedList = Array.from(criteriaMap.values());
 
@@ -2228,9 +2303,10 @@ export async function saveScoringCriterion(
     setLocal(STORAGE_DELETED_CRITERIA, Array.from(deletedCriteria));
   }
 
+  const normComp = normalizeCompId(criterion.competitionId);
   const finalCrit: ScoringCriterion = {
     id,
-    competitionId: normalizeCompId(criterion.competitionId),
+    competitionId: normComp,
     criterionName: criterion.criterionName.trim(),
     description: criterion.description?.trim() || '',
     maxScore: Number(criterion.maxScore) || 100,
@@ -2271,107 +2347,386 @@ export async function saveScoringCriterion(
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
     try {
+      const stableCritId = getStableUuid(finalCrit.id);
+      const stableCompUuid = getStableUuid(finalCrit.competitionId);
+
       // 0. Pastikan cabang lomba ada di tabel competitions Supabase (mencegah foreign key violation)
       try {
-        await supabase.from('competitions').upsert({
+        const allComps = getAvailableCompetitions();
+        const targetComp = allComps.find((c) => c.id === finalCrit.competitionId) || resolveCompetition(allComps, finalCrit.competitionId);
+        const compPayload = {
           id: finalCrit.competitionId,
-          code: finalCrit.competitionId,
-          title: finalCrit.competitionId,
+          code: targetComp?.code || finalCrit.competitionId,
+          title: targetComp?.title || finalCrit.competitionId,
+          category: targetComp?.category || 'Umum',
+          short_desc: (targetComp as any)?.shortDesc || (targetComp as any)?.description || targetComp?.title || finalCrit.competitionId,
+          full_desc: (targetComp as any)?.fullDesc || (targetComp as any)?.description || targetComp?.title || finalCrit.competitionId,
           is_active: true,
-        }, { onConflict: 'id' });
+        };
+        await supabase.from('competitions').upsert(compPayload, { onConflict: 'id' });
+        if (stableCompUuid !== finalCrit.competitionId) {
+          await supabase.from('competitions').upsert({ ...compPayload, id: stableCompUuid }, { onConflict: 'id' });
+        }
       } catch {}
 
-      const stableCritId = getStableUuid(finalCrit.id);
-      const basePayload = {
-        id: finalCrit.id,
-        competition_id: finalCrit.competitionId,
-        criterion_name: finalCrit.criterionName,
-        description: finalCrit.description,
-        max_score: finalCrit.maxScore,
-        weight: finalCrit.weight,
-        sort_order: finalCrit.sortOrder,
-        is_active: finalCrit.isActive,
-      };
+      // 1. Cari apakah kriteria sudah ada di Supabase
+      let existingRemoteCritId: string | undefined = undefined;
+      const idLookups = [finalCrit.id, stableCritId];
+      for (const lId of idLookups) {
+        if (existingRemoteCritId) break;
+        try {
+          const { data } = await supabase.from('scoring_criteria').select('id').eq('id', lId).limit(1);
+          if (data && data.length > 0 && data[0]?.id) {
+            existingRemoteCritId = String(data[0].id);
+          }
+        } catch {}
+      }
 
-      // 1. Coba upsert dengan updated_at
-      let { error: upsertErr } = await supabase.from('scoring_criteria').upsert({
-        ...basePayload,
-        updated_at: now,
-      }, { onConflict: 'id' });
-
-      if (!upsertErr) {
-        supabaseSynced = true;
-      } else {
-        // 2. Coba update langsung jika baris sudah ada
-        const { error: updErr, count } = await supabase
-          .from('scoring_criteria')
-          .update({ ...basePayload, updated_at: now })
-          .eq('id', finalCrit.id);
-
-        if (!updErr && count && count > 0) {
-          supabaseSynced = true;
-        } else {
-          // 3. Coba tanpa updated_at jika kolom updated_at belum ada
-          const { error: noUpdateErr } = await supabase.from('scoring_criteria').upsert(basePayload, { onConflict: 'id' });
-          if (!noUpdateErr) {
-            supabaseSynced = true;
-          } else {
-            // 4. Coba update tanpa updated_at
-            const { error: updNoErr, count: countNo } = await supabase
+      // Cari berdasarkan pasangan (competition_id, criterion_name)
+      if (!existingRemoteCritId) {
+        const compSearchIds = [finalCrit.competitionId, stableCompUuid];
+        for (const cId of compSearchIds) {
+          if (existingRemoteCritId) break;
+          try {
+            const { data } = await supabase
               .from('scoring_criteria')
-              .update(basePayload)
-              .eq('id', finalCrit.id);
+              .select('id')
+              .eq('competition_id', cId)
+              .ilike('criterion_name', finalCrit.criterionName)
+              .limit(1);
+            if (data && data.length > 0 && data[0]?.id) {
+              existingRemoteCritId = String(data[0].id);
+            }
+          } catch {}
+        }
+      }
 
-            if (!updNoErr && countNo && countNo > 0) {
+      // 2. Jika baris remote ditemukan: UPDATE baris tersebut langsung
+      if (existingRemoteCritId) {
+        const updatePayloads = [
+          // Payload lengkap
+          {
+            criterion_name: finalCrit.criterionName,
+            description: finalCrit.description,
+            max_score: finalCrit.maxScore,
+            weight: finalCrit.weight,
+            sort_order: finalCrit.sortOrder,
+            is_active: finalCrit.isActive,
+            updated_at: now,
+          },
+          // Tanpa updated_at
+          {
+            criterion_name: finalCrit.criterionName,
+            description: finalCrit.description,
+            max_score: finalCrit.maxScore,
+            weight: finalCrit.weight,
+            sort_order: finalCrit.sortOrder,
+            is_active: finalCrit.isActive,
+          },
+          // Alternatif kolom name
+          {
+            name: finalCrit.criterionName,
+            description: finalCrit.description,
+            max_score: finalCrit.maxScore,
+            weight: finalCrit.weight,
+            sort_order: finalCrit.sortOrder,
+            is_active: finalCrit.isActive,
+          },
+          // Payload minimal
+          {
+            criterion_name: finalCrit.criterionName,
+            weight: finalCrit.weight,
+            max_score: finalCrit.maxScore,
+            is_active: finalCrit.isActive,
+          },
+        ];
+
+        for (const up of updatePayloads) {
+          const { error: updErr } = await supabase
+            .from('scoring_criteria')
+            .update(up)
+            .eq('id', existingRemoteCritId);
+          if (!updErr) {
+            supabaseSynced = true;
+            break;
+          } else {
+            supabaseErrorMsg = updErr.message;
+          }
+        }
+      }
+
+      // 3. Jika belum tersinkron (kriteria baru atau update gagal), coba INSERT / UPSERT dengan multi-kandidat
+      if (!supabaseSynced) {
+        const candidatePayloads = [
+          // 3a. UUID ID + Text Competition ID
+          {
+            full: {
+              id: stableCritId,
+              competition_id: finalCrit.competitionId,
+              criterion_name: finalCrit.criterionName,
+              description: finalCrit.description,
+              max_score: finalCrit.maxScore,
+              weight: finalCrit.weight,
+              sort_order: finalCrit.sortOrder,
+              is_active: finalCrit.isActive,
+              updated_at: now,
+            },
+            noUpdate: {
+              id: stableCritId,
+              competition_id: finalCrit.competitionId,
+              criterion_name: finalCrit.criterionName,
+              description: finalCrit.description,
+              max_score: finalCrit.maxScore,
+              weight: finalCrit.weight,
+              sort_order: finalCrit.sortOrder,
+              is_active: finalCrit.isActive,
+            },
+            altName: {
+              id: stableCritId,
+              competition_id: finalCrit.competitionId,
+              name: finalCrit.criterionName,
+              description: finalCrit.description,
+              max_score: finalCrit.maxScore,
+              weight: finalCrit.weight,
+              sort_order: finalCrit.sortOrder,
+              is_active: finalCrit.isActive,
+            },
+            compact: {
+              id: stableCritId,
+              competition_id: finalCrit.competitionId,
+              criterion_name: finalCrit.criterionName,
+              weight: finalCrit.weight,
+              max_score: finalCrit.maxScore,
+              is_active: finalCrit.isActive,
+            },
+          },
+          // 3b. Canonical Custom Text ID + Text Competition ID
+          {
+            full: {
+              id: finalCrit.id,
+              competition_id: finalCrit.competitionId,
+              criterion_name: finalCrit.criterionName,
+              description: finalCrit.description,
+              max_score: finalCrit.maxScore,
+              weight: finalCrit.weight,
+              sort_order: finalCrit.sortOrder,
+              is_active: finalCrit.isActive,
+              updated_at: now,
+            },
+            noUpdate: {
+              id: finalCrit.id,
+              competition_id: finalCrit.competitionId,
+              criterion_name: finalCrit.criterionName,
+              description: finalCrit.description,
+              max_score: finalCrit.maxScore,
+              weight: finalCrit.weight,
+              sort_order: finalCrit.sortOrder,
+              is_active: finalCrit.isActive,
+            },
+            altName: {
+              id: finalCrit.id,
+              competition_id: finalCrit.competitionId,
+              name: finalCrit.criterionName,
+              description: finalCrit.description,
+              max_score: finalCrit.maxScore,
+              weight: finalCrit.weight,
+              sort_order: finalCrit.sortOrder,
+              is_active: finalCrit.isActive,
+            },
+            compact: {
+              id: finalCrit.id,
+              competition_id: finalCrit.competitionId,
+              criterion_name: finalCrit.criterionName,
+              weight: finalCrit.weight,
+              max_score: finalCrit.maxScore,
+              is_active: finalCrit.isActive,
+            },
+          },
+          // 3c. Auto ID (tanpa id eksplisit, jika id adalah SERIAL atau UUID auto-generated)
+          {
+            full: {
+              competition_id: finalCrit.competitionId,
+              criterion_name: finalCrit.criterionName,
+              description: finalCrit.description,
+              max_score: finalCrit.maxScore,
+              weight: finalCrit.weight,
+              sort_order: finalCrit.sortOrder,
+              is_active: finalCrit.isActive,
+              updated_at: now,
+            },
+            noUpdate: {
+              competition_id: finalCrit.competitionId,
+              criterion_name: finalCrit.criterionName,
+              description: finalCrit.description,
+              max_score: finalCrit.maxScore,
+              weight: finalCrit.weight,
+              sort_order: finalCrit.sortOrder,
+              is_active: finalCrit.isActive,
+            },
+            altName: {
+              competition_id: finalCrit.competitionId,
+              name: finalCrit.criterionName,
+              description: finalCrit.description,
+              max_score: finalCrit.maxScore,
+              weight: finalCrit.weight,
+              sort_order: finalCrit.sortOrder,
+              is_active: finalCrit.isActive,
+            },
+            compact: {
+              competition_id: finalCrit.competitionId,
+              criterion_name: finalCrit.criterionName,
+              weight: finalCrit.weight,
+              max_score: finalCrit.maxScore,
+              is_active: finalCrit.isActive,
+            },
+          },
+          // 3d. UUID ID + UUID Competition ID
+          {
+            full: {
+              id: stableCritId,
+              competition_id: stableCompUuid,
+              criterion_name: finalCrit.criterionName,
+              description: finalCrit.description,
+              max_score: finalCrit.maxScore,
+              weight: finalCrit.weight,
+              sort_order: finalCrit.sortOrder,
+              is_active: finalCrit.isActive,
+              updated_at: now,
+            },
+            noUpdate: {
+              id: stableCritId,
+              competition_id: stableCompUuid,
+              criterion_name: finalCrit.criterionName,
+              description: finalCrit.description,
+              max_score: finalCrit.maxScore,
+              weight: finalCrit.weight,
+              sort_order: finalCrit.sortOrder,
+              is_active: finalCrit.isActive,
+            },
+            altName: {
+              id: stableCritId,
+              competition_id: stableCompUuid,
+              name: finalCrit.criterionName,
+              description: finalCrit.description,
+              max_score: finalCrit.maxScore,
+              weight: finalCrit.weight,
+              sort_order: finalCrit.sortOrder,
+              is_active: finalCrit.isActive,
+            },
+            compact: {
+              id: stableCritId,
+              competition_id: stableCompUuid,
+              criterion_name: finalCrit.criterionName,
+              weight: finalCrit.weight,
+              max_score: finalCrit.maxScore,
+              is_active: finalCrit.isActive,
+            },
+          },
+          // 3e. Auto ID + UUID Competition ID
+          {
+            full: {
+              competition_id: stableCompUuid,
+              criterion_name: finalCrit.criterionName,
+              description: finalCrit.description,
+              max_score: finalCrit.maxScore,
+              weight: finalCrit.weight,
+              sort_order: finalCrit.sortOrder,
+              is_active: finalCrit.isActive,
+              updated_at: now,
+            },
+            noUpdate: {
+              competition_id: stableCompUuid,
+              criterion_name: finalCrit.criterionName,
+              description: finalCrit.description,
+              max_score: finalCrit.maxScore,
+              weight: finalCrit.weight,
+              sort_order: finalCrit.sortOrder,
+              is_active: finalCrit.isActive,
+            },
+            altName: {
+              competition_id: stableCompUuid,
+              name: finalCrit.criterionName,
+              description: finalCrit.description,
+              max_score: finalCrit.maxScore,
+              weight: finalCrit.weight,
+              sort_order: finalCrit.sortOrder,
+              is_active: finalCrit.isActive,
+            },
+            compact: {
+              competition_id: stableCompUuid,
+              criterion_name: finalCrit.criterionName,
+              weight: finalCrit.weight,
+              max_score: finalCrit.maxScore,
+              is_active: finalCrit.isActive,
+            },
+          },
+        ];
+
+        for (const opt of candidatePayloads) {
+          if (supabaseSynced) break;
+
+          // 1. Coba INSERT langsung (full)
+          const { error: insErr } = await supabase.from('scoring_criteria').insert(opt.full as any);
+          if (!insErr) {
+            supabaseSynced = true;
+            break;
+          }
+
+          const errMsg = (insErr.message || '').toLowerCase();
+          if (errMsg.includes('unique') || errMsg.includes('duplicate')) {
+            const { error: updDupErr } = await supabase
+              .from('scoring_criteria')
+              .update(opt.noUpdate as any)
+              .eq('competition_id', (opt.full as any).competition_id)
+              .ilike('criterion_name', finalCrit.criterionName);
+            if (!updDupErr) {
               supabaseSynced = true;
-            } else {
-              // 5. Coba insert biasa
-              const { error: insErr } = await supabase.from('scoring_criteria').insert(basePayload);
-              if (!insErr) {
-                supabaseSynced = true;
-              } else {
-                // 6. Jika error karena tipe id adalah UUID di Postgres dan id lama adalah string custom (misal 'crit-trad-1')
-                const isUuidErr = (upsertErr.message || noUpdateErr.message || insErr.message || '').toLowerCase().includes('uuid');
-                if (isUuidErr) {
-                  finalCrit.id = stableCritId;
-                  const uuidPayload = {
-                    ...basePayload,
-                    id: stableCritId,
-                  };
-                  const { error: uuidErr } = await supabase.from('scoring_criteria').upsert(uuidPayload, { onConflict: 'id' });
-                  if (!uuidErr) {
-                    supabaseSynced = true;
-                  } else {
-                    const { error: uuidInsErr } = await supabase.from('scoring_criteria').insert(uuidPayload);
-                    if (!uuidInsErr) supabaseSynced = true;
-                    else {
-                      supabaseErrorMsg = upsertErr.message || noUpdateErr.message || uuidErr.message || uuidInsErr.message;
-                      console.warn('Gagal menyimpan scoring_criteria ke Supabase:', supabaseErrorMsg);
-                    }
-                  }
-                } else {
-                  // 7. Coba alternatif kolom 'name' alih-alih 'criterion_name'
-                  const altPayload = {
-                    id: finalCrit.id,
-                    competition_id: finalCrit.competitionId,
-                    name: finalCrit.criterionName,
-                    description: finalCrit.description,
-                    max_score: finalCrit.maxScore,
-                    weight: finalCrit.weight,
-                    sort_order: finalCrit.sortOrder,
-                    is_active: finalCrit.isActive,
-                  };
-                  const { error: altErr } = await supabase.from('scoring_criteria').upsert(altPayload, { onConflict: 'id' });
-                  if (!altErr) {
-                    supabaseSynced = true;
-                  } else {
-                    supabaseErrorMsg = upsertErr.message || noUpdateErr.message || altErr.message;
-                    console.warn('Gagal menyimpan scoring_criteria ke Supabase:', supabaseErrorMsg);
-                  }
-                }
-              }
+              break;
             }
           }
+
+          // 2. Coba UPSERT berdasarkan id (jika memiliki id)
+          if ((opt.full as any).id) {
+            const { error: upsIdErr } = await supabase
+              .from('scoring_criteria')
+              .upsert(opt.full as any, { onConflict: 'id' });
+            if (!upsIdErr) {
+              supabaseSynced = true;
+              break;
+            }
+
+            // 3. Coba UPSERT tanpa updated_at
+            const { error: upsNoUpdErr } = await supabase
+              .from('scoring_criteria')
+              .upsert(opt.noUpdate as any, { onConflict: 'id' });
+            if (!upsNoUpdErr) {
+              supabaseSynced = true;
+              break;
+            }
+          }
+
+          // 4. Coba INSERT tanpa updated_at
+          const { error: insNoUpdErr } = await supabase.from('scoring_criteria').insert(opt.noUpdate as any);
+          if (!insNoUpdErr) {
+            supabaseSynced = true;
+            break;
+          }
+
+          // 5. Coba dengan nama kolom 'name' alih-alih 'criterion_name'
+          const { error: altNameErr } = await supabase.from('scoring_criteria').insert(opt.altName as any);
+          if (!altNameErr) {
+            supabaseSynced = true;
+            break;
+          }
+
+          // 6. Coba payload kompak
+          const { error: compactErr } = await supabase.from('scoring_criteria').insert(opt.compact as any);
+          if (!compactErr) {
+            supabaseSynced = true;
+            break;
+          }
+
+          supabaseErrorMsg = insErr.message || insNoUpdErr.message || altNameErr.message;
         }
       }
     } catch (err: any) {
@@ -2413,7 +2768,21 @@ export async function deleteScoringCriterion(
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
     try {
+      // Hapus berdasarkan canonical id
       await supabase.from('scoring_criteria').delete().eq('id', criterionId);
+      // Hapus berdasarkan UUID id
+      const stableId = getStableUuid(criterionId);
+      if (stableId !== criterionId) {
+        await supabase.from('scoring_criteria').delete().eq('id', stableId);
+      }
+      // Hapus berdasarkan kombinasi (competition_id, criterion_name) jika target diketahui
+      if (target) {
+        await supabase
+          .from('scoring_criteria')
+          .delete()
+          .eq('competition_id', target.competitionId)
+          .ilike('criterion_name', target.criterionName);
+      }
     } catch {}
   }
 
@@ -3116,7 +3485,22 @@ export const JURY_SYSTEM_SETUP_SQL = `-- =======================================
 -- Salin dan jalankan di: Supabase Dashboard -> SQL Editor -> New Query -> Run
 -- ==============================================================================
 
--- 0. TABEL AKUN PANITIA & DEWAN JURI TERPUSAT (admin_users)
+-- 0. TABEL CABANG PERLOMBAAN (competitions)
+CREATE TABLE IF NOT EXISTS public.competitions (
+    id VARCHAR(50) PRIMARY KEY,
+    code VARCHAR(30),
+    title VARCHAR(150) NOT NULL,
+    category VARCHAR(100) NOT NULL,
+    short_desc TEXT,
+    full_desc TEXT,
+    rules JSONB DEFAULT '[]'::jsonb,
+    prizes JSONB DEFAULT '[]'::jsonb,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 0b. TABEL AKUN PANITIA & DEWAN JURI TERPUSAT (admin_users)
 CREATE TABLE IF NOT EXISTS public.admin_users (
     id VARCHAR(50) PRIMARY KEY,
     full_name VARCHAR(150) NOT NULL,
@@ -3258,6 +3642,26 @@ CREATE TABLE IF NOT EXISTS public.jury_audit_logs (
 );
 
 -- 6b. PASTIKAN KOLOM-KOLOM PENDUKUNG TERSEDIA PADA TABEL YANG SUDAH DIBUAT
+ALTER TABLE IF EXISTS public.competitions
+  ADD COLUMN IF NOT EXISTS code VARCHAR(30),
+  ADD COLUMN IF NOT EXISTS title VARCHAR(150),
+  ADD COLUMN IF NOT EXISTS category VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS short_desc TEXT,
+  ADD COLUMN IF NOT EXISTS full_desc TEXT,
+  ADD COLUMN IF NOT EXISTS rules JSONB DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS prizes JSONB DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+ALTER TABLE IF EXISTS public.scoring_criteria
+  ADD COLUMN IF NOT EXISTS description TEXT,
+  ADD COLUMN IF NOT EXISTS max_score NUMERIC DEFAULT 100,
+  ADD COLUMN IF NOT EXISTS weight NUMERIC DEFAULT 25,
+  ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true,
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
 ALTER TABLE IF EXISTS public.jury_assignments
   ADD COLUMN IF NOT EXISTS jury_name TEXT,
   ADD COLUMN IF NOT EXISTS jury_email TEXT,
@@ -3290,6 +3694,7 @@ ALTER TABLE IF EXISTS public.profiles
   ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;
 
 -- 7. ENABLE ROW LEVEL SECURITY (RLS) DENGAN AKSES AMAN
+ALTER TABLE IF EXISTS public.competitions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.jury_profiles ENABLE ROW LEVEL SECURITY;
@@ -3301,6 +3706,11 @@ ALTER TABLE public.competition_results ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.jury_audit_logs ENABLE ROW LEVEL SECURITY;
 
 DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'competitions') THEN
+    DROP POLICY IF EXISTS "Public all competitions" ON public.competitions;
+    CREATE POLICY "Public all competitions" ON public.competitions FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+
   DROP POLICY IF EXISTS "Public all admin_users" ON public.admin_users;
   CREATE POLICY "Public all admin_users" ON public.admin_users FOR ALL USING (true) WITH CHECK (true);
 
@@ -3503,6 +3913,27 @@ export async function syncAllJuryDataToSupabase(customCompetitions?: Competition
     const criteria = await getScoringCriteria();
     const scores = await getJuryScores();
     const results = getLocal<CompetitionResult[]>(STORAGE_RESULTS, []);
+
+    // 0. Pastikan seluruh cabang perlombaan tersimpan di Supabase (mencegah foreign key violation)
+    try {
+      const allComps = customCompetitions && customCompetitions.length > 0 ? customCompetitions : getAvailableCompetitions();
+      for (const comp of allComps) {
+        const compPayload = {
+          id: comp.id,
+          code: comp.code || comp.id,
+          title: comp.title,
+          category: comp.category,
+          short_desc: (comp as any).shortDesc || (comp as any).description || comp.title,
+          full_desc: (comp as any).fullDesc || (comp as any).description || comp.title,
+          is_active: true,
+        };
+        await supabase.from('competitions').upsert(compPayload, { onConflict: 'id' });
+        const compUuid = getStableUuid(comp.id);
+        if (compUuid !== comp.id) {
+          await supabase.from('competitions').upsert({ ...compPayload, id: compUuid }, { onConflict: 'id' });
+        }
+      }
+    } catch {}
 
     // 1. Sync Profiles & Admin Users
     let pCount = 0;
@@ -3869,38 +4300,372 @@ export async function syncAllJuryDataToSupabase(customCompetitions?: Competition
       }
     }
 
-    // 3. Sync Criteria
+    // 3. Sync Criteria (Multi-kandidat skema: UUID, text, auto-id, fallback kolom)
     let cCount = 0;
     for (const c of criteria) {
-      const critRow = {
-        id: c.id,
-        competition_id: c.competitionId,
-        criterion_name: c.criterionName,
-        description: c.description || '',
-        max_score: Number(c.maxScore) || 100,
-        weight: Number(c.weight) || 25,
-        sort_order: Number(c.sortOrder) || 1,
-        is_active: c.isActive ?? true,
-        updated_at: new Date().toISOString(),
-      };
-      let { error: cErr } = await supabase.from('scoring_criteria').upsert(critRow, { onConflict: 'id' });
-      if (!cErr) {
-        cCount++;
-      } else {
-        // Coba update langsung jika baris sudah ada
-        const { error: updErr, count } = await supabase.from('scoring_criteria').update(critRow).eq('id', c.id);
-        if (!updErr && count && count > 0) {
-          cCount++;
-        } else {
-          // Coba tanpa updated_at
-          const { updated_at, ...noUpdateCrit } = critRow;
-          const { error: noUpdErr } = await supabase.from('scoring_criteria').upsert(noUpdateCrit, { onConflict: 'id' });
-          if (!noUpdErr) {
-            cCount++;
-          } else {
-            syncErrors.push(`Kriteria (${c.criterionName}): ${cErr.message || noUpdErr.message}`);
+      let critSaved = false;
+      const stableCritId = getStableUuid(c.id);
+      const stableCompUuid = getStableUuid(c.competitionId);
+      const nowStr = new Date().toISOString();
+
+      // 3a. Cari apakah kriteria sudah ada di Supabase
+      let existingRemoteCritId: string | undefined = undefined;
+      const idLookups = [c.id, stableCritId];
+      for (const lId of idLookups) {
+        if (existingRemoteCritId) break;
+        try {
+          const { data } = await supabase.from('scoring_criteria').select('id').eq('id', lId).limit(1);
+          if (data && data.length > 0 && data[0]?.id) {
+            existingRemoteCritId = String(data[0].id);
+          }
+        } catch {}
+      }
+
+      if (!existingRemoteCritId) {
+        const compSearchIds = [c.competitionId, stableCompUuid];
+        for (const cId of compSearchIds) {
+          if (existingRemoteCritId) break;
+          try {
+            const { data } = await supabase
+              .from('scoring_criteria')
+              .select('id')
+              .eq('competition_id', cId)
+              .ilike('criterion_name', c.criterionName)
+              .limit(1);
+            if (data && data.length > 0 && data[0]?.id) {
+              existingRemoteCritId = String(data[0].id);
+            }
+          } catch {}
+        }
+      }
+
+      // 3b. Jika sudah ada di remote, update baris tersebut
+      if (existingRemoteCritId) {
+        const updatePayloads = [
+          {
+            criterion_name: c.criterionName,
+            description: c.description || '',
+            max_score: Number(c.maxScore) || 100,
+            weight: Number(c.weight) || 25,
+            sort_order: Number(c.sortOrder) || 1,
+            is_active: c.isActive ?? true,
+            updated_at: nowStr,
+          },
+          {
+            criterion_name: c.criterionName,
+            description: c.description || '',
+            max_score: Number(c.maxScore) || 100,
+            weight: Number(c.weight) || 25,
+            sort_order: Number(c.sortOrder) || 1,
+            is_active: c.isActive ?? true,
+          },
+          {
+            name: c.criterionName,
+            description: c.description || '',
+            max_score: Number(c.maxScore) || 100,
+            weight: Number(c.weight) || 25,
+            sort_order: Number(c.sortOrder) || 1,
+            is_active: c.isActive ?? true,
+          },
+          {
+            criterion_name: c.criterionName,
+            weight: Number(c.weight) || 25,
+            max_score: Number(c.maxScore) || 100,
+            is_active: c.isActive ?? true,
+          },
+        ];
+
+        for (const up of updatePayloads) {
+          const { error: updErr } = await supabase.from('scoring_criteria').update(up).eq('id', existingRemoteCritId);
+          if (!updErr) {
+            critSaved = true;
+            break;
           }
         }
+      }
+
+      // 3c. Jika belum tersimpan, coba kandidat insert / upsert
+      if (!critSaved) {
+        const candidatePayloads = [
+          // UUID ID + Text Competition ID
+          {
+            full: {
+              id: stableCritId,
+              competition_id: c.competitionId,
+              criterion_name: c.criterionName,
+              description: c.description || '',
+              max_score: Number(c.maxScore) || 100,
+              weight: Number(c.weight) || 25,
+              sort_order: Number(c.sortOrder) || 1,
+              is_active: c.isActive ?? true,
+              updated_at: nowStr,
+            },
+            noUpdate: {
+              id: stableCritId,
+              competition_id: c.competitionId,
+              criterion_name: c.criterionName,
+              description: c.description || '',
+              max_score: Number(c.maxScore) || 100,
+              weight: Number(c.weight) || 25,
+              sort_order: Number(c.sortOrder) || 1,
+              is_active: c.isActive ?? true,
+            },
+            altName: {
+              id: stableCritId,
+              competition_id: c.competitionId,
+              name: c.criterionName,
+              description: c.description || '',
+              max_score: Number(c.maxScore) || 100,
+              weight: Number(c.weight) || 25,
+              sort_order: Number(c.sortOrder) || 1,
+              is_active: c.isActive ?? true,
+            },
+            compact: {
+              id: stableCritId,
+              competition_id: c.competitionId,
+              criterion_name: c.criterionName,
+              weight: Number(c.weight) || 25,
+              max_score: Number(c.maxScore) || 100,
+              is_active: c.isActive ?? true,
+            },
+          },
+          // Canonical ID + Text Competition ID
+          {
+            full: {
+              id: c.id,
+              competition_id: c.competitionId,
+              criterion_name: c.criterionName,
+              description: c.description || '',
+              max_score: Number(c.maxScore) || 100,
+              weight: Number(c.weight) || 25,
+              sort_order: Number(c.sortOrder) || 1,
+              is_active: c.isActive ?? true,
+              updated_at: nowStr,
+            },
+            noUpdate: {
+              id: c.id,
+              competition_id: c.competitionId,
+              criterion_name: c.criterionName,
+              description: c.description || '',
+              max_score: Number(c.maxScore) || 100,
+              weight: Number(c.weight) || 25,
+              sort_order: Number(c.sortOrder) || 1,
+              is_active: c.isActive ?? true,
+            },
+            altName: {
+              id: c.id,
+              competition_id: c.competitionId,
+              name: c.criterionName,
+              description: c.description || '',
+              max_score: Number(c.maxScore) || 100,
+              weight: Number(c.weight) || 25,
+              sort_order: Number(c.sortOrder) || 1,
+              is_active: c.isActive ?? true,
+            },
+            compact: {
+              id: c.id,
+              competition_id: c.competitionId,
+              criterion_name: c.criterionName,
+              weight: Number(c.weight) || 25,
+              max_score: Number(c.maxScore) || 100,
+              is_active: c.isActive ?? true,
+            },
+          },
+          // Auto ID + Text Competition ID
+          {
+            full: {
+              competition_id: c.competitionId,
+              criterion_name: c.criterionName,
+              description: c.description || '',
+              max_score: Number(c.maxScore) || 100,
+              weight: Number(c.weight) || 25,
+              sort_order: Number(c.sortOrder) || 1,
+              is_active: c.isActive ?? true,
+              updated_at: nowStr,
+            },
+            noUpdate: {
+              competition_id: c.competitionId,
+              criterion_name: c.criterionName,
+              description: c.description || '',
+              max_score: Number(c.maxScore) || 100,
+              weight: Number(c.weight) || 25,
+              sort_order: Number(c.sortOrder) || 1,
+              is_active: c.isActive ?? true,
+            },
+            altName: {
+              competition_id: c.competitionId,
+              name: c.criterionName,
+              description: c.description || '',
+              max_score: Number(c.maxScore) || 100,
+              weight: Number(c.weight) || 25,
+              sort_order: Number(c.sortOrder) || 1,
+              is_active: c.isActive ?? true,
+            },
+            compact: {
+              competition_id: c.competitionId,
+              criterion_name: c.criterionName,
+              weight: Number(c.weight) || 25,
+              max_score: Number(c.maxScore) || 100,
+              is_active: c.isActive ?? true,
+            },
+          },
+          // UUID ID + UUID Competition ID
+          {
+            full: {
+              id: stableCritId,
+              competition_id: stableCompUuid,
+              criterion_name: c.criterionName,
+              description: c.description || '',
+              max_score: Number(c.maxScore) || 100,
+              weight: Number(c.weight) || 25,
+              sort_order: Number(c.sortOrder) || 1,
+              is_active: c.isActive ?? true,
+              updated_at: nowStr,
+            },
+            noUpdate: {
+              id: stableCritId,
+              competition_id: stableCompUuid,
+              criterion_name: c.criterionName,
+              description: c.description || '',
+              max_score: Number(c.maxScore) || 100,
+              weight: Number(c.weight) || 25,
+              sort_order: Number(c.sortOrder) || 1,
+              is_active: c.isActive ?? true,
+            },
+            altName: {
+              id: stableCritId,
+              competition_id: stableCompUuid,
+              name: c.criterionName,
+              description: c.description || '',
+              max_score: Number(c.maxScore) || 100,
+              weight: Number(c.weight) || 25,
+              sort_order: Number(c.sortOrder) || 1,
+              is_active: c.isActive ?? true,
+            },
+            compact: {
+              id: stableCritId,
+              competition_id: stableCompUuid,
+              criterion_name: c.criterionName,
+              weight: Number(c.weight) || 25,
+              max_score: Number(c.maxScore) || 100,
+              is_active: c.isActive ?? true,
+            },
+          },
+          // Auto ID + UUID Competition ID
+          {
+            full: {
+              competition_id: stableCompUuid,
+              criterion_name: c.criterionName,
+              description: c.description || '',
+              max_score: Number(c.maxScore) || 100,
+              weight: Number(c.weight) || 25,
+              sort_order: Number(c.sortOrder) || 1,
+              is_active: c.isActive ?? true,
+              updated_at: nowStr,
+            },
+            noUpdate: {
+              competition_id: stableCompUuid,
+              criterion_name: c.criterionName,
+              description: c.description || '',
+              max_score: Number(c.maxScore) || 100,
+              weight: Number(c.weight) || 25,
+              sort_order: Number(c.sortOrder) || 1,
+              is_active: c.isActive ?? true,
+            },
+            altName: {
+              competition_id: stableCompUuid,
+              name: c.criterionName,
+              description: c.description || '',
+              max_score: Number(c.maxScore) || 100,
+              weight: Number(c.weight) || 25,
+              sort_order: Number(c.sortOrder) || 1,
+              is_active: c.isActive ?? true,
+            },
+            compact: {
+              competition_id: stableCompUuid,
+              criterion_name: c.criterionName,
+              weight: Number(c.weight) || 25,
+              max_score: Number(c.maxScore) || 100,
+              is_active: c.isActive ?? true,
+            },
+          },
+        ];
+
+        let lastCritErr = '';
+        for (const opt of candidatePayloads) {
+          if (critSaved) break;
+
+          // 1. Coba INSERT langsung (full)
+          const { error: insErr } = await supabase.from('scoring_criteria').insert(opt.full as any);
+          if (!insErr) {
+            critSaved = true;
+            break;
+          }
+
+          const errMsg = (insErr.message || '').toLowerCase();
+          if (errMsg.includes('unique') || errMsg.includes('duplicate')) {
+            const { error: updDupErr } = await supabase
+              .from('scoring_criteria')
+              .update(opt.noUpdate as any)
+              .eq('competition_id', (opt.full as any).competition_id)
+              .ilike('criterion_name', c.criterionName);
+            if (!updDupErr) {
+              critSaved = true;
+              break;
+            }
+          }
+
+          // 2. Coba UPSERT berdasarkan id (jika memiliki id)
+          if ((opt.full as any).id) {
+            const { error: upsIdErr } = await supabase
+              .from('scoring_criteria')
+              .upsert(opt.full as any, { onConflict: 'id' });
+            if (!upsIdErr) {
+              critSaved = true;
+              break;
+            }
+
+            // 3. Coba UPSERT tanpa updated_at
+            const { error: upsNoUpdErr } = await supabase
+              .from('scoring_criteria')
+              .upsert(opt.noUpdate as any, { onConflict: 'id' });
+            if (!upsNoUpdErr) {
+              critSaved = true;
+              break;
+            }
+          }
+
+          // 4. Coba INSERT tanpa updated_at
+          const { error: insNoUpdErr } = await supabase.from('scoring_criteria').insert(opt.noUpdate as any);
+          if (!insNoUpdErr) {
+            critSaved = true;
+            break;
+          }
+
+          // 5. Coba dengan nama kolom 'name' alih-alih 'criterion_name'
+          const { error: altNameErr } = await supabase.from('scoring_criteria').insert(opt.altName as any);
+          if (!altNameErr) {
+            critSaved = true;
+            break;
+          }
+
+          // 6. Coba payload kompak
+          const { error: compactErr } = await supabase.from('scoring_criteria').insert(opt.compact as any);
+          if (!compactErr) {
+            critSaved = true;
+            break;
+          }
+
+          lastCritErr = insErr.message || insNoUpdErr.message || altNameErr.message;
+        }
+
+        if (!critSaved) {
+          syncErrors.push(`Kriteria (${c.criterionName}): ${lastCritErr || 'Gagal menyimpan ke tabel scoring_criteria'}`);
+        }
+      }
+
+      if (critSaved) {
+        cCount++;
       }
     }
 
@@ -4011,6 +4776,11 @@ export async function fetchAllJuryDataFromSupabase(): Promise<{
       getScoringCriteria(),
       getJuryScores(),
     ]);
+
+    if (pList && pList.length > 0) setLocal(STORAGE_PROFILES, pList);
+    if (aList && aList.length > 0) setLocal(STORAGE_ASSIGNMENTS, aList);
+    if (cList && cList.length > 0) setLocal(STORAGE_CRITERIA, cList);
+    if (sList && sList.length > 0) setLocal(STORAGE_SCORES, sList);
 
     notifyJuryDataChanged('all_jury_data_fetched', {
       timestamp: Date.now(),
