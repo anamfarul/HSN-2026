@@ -262,10 +262,11 @@ export async function testSupabaseConnection(): Promise<{
       .limit(1);
 
     // 4. Tes tabel sistem juri
-    const [{ error: assignErr }, { error: critErr }, { error: profErr }] = await Promise.all([
+    const [{ error: assignErr }, { error: critErr }, { error: profErr }, { error: juryProfErr }] = await Promise.all([
       client.from('jury_assignments').select('id').limit(1),
       client.from('scoring_criteria').select('id').limit(1),
       client.from('profiles').select('id').limit(1),
+      client.from('jury_profiles').select('id').limit(1),
     ]);
 
     // Periksa apakah ada error autentikasi (Anon Key salah/kadaluarsa)
@@ -302,7 +303,7 @@ export async function testSupabaseConnection(): Promise<{
     const hasUserTable = !userErr;
     const hasAssignTable = !assignErr;
     const hasCritTable = !critErr;
-    const hasProfTable = !profErr;
+    const hasProfTable = !profErr || !juryProfErr;
 
     if (!hasCompTable && !hasPartTable && !hasUserTable) {
       return {

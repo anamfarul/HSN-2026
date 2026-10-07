@@ -539,34 +539,67 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
   // ==============================================================================
   if (connected && supabase) {
     try {
-      // 1. Ambil seluruh data dari tabel public.profiles di Supabase
+      let remoteList: UserProfile[] = [];
+
+      // 1a. Coba ambil dari tabel public.jury_profiles (tabel khusus profil juri)
+      let juryProfilesErr: any = null;
+      try {
+        const { data: jpRows, error: jpErr } = await supabase
+          .from('jury_profiles')
+          .select('*')
+          .order('created_at', { ascending: true });
+
+        juryProfilesErr = jpErr;
+        if (!jpErr && jpRows && Array.isArray(jpRows) && jpRows.length > 0) {
+          for (const p of jpRows) {
+            const email = (p.email || '').trim().toLowerCase();
+            const username = (p.username || '').trim().toLowerCase() || (email.includes('@') ? email.split('@')[0] : email) || p.id;
+            remoteList.push({
+              id: p.id,
+              fullName: p.full_name || p.fullName || 'Dewan Juri',
+              email: email,
+              role: 'jury' as const,
+              institution: p.institution || 'MWC NU Poncokusumo',
+              phone: p.phone || '',
+              isActive: p.is_active !== undefined ? Boolean(p.is_active) : (p.isActive ?? true),
+              username: username,
+              password: p.password || 'santri2026',
+              createdAt: p.created_at || p.createdAt || new Date().toISOString(),
+              updatedAt: p.updated_at || p.updatedAt || new Date().toISOString(),
+            });
+          }
+        }
+      } catch {}
+
+      // 1b. Coba ambil seluruh data dari tabel public.profiles di Supabase
       const { data: profileRows, error: profileErr } = await supabase
         .from('profiles')
         .select('*')
         .order('created_at', { ascending: true });
 
-      let remoteList: UserProfile[] = [];
-
       if (!profileErr && profileRows && Array.isArray(profileRows) && profileRows.length > 0) {
-        remoteList = profileRows.map((p: any) => {
+        for (const p of profileRows) {
           const email = (p.email || '').trim().toLowerCase();
           const username = (p.username || '').trim().toLowerCase() || (email.includes('@') ? email.split('@')[0] : email) || p.id;
           const password = p.password || 'santri2026';
 
-          return {
-            id: p.id,
-            fullName: p.full_name || p.fullName || 'Dewan Juri',
-            email: email,
-            role: 'jury' as const,
-            institution: p.institution || 'MWC NU Poncokusumo',
-            phone: p.phone || '',
-            isActive: p.is_active !== undefined ? Boolean(p.is_active) : (p.isActive ?? true),
-            username: username,
-            password: password,
-            createdAt: p.created_at || p.createdAt || new Date().toISOString(),
-            updatedAt: p.updated_at || p.updatedAt || new Date().toISOString(),
-          };
-        });
+          const exists = remoteList.some((r) => r.id === p.id || (r.username && r.username === username) || (r.email && r.email === email));
+          if (!exists) {
+            remoteList.push({
+              id: p.id,
+              fullName: p.full_name || p.fullName || 'Dewan Juri',
+              email: email,
+              role: 'jury' as const,
+              institution: p.institution || 'MWC NU Poncokusumo',
+              phone: p.phone || '',
+              isActive: p.is_active !== undefined ? Boolean(p.is_active) : (p.isActive ?? true),
+              username: username,
+              password: password,
+              createdAt: p.created_at || p.createdAt || new Date().toISOString(),
+              updatedAt: p.updated_at || p.updatedAt || new Date().toISOString(),
+            });
+          }
+        }
       }
 
       // 2. Periksa juga tabel admin_users untuk akun dengan peran dewan juri
@@ -620,7 +653,8 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
       } catch {}
 
       // 3. JIKA QUERY SUPABASE TIDAK ERROR:
-      if (!profileErr) {
+      const hasAnyProfileQuerySucceeded = !profileErr || !juryProfilesErr;
+      if (hasAnyProfileQuerySucceeded) {
         // Jika di Supabase remote masih kosong:
         if (remoteList.length === 0) {
           // CEK APAKAH ADA PROFIL DI LOKAL YANG TELAH DIBUAT USER:
@@ -628,19 +662,25 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
           if (localList.length > 0) {
             // Push dan sinkronkan data lokal yang baru dibuat ke Supabase
             for (const lp of localList) {
+              const pPayload = {
+                id: lp.id,
+                full_name: lp.fullName,
+                email: lp.email,
+                username: lp.username,
+                password: lp.password,
+                role: 'jury',
+                institution: lp.institution,
+                phone: lp.phone,
+                is_active: lp.isActive,
+                updated_at: lp.updatedAt,
+              };
               try {
-                await supabase.from('profiles').upsert({
-                  id: lp.id,
-                  full_name: lp.fullName,
-                  email: lp.email,
-                  username: lp.username,
-                  password: lp.password,
-                  role: 'jury',
-                  institution: lp.institution,
-                  phone: lp.phone,
-                  is_active: lp.isActive,
-                  updated_at: lp.updatedAt,
-                }, { onConflict: 'id' });
+                await supabase.from('jury_profiles').upsert(pPayload, { onConflict: 'id' });
+              } catch {}
+              try {
+                await supabase.from('profiles').upsert(pPayload, { onConflict: 'id' });
+              } catch {}
+              try {
                 await supabase.from('admin_users').upsert([
                   {
                     id: lp.id,
@@ -895,7 +935,51 @@ export async function saveJuryProfile(
       console.warn('Supabase upsert admin_users exception:', err);
     }
 
-    // 3b. Simpan juga ke tabel public.profiles jika tersedia
+    // 3b. Simpan ke tabel public.jury_profiles (tabel khusus dewan juri / profile juri)
+    let juryProfilesSuccess = false;
+    try {
+      const fullJuryPayload = {
+        id: finalProfile.id,
+        full_name: finalProfile.fullName,
+        email: finalProfile.email,
+        username: finalProfile.username,
+        password: finalProfile.password,
+        role: finalProfile.role || 'jury',
+        institution: finalProfile.institution,
+        phone: finalProfile.phone,
+        is_active: finalProfile.isActive,
+        updated_at: finalProfile.updatedAt,
+      };
+
+      const { error: jpErr } = await supabase.from('jury_profiles').upsert(fullJuryPayload, { onConflict: 'id' });
+      if (!jpErr) {
+        juryProfilesSuccess = true;
+      } else {
+        // Fallback jika error tipe UUID di kolom id
+        if ((jpErr.message || '').toLowerCase().includes('uuid')) {
+          const uuidId = generateJuryUuid();
+          const { error: jpUuidErr } = await supabase.from('jury_profiles').upsert({ ...fullJuryPayload, id: uuidId }, { onConflict: 'id' });
+          if (!jpUuidErr) juryProfilesSuccess = true;
+        } else {
+          // Fallback coba update berdasarkan username atau email
+          const { error: jpUpdErr } = await supabase
+            .from('jury_profiles')
+            .update(fullJuryPayload)
+            .or(`username.eq.${finalProfile.username},email.eq.${finalProfile.email}`);
+          if (!jpUpdErr) {
+            juryProfilesSuccess = true;
+          } else {
+            // Coba insert biasa
+            const { error: jpInsErr } = await supabase.from('jury_profiles').insert(fullJuryPayload);
+            if (!jpInsErr) juryProfilesSuccess = true;
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('Supabase upsert jury_profiles note:', err);
+    }
+
+    // 3c. Simpan juga ke tabel public.profiles jika tersedia
     try {
       const fullProfilePayload = {
         id: finalProfile.id,
@@ -914,29 +998,45 @@ export async function saveJuryProfile(
       if (!fullErr) {
         profilesSuccess = true;
       } else {
-        // Fallback coba kolom profil standar
-        const stdProfilePayload = {
-          id: finalProfile.id,
-          full_name: finalProfile.fullName,
-          email: finalProfile.email,
-          role: finalProfile.role,
-          institution: finalProfile.institution,
-          phone: finalProfile.phone,
-          is_active: finalProfile.isActive,
-        };
-        const { error: fallbackErr } = await supabase.from('profiles').upsert(stdProfilePayload, { onConflict: 'id' });
-        if (!fallbackErr) {
-          profilesSuccess = true;
-        } else if (!adminUsersSuccess) {
-          supabaseErrorMsg = fullErr.message || fallbackErr.message;
+        // Fallback jika error UUID
+        if ((fullErr.message || '').toLowerCase().includes('uuid')) {
+          const uuidId = generateJuryUuid();
+          const { error: profUuidErr } = await supabase.from('profiles').upsert({ ...fullProfilePayload, id: uuidId }, { onConflict: 'id' });
+          if (!profUuidErr) profilesSuccess = true;
+        } else {
+          // Fallback coba kolom profil standar
+          const stdProfilePayload = {
+            id: finalProfile.id,
+            full_name: finalProfile.fullName,
+            email: finalProfile.email,
+            role: finalProfile.role,
+            institution: finalProfile.institution,
+            phone: finalProfile.phone,
+            is_active: finalProfile.isActive,
+          };
+          const { error: fallbackErr } = await supabase.from('profiles').upsert(stdProfilePayload, { onConflict: 'id' });
+          if (!fallbackErr) {
+            profilesSuccess = true;
+          } else {
+            // Coba update berdasarkan username atau email
+            const { error: updProfErr } = await supabase
+              .from('profiles')
+              .update(stdProfilePayload)
+              .or(`username.eq.${finalProfile.username},email.eq.${finalProfile.email}`);
+            if (!updProfErr) {
+              profilesSuccess = true;
+            } else if (!adminUsersSuccess && !juryProfilesSuccess) {
+              supabaseErrorMsg = fullErr.message || fallbackErr.message || updProfErr.message;
+            }
+          }
         }
       }
     } catch (err: any) {
-      if (!adminUsersSuccess) supabaseErrorMsg = err?.message;
+      if (!adminUsersSuccess && !juryProfilesSuccess) supabaseErrorMsg = err?.message;
       console.warn('Supabase upsert profiles exception:', err);
     }
 
-    supabaseSynced = adminUsersSuccess || profilesSuccess;
+    supabaseSynced = adminUsersSuccess || profilesSuccess || juryProfilesSuccess;
   }
 
   notifyJuryDataChanged('jury_profiles', updatedList);
@@ -967,7 +1067,13 @@ export async function toggleJuryStatus(
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
     try {
+      await supabase.from('jury_profiles').update({ is_active: isActive }).eq('id', juryId);
+    } catch {}
+    try {
       await supabase.from('profiles').update({ is_active: isActive }).eq('id', juryId);
+    } catch {}
+    try {
+      await supabase.from('admin_users').update({ is_active: isActive }).eq('id', juryId);
     } catch {}
   }
   notifyJuryDataChanged('jury_profiles', updated);
@@ -1011,6 +1117,7 @@ export async function deleteJuryProfile(
   if (isSupabaseConnected() && supabase) {
     try {
       await supabase.from('jury_assignments').delete().eq('jury_id', juryId);
+      await supabase.from('jury_profiles').delete().eq('id', juryId);
       await supabase.from('profiles').delete().eq('id', juryId);
       await supabase.from('admin_users').delete().eq('id', juryId);
     } catch {}
@@ -1342,7 +1449,7 @@ export async function assignJuryToCompetition(
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
     try {
-      // 1. Pastikan profil juri ada di Supabase terlebih dahulu (admin_users & profiles)
+      // 1. Pastikan profil juri ada di Supabase terlebih dahulu (admin_users, profiles, & jury_profiles)
       try {
         await supabase.from('admin_users').upsert([
           {
@@ -1357,11 +1464,26 @@ export async function assignJuryToCompetition(
           }
         ], { onConflict: 'id' });
 
+        await supabase.from('jury_profiles').upsert(
+          {
+            id: matchedJury.id,
+            full_name: matchedJury.fullName,
+            email: matchedJury.email,
+            username: matchedJury.username,
+            role: matchedJury.role || 'jury',
+            institution: matchedJury.institution || '',
+            phone: matchedJury.phone || '',
+            is_active: matchedJury.isActive ?? true,
+          },
+          { onConflict: 'id' }
+        );
+
         await supabase.from('profiles').upsert(
           {
             id: matchedJury.id,
             full_name: matchedJury.fullName,
             email: matchedJury.email,
+            username: matchedJury.username,
             role: matchedJury.role || 'jury',
             institution: matchedJury.institution || '',
             phone: matchedJury.phone || '',
@@ -1378,8 +1500,7 @@ export async function assignJuryToCompetition(
         await supabase
           .from('jury_assignments')
           .delete()
-          .eq('jury_id', canonicalJuryId)
-          .eq('competition_id', effectiveCompId);
+          .or(`id.eq.${assignmentId},and(jury_id.eq.${canonicalJuryId},competition_id.eq.${effectiveCompId})`);
       } catch {}
 
       // 3. Siapkan payload penugasan lengkap
@@ -1398,6 +1519,7 @@ export async function assignJuryToCompetition(
       };
 
       // 4. Coba simpan penugasan
+      // 4a. Coba dengan onConflict 'id'
       let { error: upsertErr } = await supabase
         .from('jury_assignments')
         .upsert(fullPayload, { onConflict: 'id' });
@@ -1405,36 +1527,56 @@ export async function assignJuryToCompetition(
       if (!upsertErr) {
         supabaseSynced = true;
       } else {
-        // Fallback jika kolom jury_name/jury_email belum dibuat di tabel Supabase
-        const compactPayload = {
-          id: assignmentId,
-          jury_id: canonicalJuryId,
-          competition_id: effectiveCompId,
-          competition_title: effectiveCompTitle,
-          competition_category: effectiveCompCat,
-          assigned_by: adminName,
-          is_active: true,
-          created_at: newAssignment.createdAt,
-        };
-
-        const { error: compactErr } = await supabase
+        // 4b. Coba onConflict 'jury_id,competition_id' (sesuai UNIQUE constraint di database)
+        const { error: confErr } = await supabase
           .from('jury_assignments')
-          .upsert(compactPayload, { onConflict: 'id' });
+          .upsert(fullPayload, { onConflict: 'jury_id,competition_id' });
 
-        if (!compactErr) {
+        if (!confErr) {
           supabaseSynced = true;
         } else {
-          // Fallback jika kolom 'id' di tabel Supabase bertipe UUID murni
-          const uuidPayload = {
-            ...compactPayload,
-            id: generateJuryUuid(),
-          };
-          const { error: uuidErr } = await supabase.from('jury_assignments').insert(uuidPayload);
-          if (!uuidErr) {
+          // 4c. Coba update langsung jika baris sudah ada
+          const { error: updErr, count } = await supabase
+            .from('jury_assignments')
+            .update(fullPayload)
+            .eq('jury_id', canonicalJuryId)
+            .eq('competition_id', effectiveCompId);
+
+          if (!updErr && count && count > 0) {
             supabaseSynced = true;
           } else {
-            supabaseErrorMsg = upsertErr.message || compactErr.message || uuidErr.message;
-            console.warn('Gagal menyimpan penugasan ke Supabase:', supabaseErrorMsg);
+            // 4d. Fallback jika kolom baru belum ada (jury_name / jury_email)
+            const compactPayload = {
+              id: assignmentId,
+              jury_id: canonicalJuryId,
+              competition_id: effectiveCompId,
+              competition_title: effectiveCompTitle,
+              competition_category: effectiveCompCat,
+              assigned_by: adminName,
+              is_active: true,
+              created_at: newAssignment.createdAt,
+            };
+
+            const { error: compactErr } = await supabase
+              .from('jury_assignments')
+              .upsert(compactPayload, { onConflict: 'id' });
+
+            if (!compactErr) {
+              supabaseSynced = true;
+            } else {
+              // 4e. Fallback jika kolom 'id' bertipe UUID
+              const uuidPayload = {
+                ...compactPayload,
+                id: generateJuryUuid(),
+              };
+              const { error: uuidErr } = await supabase.from('jury_assignments').insert(uuidPayload);
+              if (!uuidErr) {
+                supabaseSynced = true;
+              } else {
+                supabaseErrorMsg = upsertErr.message || confErr?.message || compactErr.message || uuidErr.message;
+                console.warn('Gagal menyimpan penugasan ke Supabase:', supabaseErrorMsg);
+              }
+            }
           }
         }
       }
@@ -1746,38 +1888,80 @@ export async function saveScoringCriterion(
       };
 
       // 1. Coba upsert dengan updated_at
-      const { error } = await supabase.from('scoring_criteria').upsert({
+      let { error: upsertErr } = await supabase.from('scoring_criteria').upsert({
         ...basePayload,
         updated_at: now,
       }, { onConflict: 'id' });
 
-      if (!error) {
+      if (!upsertErr) {
         supabaseSynced = true;
       } else {
-        // 2. Coba tanpa updated_at jika kolom belum ada di schema
-        const { error: noUpdateErr } = await supabase.from('scoring_criteria').upsert(basePayload, { onConflict: 'id' });
-        if (!noUpdateErr) {
+        // 2. Coba update langsung jika baris sudah ada
+        const { error: updErr, count } = await supabase
+          .from('scoring_criteria')
+          .update({ ...basePayload, updated_at: now })
+          .eq('id', finalCrit.id);
+
+        if (!updErr && count && count > 0) {
           supabaseSynced = true;
         } else {
-          // 3. Jika error karena tipe id adalah UUID di Postgres dan id lama adalah string custom (misal 'crit-trad-1')
-          const isUuidErr = (error.message || noUpdateErr.message || '').toLowerCase().includes('uuid');
-          if (isUuidErr) {
-            const uuidId = generateJuryUuid();
-            finalCrit.id = uuidId;
-            const uuidPayload = {
-              ...basePayload,
-              id: uuidId,
-            };
-            const { error: uuidErr } = await supabase.from('scoring_criteria').upsert(uuidPayload, { onConflict: 'id' });
-            if (!uuidErr) {
+          // 3. Coba tanpa updated_at jika kolom updated_at belum ada
+          const { error: noUpdateErr } = await supabase.from('scoring_criteria').upsert(basePayload, { onConflict: 'id' });
+          if (!noUpdateErr) {
+            supabaseSynced = true;
+          } else {
+            // 4. Coba update tanpa updated_at
+            const { error: updNoErr, count: countNo } = await supabase
+              .from('scoring_criteria')
+              .update(basePayload)
+              .eq('id', finalCrit.id);
+
+            if (!updNoErr && countNo && countNo > 0) {
               supabaseSynced = true;
             } else {
-              supabaseErrorMsg = error.message || noUpdateErr.message || uuidErr.message;
-              console.warn('Gagal menyimpan scoring_criteria ke Supabase:', supabaseErrorMsg);
+              // 5. Coba insert biasa
+              const { error: insErr } = await supabase.from('scoring_criteria').insert(basePayload);
+              if (!insErr) {
+                supabaseSynced = true;
+              } else {
+                // 6. Jika error karena tipe id adalah UUID di Postgres dan id lama adalah string custom (misal 'crit-trad-1')
+                const isUuidErr = (upsertErr.message || noUpdateErr.message || insErr.message || '').toLowerCase().includes('uuid');
+                if (isUuidErr) {
+                  const uuidId = generateJuryUuid();
+                  finalCrit.id = uuidId;
+                  const uuidPayload = {
+                    ...basePayload,
+                    id: uuidId,
+                  };
+                  const { error: uuidErr } = await supabase.from('scoring_criteria').upsert(uuidPayload, { onConflict: 'id' });
+                  if (!uuidErr) {
+                    supabaseSynced = true;
+                  } else {
+                    supabaseErrorMsg = upsertErr.message || noUpdateErr.message || uuidErr.message;
+                    console.warn('Gagal menyimpan scoring_criteria ke Supabase:', supabaseErrorMsg);
+                  }
+                } else {
+                  // 7. Coba alternatif kolom 'name' alih-alih 'criterion_name'
+                  const altPayload = {
+                    id: finalCrit.id,
+                    competition_id: finalCrit.competitionId,
+                    name: finalCrit.criterionName,
+                    description: finalCrit.description,
+                    max_score: finalCrit.maxScore,
+                    weight: finalCrit.weight,
+                    sort_order: finalCrit.sortOrder,
+                    is_active: finalCrit.isActive,
+                  };
+                  const { error: altErr } = await supabase.from('scoring_criteria').upsert(altPayload, { onConflict: 'id' });
+                  if (!altErr) {
+                    supabaseSynced = true;
+                  } else {
+                    supabaseErrorMsg = upsertErr.message || noUpdateErr.message || altErr.message;
+                    console.warn('Gagal menyimpan scoring_criteria ke Supabase:', supabaseErrorMsg);
+                  }
+                }
+              }
             }
-          } else {
-            supabaseErrorMsg = error.message || noUpdateErr.message;
-            console.warn('Gagal menyimpan scoring_criteria ke Supabase:', supabaseErrorMsg);
           }
         }
       }
@@ -2537,8 +2721,24 @@ CREATE TABLE IF NOT EXISTS public.admin_users (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 1. TABEL PROFIL DEWAN JURI & KREDENSIAL LOGIN (profiles)
+-- 1a. TABEL PROFIL DEWAN JURI & KREDENSIAL LOGIN (profiles)
 CREATE TABLE IF NOT EXISTS public.profiles (
+    id TEXT PRIMARY KEY,
+    full_name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    username TEXT,
+    password TEXT,
+    role TEXT NOT NULL DEFAULT 'jury',
+    institution TEXT,
+    phone TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    last_login TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 1b. TABEL KHUSUS DEWAN JURI / PROFILE JURI (jury_profiles)
+CREATE TABLE IF NOT EXISTS public.jury_profiles (
     id TEXT PRIMARY KEY,
     full_name TEXT NOT NULL,
     email TEXT NOT NULL,
@@ -2654,6 +2854,7 @@ ALTER TABLE IF EXISTS public.profiles
 -- 7. ENABLE ROW LEVEL SECURITY (RLS) DENGAN AKSES AMAN
 ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.jury_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.jury_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.scoring_criteria ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.jury_scores ENABLE ROW LEVEL SECURITY;
@@ -2666,6 +2867,11 @@ DO $$ BEGIN
 
   DROP POLICY IF EXISTS "Public all profiles" ON public.profiles;
   CREATE POLICY "Public all profiles" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
+
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'jury_profiles') THEN
+    DROP POLICY IF EXISTS "Public all jury_profiles" ON public.jury_profiles;
+    CREATE POLICY "Public all jury_profiles" ON public.jury_profiles FOR ALL USING (true) WITH CHECK (true);
+  END IF;
 
   DROP POLICY IF EXISTS "Public all jury_assignments" ON public.jury_assignments;
   CREATE POLICY "Public all jury_assignments" ON public.jury_assignments FOR ALL USING (true) WITH CHECK (true);
@@ -2686,6 +2892,11 @@ END $$;
 -- 8. AKTIFKAN REPLIKASI REALTIME SUPABASE UNTUK SINKRONISASI OTOMATIS
 DO $$ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.jury_profiles;
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
 
@@ -2720,6 +2931,7 @@ export async function checkJuryTablesStatus(): Promise<{
   message: string;
   tables: {
     profiles: boolean;
+    jury_profiles?: boolean;
     admin_users: boolean;
     jury_assignments: boolean;
     scoring_criteria: boolean;
@@ -2737,6 +2949,7 @@ export async function checkJuryTablesStatus(): Promise<{
     message: 'Supabase belum dikonfigurasi.',
     tables: {
       profiles: false,
+      jury_profiles: false,
       admin_users: false,
       jury_assignments: false,
       scoring_criteria: false,
@@ -2744,7 +2957,7 @@ export async function checkJuryTablesStatus(): Promise<{
       competition_results: false,
     },
     allJuryTablesReady: false,
-    missingTables: ['profiles', 'admin_users', 'jury_assignments', 'scoring_criteria', 'jury_scores', 'competition_results'],
+    missingTables: ['profiles / jury_profiles', 'admin_users', 'jury_assignments', 'scoring_criteria', 'jury_scores', 'competition_results'],
   };
 
   if (!connected || !supabase) {
@@ -2752,8 +2965,9 @@ export async function checkJuryTablesStatus(): Promise<{
   }
 
   try {
-    const [pRes, auRes, aRes, cRes, sRes, rRes] = await Promise.all([
+    const [pRes, jpRes, auRes, aRes, cRes, sRes, rRes] = await Promise.all([
       supabase.from('profiles').select('id').limit(1),
+      supabase.from('jury_profiles').select('id').limit(1),
       supabase.from('admin_users').select('id').limit(1),
       supabase.from('jury_assignments').select('id').limit(1),
       supabase.from('scoring_criteria').select('id').limit(1),
@@ -2761,7 +2975,8 @@ export async function checkJuryTablesStatus(): Promise<{
       supabase.from('competition_results').select('id').limit(1),
     ]);
 
-    const isProfilesReady = !pRes.error;
+    const isProfilesReady = !pRes.error || !jpRes.error;
+    const isJuryProfilesReady = !jpRes.error;
     const isAdminUsersReady = !auRes.error;
     const isAssignmentsReady = !aRes.error;
     const isCriteriaReady = !cRes.error;
@@ -2769,7 +2984,7 @@ export async function checkJuryTablesStatus(): Promise<{
     const isResultsReady = !rRes.error;
 
     const missing: string[] = [];
-    if (!isProfilesReady && !isAdminUsersReady) missing.push('profiles / admin_users');
+    if (!isProfilesReady && !isAdminUsersReady) missing.push('profiles / jury_profiles');
     if (!isAssignmentsReady) missing.push('jury_assignments');
     if (!isCriteriaReady) missing.push('scoring_criteria');
     if (!isScoresReady) missing.push('jury_scores');
@@ -2784,6 +2999,7 @@ export async function checkJuryTablesStatus(): Promise<{
         : `Tabel berikut belum dibuat di Supabase: ${missing.join(', ')}`,
       tables: {
         profiles: isProfilesReady,
+        jury_profiles: isJuryProfilesReady,
         admin_users: isAdminUsersReady,
         jury_assignments: isAssignmentsReady,
         scoring_criteria: isCriteriaReady,
@@ -2839,7 +3055,34 @@ export async function syncAllJuryDataToSupabase(customCompetitions?: Competition
     for (const p of profiles) {
       let saved = false;
 
-      // 1a. Simpan ke tabel profiles
+      // 1a. Simpan ke tabel jury_profiles (khusus dewan juri)
+      const juryRow = {
+        id: p.id,
+        full_name: p.fullName,
+        email: p.email,
+        username: p.username || (p.email.includes('@') ? p.email.split('@')[0] : p.email),
+        password: p.password || 'santri2026',
+        role: p.role || 'jury',
+        institution: p.institution || 'MWC NU Poncokusumo',
+        phone: p.phone || '',
+        is_active: p.isActive ?? true,
+        updated_at: new Date().toISOString(),
+      };
+
+      try {
+        const { error: jpErr } = await supabase.from('jury_profiles').upsert(juryRow, { onConflict: 'id' });
+        if (!jpErr) {
+          saved = true;
+        } else {
+          const { error: jpUpdErr } = await supabase
+            .from('jury_profiles')
+            .update(juryRow)
+            .or(`username.eq.${juryRow.username},email.eq.${juryRow.email}`);
+          if (!jpUpdErr) saved = true;
+        }
+      } catch {}
+
+      // 1b. Simpan ke tabel profiles
       const profileRow = {
         id: p.id,
         full_name: p.fullName,
@@ -2871,7 +3114,7 @@ export async function syncAllJuryDataToSupabase(customCompetitions?: Competition
         if (!retryRes.error) saved = true;
       }
 
-      // 1b. Simpan juga ke tabel admin_users
+      // 1c. Simpan juga ke tabel admin_users
       const adminRow = {
         id: p.id,
         full_name: p.fullName,
@@ -2934,26 +3177,32 @@ export async function syncAllJuryDataToSupabase(customCompetitions?: Competition
         created_at: a.createdAt || new Date().toISOString(),
       };
 
-      const { error: aErr } = await supabase.from('jury_assignments').upsert(fullAssignRow, { onConflict: 'id' });
+      let { error: aErr } = await supabase.from('jury_assignments').upsert(fullAssignRow, { onConflict: 'id' });
       if (!aErr) {
         aCount++;
       } else {
-        // Fallback compact schema
-        const compactRow = {
-          id: a.id,
-          jury_id: a.juryId,
-          competition_id: a.competitionId,
-          competition_title: a.competitionTitle || '',
-          competition_category: a.competitionCategory || '',
-          assigned_by: a.assignedBy || 'Admin CMS',
-          is_active: a.isActive,
-          created_at: a.createdAt || new Date().toISOString(),
-        };
-        const { error: compactErr } = await supabase.from('jury_assignments').upsert(compactRow, { onConflict: 'id' });
-        if (!compactErr) {
+        // Coba onConflict 'jury_id,competition_id'
+        const { error: confErr } = await supabase.from('jury_assignments').upsert(fullAssignRow, { onConflict: 'jury_id,competition_id' });
+        if (!confErr) {
           aCount++;
         } else {
-          syncErrors.push(`Penugasan (${a.id}): ${aErr.message || compactErr.message}`);
+          // Fallback compact schema
+          const compactRow = {
+            id: a.id,
+            jury_id: a.juryId,
+            competition_id: a.competitionId,
+            competition_title: a.competitionTitle || '',
+            competition_category: a.competitionCategory || '',
+            assigned_by: a.assignedBy || 'Admin CMS',
+            is_active: a.isActive,
+            created_at: a.createdAt || new Date().toISOString(),
+          };
+          const { error: compactErr } = await supabase.from('jury_assignments').upsert(compactRow, { onConflict: 'id' });
+          if (!compactErr) {
+            aCount++;
+          } else {
+            syncErrors.push(`Penugasan (${a.id}): ${aErr.message || confErr?.message || compactErr.message}`);
+          }
         }
       }
     }
@@ -2972,11 +3221,24 @@ export async function syncAllJuryDataToSupabase(customCompetitions?: Competition
         is_active: c.isActive ?? true,
         updated_at: new Date().toISOString(),
       };
-      const { error: cErr } = await supabase.from('scoring_criteria').upsert(critRow, { onConflict: 'id' });
+      let { error: cErr } = await supabase.from('scoring_criteria').upsert(critRow, { onConflict: 'id' });
       if (!cErr) {
         cCount++;
       } else {
-        syncErrors.push(`Kriteria (${c.criterionName}): ${cErr.message}`);
+        // Coba update langsung jika baris sudah ada
+        const { error: updErr, count } = await supabase.from('scoring_criteria').update(critRow).eq('id', c.id);
+        if (!updErr && count && count > 0) {
+          cCount++;
+        } else {
+          // Coba tanpa updated_at
+          const { updated_at, ...noUpdateCrit } = critRow;
+          const { error: noUpdErr } = await supabase.from('scoring_criteria').upsert(noUpdateCrit, { onConflict: 'id' });
+          if (!noUpdErr) {
+            cCount++;
+          } else {
+            syncErrors.push(`Kriteria (${c.criterionName}): ${cErr.message || noUpdErr.message}`);
+          }
+        }
       }
     }
 

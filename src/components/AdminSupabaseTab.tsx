@@ -392,6 +392,21 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS public.jury_profiles (
+    id TEXT PRIMARY KEY,
+    full_name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    username TEXT,
+    password TEXT,
+    role TEXT NOT NULL DEFAULT 'jury',
+    institution TEXT,
+    phone TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    last_login TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS public.jury_assignments (
     id TEXT PRIMARY KEY,
     jury_id TEXT NOT NULL,
@@ -467,6 +482,7 @@ CREATE TABLE IF NOT EXISTS public.jury_audit_logs (
 );
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.jury_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.jury_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.scoring_criteria ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.jury_scores ENABLE ROW LEVEL SECURITY;
@@ -476,6 +492,11 @@ ALTER TABLE public.jury_audit_logs ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
   DROP POLICY IF EXISTS "Public all profiles" ON public.profiles;
   CREATE POLICY "Public all profiles" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
+
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'jury_profiles') THEN
+    DROP POLICY IF EXISTS "Public all jury_profiles" ON public.jury_profiles;
+    CREATE POLICY "Public all jury_profiles" ON public.jury_profiles FOR ALL USING (true) WITH CHECK (true);
+  END IF;
 
   DROP POLICY IF EXISTS "Public all jury_assignments" ON public.jury_assignments;
   CREATE POLICY "Public all jury_assignments" ON public.jury_assignments FOR ALL USING (true) WITH CHECK (true);
