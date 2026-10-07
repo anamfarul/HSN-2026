@@ -514,6 +514,25 @@ ALTER TABLE IF EXISTS public.jury_assignments
   ADD COLUMN IF NOT EXISTS assigned_by TEXT DEFAULT 'Admin CMS',
   ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
 
+-- Pastikan tipe kolom fleksibel (mengizinkan TEXT dan UUID tanpa error "invalid input syntax for type uuid")
+DO $$ BEGIN
+  BEGIN
+    ALTER TABLE public.jury_assignments ALTER COLUMN id TYPE TEXT USING id::text;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN
+    ALTER TABLE public.jury_assignments ALTER COLUMN jury_id TYPE TEXT USING jury_id::text;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN
+    ALTER TABLE public.jury_assignments ALTER COLUMN competition_id TYPE TEXT USING competition_id::text;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN
+    ALTER TABLE public.scoring_criteria ALTER COLUMN id TYPE TEXT USING id::text;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN
+    ALTER TABLE public.scoring_criteria ALTER COLUMN competition_id TYPE TEXT USING competition_id::text;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+END $$;
+
 DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'jury_assignments_jury_id_competition_id_key'
