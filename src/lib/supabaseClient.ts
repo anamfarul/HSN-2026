@@ -222,7 +222,14 @@ export async function testSupabaseConnection(): Promise<{
   success: boolean; 
   message: string; 
   count?: number;
-  tables?: { competitions: boolean; participants: boolean; admin_users?: boolean };
+  tables?: { 
+    competitions: boolean; 
+    participants: boolean; 
+    admin_users?: boolean;
+    jury_assignments?: boolean;
+    scoring_criteria?: boolean;
+    profiles?: boolean;
+  };
 }> {
   const client = getSupabaseClient();
   const { url } = getSupabaseCredentials();
@@ -231,7 +238,7 @@ export async function testSupabaseConnection(): Promise<{
     return {
       success: false,
       message: 'Kredensial Supabase (URL atau Anon Key) belum diisi di CMS Admin.',
-      tables: { competitions: false, participants: false, admin_users: false }
+      tables: { competitions: false, participants: false, admin_users: false, jury_assignments: false, scoring_criteria: false, profiles: false }
     };
   }
 
@@ -254,6 +261,13 @@ export async function testSupabaseConnection(): Promise<{
       .select('id, username', { count: 'exact', head: false })
       .limit(1);
 
+    // 4. Tes tabel sistem juri
+    const [{ error: assignErr }, { error: critErr }, { error: profErr }] = await Promise.all([
+      client.from('jury_assignments').select('id').limit(1),
+      client.from('scoring_criteria').select('id').limit(1),
+      client.from('profiles').select('id').limit(1),
+    ]);
+
     // Periksa apakah ada error autentikasi (Anon Key salah/kadaluarsa)
     const allErrors = [compErr, partErr, userErr].filter(Boolean);
     const authError = allErrors.find((e: any) => {
@@ -265,7 +279,7 @@ export async function testSupabaseConnection(): Promise<{
       return {
         success: false,
         message: `Kunci Anon Key Supabase tidak valid (${authError.message}). Harap salin ulang "anon public key" dari Dashboard Supabase: Project Settings → API.`,
-        tables: { competitions: false, participants: false, admin_users: false }
+        tables: { competitions: false, participants: false, admin_users: false, jury_assignments: false, scoring_criteria: false, profiles: false }
       };
     }
 
@@ -279,19 +293,29 @@ export async function testSupabaseConnection(): Promise<{
       return {
         success: false,
         message: `Gagal menghubungi server database Supabase (${url}). Pastikan proyek Supabase dalam status Aktif (bukan Paused) dan URL API benar.`,
-        tables: { competitions: false, participants: false, admin_users: false }
+        tables: { competitions: false, participants: false, admin_users: false, jury_assignments: false, scoring_criteria: false, profiles: false }
       };
     }
 
     const hasCompTable = !compErr;
     const hasPartTable = !partErr;
     const hasUserTable = !userErr;
+    const hasAssignTable = !assignErr;
+    const hasCritTable = !critErr;
+    const hasProfTable = !profErr;
 
     if (!hasCompTable && !hasPartTable && !hasUserTable) {
       return {
         success: false,
         message: 'Koneksi ke Supabase terhubung, namun tabel database belum ada. Harap salin & jalankan skrip SQL di Supabase SQL Editor.',
-        tables: { competitions: false, participants: false, admin_users: false }
+        tables: { 
+          competitions: false, 
+          participants: false, 
+          admin_users: false,
+          jury_assignments: hasAssignTable,
+          scoring_criteria: hasCritTable,
+          profiles: hasProfTable
+        }
       };
     }
 
@@ -299,11 +323,25 @@ export async function testSupabaseConnection(): Promise<{
     const totalParts = partCount ?? 0;
     const totalUsers = userCount ?? 0;
 
+    let juryStatusNote = '';
+    if (hasAssignTable && hasCritTable) {
+      juryStatusNote = ' Seluruh tabel Penilaian Juri (Dewan Juri, Penugasan & Kriteria) siap.';
+    } else {
+      juryStatusNote = ' Catatan: Tabel Penilaian Juri belum dibuat di Supabase (jalankan skrip SQL Juri).';
+    }
+
     return {
       success: true,
-      message: `Terhubung & Siap! Ditemukan ${totalComps} lomba, ${totalParts} peserta, dan ${totalUsers} user panitia di Supabase.`,
+      message: `Terhubung & Siap! Ditemukan ${totalComps} lomba, ${totalParts} peserta, dan ${totalUsers} user panitia di Supabase.${juryStatusNote}`,
       count: totalComps,
-      tables: { competitions: hasCompTable, participants: hasPartTable, admin_users: hasUserTable }
+      tables: { 
+        competitions: hasCompTable, 
+        participants: hasPartTable, 
+        admin_users: hasUserTable,
+        jury_assignments: hasAssignTable,
+        scoring_criteria: hasCritTable,
+        profiles: hasProfTable
+      }
     };
   } catch (err: any) {
     let friendly = err?.message || 'Kesalahan jaringan';

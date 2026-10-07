@@ -20,7 +20,8 @@ import {
   HelpCircle,
   Wifi,
   Info,
-  Trash2
+  Trash2,
+  Award
 } from 'lucide-react';
 import { 
   getSupabaseCredentials, 
@@ -374,6 +375,125 @@ DROP POLICY IF EXISTS "Public update registrations" ON storage.objects;
 CREATE POLICY "Public upload registrations" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'registrations');
 CREATE POLICY "Public select registrations" ON storage.objects FOR SELECT USING (bucket_id = 'registrations');
 CREATE POLICY "Public update registrations" ON storage.objects FOR UPDATE USING (bucket_id = 'registrations') WITH CHECK (bucket_id = 'registrations');
+
+-- 8. TABEL SISTEM PENILAIAN DEWAN JURI & HASIL (CMS PENILAIAN JURI)
+CREATE TABLE IF NOT EXISTS public.profiles (
+    id TEXT PRIMARY KEY,
+    full_name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    username TEXT,
+    password TEXT,
+    role TEXT NOT NULL DEFAULT 'jury',
+    institution TEXT,
+    phone TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    last_login TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.jury_assignments (
+    id TEXT PRIMARY KEY,
+    jury_id TEXT NOT NULL,
+    competition_id TEXT NOT NULL,
+    competition_title TEXT,
+    competition_category TEXT,
+    assigned_by TEXT DEFAULT 'Admin CMS',
+    jury_name TEXT,
+    jury_email TEXT,
+    jury_institution TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(jury_id, competition_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.scoring_criteria (
+    id TEXT PRIMARY KEY,
+    competition_id TEXT NOT NULL,
+    criterion_name TEXT NOT NULL,
+    description TEXT,
+    max_score NUMERIC NOT NULL DEFAULT 100,
+    weight NUMERIC NOT NULL DEFAULT 25,
+    sort_order INTEGER NOT NULL DEFAULT 1,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.jury_scores (
+    id TEXT PRIMARY KEY,
+    competition_id TEXT NOT NULL,
+    participant_id TEXT NOT NULL,
+    jury_id TEXT NOT NULL,
+    scores JSONB NOT NULL DEFAULT '{}'::jsonb,
+    total_score NUMERIC NOT NULL DEFAULT 0,
+    feedback TEXT,
+    notes TEXT,
+    status TEXT NOT NULL DEFAULT 'draft',
+    submitted_at TIMESTAMPTZ,
+    locked_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(competition_id, participant_id, jury_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.competition_results (
+    id TEXT PRIMARY KEY,
+    competition_id TEXT NOT NULL,
+    participant_id TEXT NOT NULL,
+    winner_title TEXT,
+    rank INTEGER NOT NULL DEFAULT 1,
+    average_score NUMERIC NOT NULL DEFAULT 0,
+    final_score NUMERIC NOT NULL DEFAULT 0,
+    is_published BOOLEAN NOT NULL DEFAULT false,
+    decision_notes TEXT,
+    determined_by TEXT,
+    determined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(competition_id, participant_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.jury_audit_logs (
+    id TEXT PRIMARY KEY,
+    jury_id TEXT,
+    jury_name TEXT,
+    action TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT,
+    old_value JSONB,
+    new_value JSONB,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.jury_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.scoring_criteria ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.jury_scores ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.competition_results ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.jury_audit_logs ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  DROP POLICY IF EXISTS "Public all profiles" ON public.profiles;
+  CREATE POLICY "Public all profiles" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
+
+  DROP POLICY IF EXISTS "Public all jury_assignments" ON public.jury_assignments;
+  CREATE POLICY "Public all jury_assignments" ON public.jury_assignments FOR ALL USING (true) WITH CHECK (true);
+
+  DROP POLICY IF EXISTS "Public all scoring_criteria" ON public.scoring_criteria;
+  CREATE POLICY "Public all scoring_criteria" ON public.scoring_criteria FOR ALL USING (true) WITH CHECK (true);
+
+  DROP POLICY IF EXISTS "Public all jury_scores" ON public.jury_scores;
+  CREATE POLICY "Public all jury_scores" ON public.jury_scores FOR ALL USING (true) WITH CHECK (true);
+
+  DROP POLICY IF EXISTS "Public all competition_results" ON public.competition_results;
+  CREATE POLICY "Public all competition_results" ON public.competition_results FOR ALL USING (true) WITH CHECK (true);
+
+  DROP POLICY IF EXISTS "Public all jury_audit_logs" ON public.jury_audit_logs;
+  CREATE POLICY "Public all jury_audit_logs" ON public.jury_audit_logs FOR ALL USING (true) WITH CHECK (true);
+END $$;
+
+NOTIFY pgrst, 'reload schema';
 `;
 
 interface AdminSupabaseTabProps {
@@ -401,7 +521,14 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
   const [fetchingUsers, setFetchingUsers] = useState(false);
   const [syncingParticipants, setSyncingParticipants] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [tableStatus, setTableStatus] = useState<{ competitions: boolean; participants: boolean; admin_users?: boolean } | null>(null);
+  const [tableStatus, setTableStatus] = useState<{ 
+    competitions: boolean; 
+    participants: boolean; 
+    admin_users?: boolean;
+    jury_assignments?: boolean;
+    scoring_criteria?: boolean;
+    profiles?: boolean;
+  } | null>(null);
   const [copiedSql, setCopiedSql] = useState(false);
   const [copiedAdminUsersSql, setCopiedAdminUsersSql] = useState(false);
   const [copiedCascadeSql, setCopiedCascadeSql] = useState(false);
@@ -846,6 +973,16 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
               <span className={`px-2 py-0.5 rounded ${tableStatus.admin_users ? 'bg-emerald-500/30 text-emerald-200' : 'bg-rose-500/30 text-rose-200'}`}>
                 admin_users: {tableStatus.admin_users ? 'Siap' : 'Belum Ada'}
               </span>
+              {tableStatus.jury_assignments !== undefined && (
+                <span className={`px-2 py-0.5 rounded ${tableStatus.jury_assignments ? 'bg-emerald-500/30 text-emerald-200' : 'bg-rose-500/30 text-rose-200'}`}>
+                  jury_assignments: {tableStatus.jury_assignments ? 'Siap' : 'Belum Ada'}
+                </span>
+              )}
+              {tableStatus.scoring_criteria !== undefined && (
+                <span className={`px-2 py-0.5 rounded ${tableStatus.scoring_criteria ? 'bg-emerald-500/30 text-emerald-200' : 'bg-rose-500/30 text-rose-200'}`}>
+                  scoring_criteria: {tableStatus.scoring_criteria ? 'Siap' : 'Belum Ada'}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -1220,6 +1357,51 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                     >
                       <UploadCloud className={`w-3.5 h-3.5 ${syncingParticipants ? 'animate-bounce' : ''}`} />
                       <span>{syncingParticipants ? 'Menyinkronkan...' : 'Kirim Peserta'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3b. Dewan Juri & Penilaian Sync Card */}
+              <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 hover:border-[#F2C96D]/30 transition-all">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <h5 className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <Award className="w-4 h-4 text-[#F2C96D]" />
+                      <span>Dewan Juri, Penugasan & Kriteria Penilaian</span>
+                    </h5>
+                    <p className="text-[11px] text-[#DDE7E8]/70 mt-0.5">
+                      Tabel <code className="text-[#F2C96D]">jury_assignments</code>, <code className="text-[#00D9F5]">scoring_criteria</code>, & <code className="text-emerald-400">jury_scores</code>: sinkronisasi penilaian juri.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0 flex-wrap sm:flex-nowrap">
+                    <button
+                      type="button"
+                      onClick={() => setShowJurySqlModal(true)}
+                      className="px-2.5 py-1.5 rounded-xl bg-[#F2C96D]/15 hover:bg-[#F2C96D]/30 border border-[#F2C96D]/40 text-[#F2C96D] text-xs font-bold flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
+                      title="Lihat & Salin Skrip SQL Sistem Penilaian Dewan Juri"
+                    >
+                      <FileCode className="w-3 h-3" />
+                      <span>SQL Juri</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleFetchJuryFromSupabase}
+                      disabled={fetchingJury}
+                      className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-medium flex items-center gap-1 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                      title="Tarik data juri dari Supabase"
+                    >
+                      <RefreshCw className={`w-3 h-3 text-[#00D9F5] ${fetchingJury ? 'animate-spin' : ''}`} />
+                      <span>{fetchingJury ? '...' : 'Tarik'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSyncJuryToSupabase}
+                      disabled={syncingJury}
+                      className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:opacity-95 text-white text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                    >
+                      <UploadCloud className={`w-3.5 h-3.5 ${syncingJury ? 'animate-bounce' : ''}`} />
+                      <span>{syncingJury ? 'Menyinkronkan...' : 'Kirim Data Juri'}</span>
                     </button>
                   </div>
                 </div>
@@ -1702,6 +1884,102 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                   type="button"
                   onClick={() => setShowPurgeSqlModal(false)}
                   className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition-all"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL SETUP TABEL SISTEM PENILAIAN DEWAN JURI SUPABASE */}
+      {showJurySqlModal && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-2xl rounded-3xl bg-[#031525] border-2 border-[#F2C96D]/70 p-6 sm:p-7 shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-4 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-[#F2C96D]/20 border border-[#F2C96D]/40 text-[#F2C96D] flex items-center justify-center shrink-0">
+                  <Award className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-heading text-lg font-bold text-white">
+                      Setup Database Sistem Penilaian Dewan Juri
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      CMS Penilaian Juri
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#DDE7E8]/80 mt-0.5">
+                    Membuat tabel <code className="text-[#F2C96D]">jury_assignments</code>, <code className="text-[#00D9F5]">scoring_criteria</code>, <code className="text-emerald-400">jury_scores</code>, & profil juri.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowJurySqlModal(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm font-bold transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Scrollable body */}
+            <div className="overflow-y-auto space-y-3 pr-1 flex-1 text-xs text-[#DDE7E8]">
+              {/* Step by step guide */}
+              <div className="p-4 rounded-2xl bg-[#006B4F]/20 border border-[#006B4F]/40 space-y-2">
+                <h4 className="text-xs font-bold text-[#F2C96D] uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-[#00D9F5]" />
+                  <span>3 Langkah Cepat Mengaktifkan:</span>
+                </h4>
+                <ol className="text-xs text-[#DDE7E8]/90 space-y-1.5 list-decimal list-inside pl-1">
+                  <li>
+                    Klik tombol <strong>"Salin Skrip SQL Juri"</strong> di bawah.
+                  </li>
+                  <li>
+                    Buka <strong>Supabase Dashboard → SQL Editor → New query</strong>, lalu tempel (<strong>Ctrl+V</strong>).
+                  </li>
+                  <li>
+                    Klik tombol hijau <strong>"Run"</strong> (atau tekan <strong>Ctrl+Enter</strong>). Kembali ke CMS ini lalu klik <strong>"Kirim Data Juri"</strong>!
+                  </li>
+                </ol>
+              </div>
+
+              {/* SQL Code Box */}
+              <div className="relative rounded-2xl bg-[#010b14] border border-white/15 p-3.5 max-h-52 overflow-y-auto">
+                <pre className="text-[11px] font-mono text-[#F2C96D] whitespace-pre leading-relaxed select-all">
+                  {JURY_SYSTEM_SETUP_SQL}
+                </pre>
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-white/10 shrink-0">
+              <a
+                href="https://supabase.com/dashboard"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all"
+              >
+                <span>Buka Supabase SQL Editor</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={handleCopyJurySql}
+                  className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#D9B45B] to-[#F2C96D] hover:brightness-110 text-[#031525] text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer"
+                >
+                  {copiedJurySql ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  <span>{copiedJurySql ? 'SQL Juri Tersalin!' : 'Salin Skrip SQL Juri'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowJurySqlModal(false)}
+                  className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition-all cursor-pointer"
                 >
                   Tutup
                 </button>

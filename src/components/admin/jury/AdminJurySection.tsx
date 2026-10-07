@@ -38,7 +38,8 @@ import {
   Layers,
   History,
   Info,
-  ShieldCheck
+  ShieldCheck,
+  Database
 } from 'lucide-react';
 import { 
   Competition, 
@@ -81,7 +82,8 @@ import {
   fetchAllJuryDataFromSupabase,
   initJuryRealtimeSubscription,
   isAssignmentForJury,
-  JURY_SYSTEM_SETUP_SQL
+  JURY_SYSTEM_SETUP_SQL,
+  checkJuryTablesStatus
 } from '../../../lib/juryService';
 import { isSupabaseConnected } from '../../../lib/supabaseClient';
 import { exportScoreRecapCSV, exportScoreRecapPDF, exportBeritaAcaraPDF } from '../../../lib/juryReportService';
@@ -358,6 +360,41 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
   const [isSyncingSupabase, setIsSyncingSupabase] = useState(false);
   const [isFetchingSupabase, setIsFetchingSupabase] = useState(false);
 
+  // Supabase Database Status & Setup Modal State
+  const [juryDbStatus, setJuryDbStatus] = useState<{
+    connected: boolean;
+    allJuryTablesReady: boolean;
+    missingTables: string[];
+    tables: {
+      profiles: boolean;
+      admin_users: boolean;
+      jury_assignments: boolean;
+      scoring_criteria: boolean;
+      jury_scores: boolean;
+      competition_results: boolean;
+    };
+  } | null>(null);
+  const [isCheckingJuryDb, setIsCheckingJuryDb] = useState(false);
+  const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
+
+  const refreshJuryDbStatus = async () => {
+    if (!isSupabaseConnected()) return;
+    setIsCheckingJuryDb(true);
+    try {
+      const status = await checkJuryTablesStatus();
+      setJuryDbStatus(status);
+    } catch (e) {
+      console.warn('Error checking jury db status:', e);
+    } finally {
+      setIsCheckingJuryDb(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshJuryDbStatus();
+  }, []);
+
   const handleSyncToSupabase = async () => {
     setIsSyncingSupabase(true);
     try {
@@ -368,6 +405,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
       });
       if (res.success) {
         await loadAllData();
+        await refreshJuryDbStatus();
       }
     } catch (err: any) {
       setFeedbackToast({
@@ -389,6 +427,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
       });
       if (res.success) {
         await loadAllData();
+        await refreshJuryDbStatus();
       }
     } catch (err: any) {
       setFeedbackToast({
@@ -535,6 +574,9 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
         });
       }
 
+      let addedAssignCount = 0;
+      let assignSyncSuccessCount = 0;
+
       if (savedJuryId) {
         // Sync competition assignments for this judge
         const currentAssigned = assignments.filter((a) => isAssignmentForJury(a, { id: savedJuryId, email: cleanEmail, username: cleanUsername }) && a.isActive);
@@ -549,7 +591,11 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
             return r?.id === compId;
           });
           if (!alreadyAssigned) {
-            await assignJuryToCompetition(savedJuryId, compObj.id, currentAdminName, compObj.title, compObj.category, competitions);
+            addedAssignCount++;
+            const assignRes = await assignJuryToCompetition(savedJuryId, compObj.id, currentAdminName, compObj.title, compObj.category, competitions);
+            if (assignRes.supabaseSynced) {
+              assignSyncSuccessCount++;
+            }
           }
         }
 
@@ -570,12 +616,27 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
       setEditingJudge(null);
       setEditingJudgeCompIds([]);
 
-      setFeedbackToast({
-        message: `Dewan Juri "${judgeName}" berhasil ${wasEdit ? 'diperbarui' : 'ditambahkan'} dan disinkronkan ke database!`,
-        type: 'success',
-      });
+      const assignNote = addedAssignCount > 0 ? ` serta ${addedAssignCount} penugasan cabang lomba` : '';
+
+      if (res.supabaseSynced) {
+        setFeedbackToast({
+          message: `Dewan Juri "${judgeName}"${assignNote} berhasil ${wasEdit ? 'diperbarui' : 'ditambahkan'} dan disinkronkan ke database Supabase!`,
+          type: 'success',
+        });
+      } else if (res.supabaseSynced === false) {
+        setFeedbackToast({
+          message: `Dewan Juri "${judgeName}" tersimpan di lokal. Sinkronisasi Supabase belum berhasil: ${res.supabaseError || 'Tabel database belum siap'}. Buka menu Setup SQL Supabase.`,
+          type: 'error',
+        });
+      } else {
+        setFeedbackToast({
+          message: `Dewan Juri "${judgeName}"${assignNote} berhasil ${wasEdit ? 'diperbarui' : 'ditambahkan'}!`,
+          type: 'success',
+        });
+      }
 
       await loadAllData();
+      await refreshJuryDbStatus();
     } catch (err: any) {
       console.error('Error saving judge:', err);
       setFeedbackToast({
@@ -668,8 +729,18 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
       return;
     }
     if (!overrideJuryId) setAssignJuryId('');
-    setFeedbackToast({ message: `Dewan juri berhasil ditugaskan pada cabang lomba.`, type: 'success' });
+    if (res.supabaseSynced) {
+      setFeedbackToast({ message: `Dewan juri berhasil ditugaskan dan disinkronkan ke database Supabase!`, type: 'success' });
+    } else if (res.supabaseSynced === false) {
+      setFeedbackToast({
+        message: `Penugasan tersimpan di lokal, namun sinkronisasi Supabase gagal: ${res.supabaseError || 'Tabel database belum siap'}. Buka menu Setup SQL Supabase.`,
+        type: 'error',
+      });
+    } else {
+      setFeedbackToast({ message: `Dewan juri berhasil ditugaskan pada cabang lomba.`, type: 'success' });
+    }
     await loadAllData();
+    await refreshJuryDbStatus();
   };
 
   const handleRemoveAssignment = (id: string) => {
@@ -802,7 +873,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
       }
       handleRemoveAssignment(existing.id);
     } else {
-      await assignJuryToCompetition(
+      const res = await assignJuryToCompetition(
         juryId,
         effectiveCompId,
         currentAdminName,
@@ -810,11 +881,24 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
         targetComp?.category,
         competitions
       );
-      setFeedbackToast({
-        message: `Dewan juri berhasil ditugaskan pada ${targetComp?.title || compId}.`,
-        type: 'success',
-      });
+      if (res.supabaseSynced) {
+        setFeedbackToast({
+          message: `Dewan juri berhasil ditugaskan pada ${targetComp?.title || compId} dan disinkronkan ke database Supabase!`,
+          type: 'success',
+        });
+      } else if (res.supabaseSynced === false) {
+        setFeedbackToast({
+          message: `Penugasan tersimpan di lokal. Sinkronisasi Supabase belum berhasil: ${res.supabaseError || 'Tabel database belum siap'}.`,
+          type: 'error',
+        });
+      } else {
+        setFeedbackToast({
+          message: `Dewan juri berhasil ditugaskan pada ${targetComp?.title || compId}.`,
+          type: 'success',
+        });
+      }
       await loadAllData();
+      await refreshJuryDbStatus();
     }
   };
 
@@ -823,7 +907,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
     e.preventDefault();
     if (!editingCriterion?.criterionName || !selectedCompId) return;
 
-    await saveScoringCriterion(
+    const critRes = await saveScoringCriterion(
       {
         id: editingCriterion.id,
         competitionId: selectedCompId,
@@ -841,8 +925,19 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
     setEditingCriterion(null);
     const updated = await getScoringCriteria(selectedCompId);
     setCriteriaList(updated);
-    setFeedbackToast({ message: 'Parameter kriteria berhasil disimpan.', type: 'success' });
-    loadAllData();
+
+    if (critRes.supabaseSynced) {
+      setFeedbackToast({ message: 'Parameter kriteria & bobot berhasil disimpan dan disinkronkan ke database Supabase!', type: 'success' });
+    } else if (critRes.supabaseSynced === false) {
+      setFeedbackToast({
+        message: `Kriteria disimpan di lokal, namun sinkronisasi Supabase gagal: ${critRes.supabaseError || 'Tabel database belum siap'}. Buka menu Setup SQL Supabase.`,
+        type: 'error',
+      });
+    } else {
+      setFeedbackToast({ message: 'Parameter kriteria berhasil disimpan.', type: 'success' });
+    }
+    await loadAllData();
+    await refreshJuryDbStatus();
   };
 
   const handleDeleteCriterion = (id: string, name?: string) => {
@@ -982,6 +1077,18 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0 flex-wrap sm:flex-nowrap">
+            {/* Setup SQL Supabase */}
+            <button
+              type="button"
+              onClick={() => setIsSqlModalOpen(true)}
+              className="px-3.5 py-2.5 rounded-xl bg-[#020e19] hover:bg-white/10 text-[#F2C96D] border border-[#F2C96D]/40 font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+              title="Lihat & Salin Skrip SQL Setup Database Juri di Supabase"
+            >
+              <Database className="w-3.5 h-3.5 text-[#F2C96D]" />
+              <span className="hidden sm:inline">Setup SQL Supabase</span>
+              <span className="sm:hidden">SQL</span>
+            </button>
+
             {/* Sinkron ke Supabase */}
             <button
               type="button"
@@ -1045,6 +1152,36 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
             </button>
           </div>
         </div>
+
+        {/* Status Database Supabase Juri Banner */}
+        {isSupabaseConnected() && juryDbStatus && (
+          <div className={`mt-3.5 pt-3 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs ${
+            juryDbStatus.allJuryTablesReady ? 'text-emerald-300' : 'text-amber-200'
+          }`}>
+            <div className="flex items-center gap-2">
+              {juryDbStatus.allJuryTablesReady ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+              )}
+              <span>
+                {juryDbStatus.allJuryTablesReady
+                  ? 'Sinkronisasi Database Supabase Siap: Tabel akun dewan juri, penugasan, dan kriteria terhubung realtime.'
+                  : `Tabel Database Belum Dibuat di Supabase (${juryDbStatus.missingTables.join(', ')}). Dewan juri, penugasan, dan kriteria belum dapat disimpan ke Supabase.`}
+              </span>
+            </div>
+            {!juryDbStatus.allJuryTablesReady && (
+              <button
+                type="button"
+                onClick={() => setIsSqlModalOpen(true)}
+                className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 font-bold text-[11px] flex items-center gap-1.5 shrink-0 transition-all cursor-pointer shadow-sm active:scale-95"
+              >
+                <Database className="w-3.5 h-3.5 text-amber-400" />
+                <span>Buka Skrip SQL Setup</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Sub-Tabs Navigation Bar (Leap-free, fully responsive, sticky and visible) */}
@@ -1276,6 +1413,26 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
               </span>
             </div>
           </div>
+
+          {/* Alert jika tabel dewan juri di Supabase belum dibuat */}
+          {isSupabaseConnected() && juryDbStatus && !juryDbStatus.tables.admin_users && !juryDbStatus.tables.profiles && (
+            <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-xs text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>
+                  <strong>Perhatian Sinkronisasi Supabase:</strong> Tabel <code>admin_users</code> / <code>profiles</code> belum dibuat di Supabase Anda. Pengisian dewan juri hanya tersimpan di memori browser. Klik tombol di samping untuk menyalin skrip SQL pembuatan tabel.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSqlModalOpen(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-[#031525] font-bold text-xs shrink-0 cursor-pointer shadow transition-all active:scale-95 flex items-center gap-1.5"
+              >
+                <Database className="w-3.5 h-3.5" />
+                <span>Setup SQL Supabase</span>
+              </button>
+            </div>
+          )}
 
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
@@ -2057,6 +2214,15 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={() => setIsSqlModalOpen(true)}
+                  className="px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+                  title="Lihat Skrip SQL Setup Tabel Penugasan"
+                >
+                  <Database className="w-3 h-3 text-amber-400" />
+                  <span>Setup SQL</span>
+                </button>
+                <button
+                  type="button"
                   onClick={handleSyncToSupabase}
                   disabled={isSyncingSupabase}
                   className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-white/90 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
@@ -2067,6 +2233,26 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                 </button>
               </div>
             </div>
+
+            {/* Alert jika tabel jury_assignments di Supabase belum dibuat */}
+            {isSupabaseConnected() && juryDbStatus && !juryDbStatus.tables.jury_assignments && (
+              <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-xs text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>
+                    <strong>Perhatian Sinkronisasi Supabase:</strong> Tabel <code>jury_assignments</code> belum dibuat di Supabase Anda. Penugasan juri belum dapat disimpan ke Supabase.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSqlModalOpen(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-[#031525] font-bold text-xs shrink-0 cursor-pointer shadow transition-all active:scale-95 flex items-center gap-1.5"
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  <span>Setup SQL Supabase</span>
+                </button>
+              </div>
+            )}
 
             {/* Top Form: Tugaskan Dewan Juri ke Cabang Perlombaan */}
             <div className="rounded-3xl bg-[#020e19] border border-white/10 p-6 space-y-4 shadow-xl">
@@ -2667,7 +2853,49 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                 Wewenang menghapus parameter kriteria dan bobot penilaian aktif untuk Super Admin dan Divisi Sekretariat & Administrasi.
               </span>
             </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsSqlModalOpen(true)}
+                className="px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+                title="Lihat Skrip SQL Setup Tabel Kriteria"
+              >
+                <Database className="w-3 h-3 text-amber-400" />
+                <span>Setup SQL</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleSyncToSupabase}
+                disabled={isSyncingSupabase}
+                className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-white/90 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
+                title="Simpan Parameter Kriteria ke Supabase"
+              >
+                <RefreshCw className={`w-3 h-3 ${isSyncingSupabase ? 'animate-spin' : ''}`} />
+                <span>{isSyncingSupabase ? 'Menyinkronkan...' : 'Sinkron Kriteria'}</span>
+              </button>
+            </div>
           </div>
+
+          {/* Alert jika tabel scoring_criteria di Supabase belum dibuat */}
+          {isSupabaseConnected() && juryDbStatus && !juryDbStatus.tables.scoring_criteria && (
+            <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-xs text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>
+                  <strong>Perhatian Sinkronisasi Supabase:</strong> Tabel <code>scoring_criteria</code> belum dibuat di Supabase Anda. Parameter kriteria dan bobot belum dapat disinkronkan ke database Supabase.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSqlModalOpen(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-[#031525] font-bold text-xs shrink-0 cursor-pointer shadow transition-all active:scale-95 flex items-center gap-1.5"
+              >
+                <Database className="w-3.5 h-3.5" />
+                <span>Setup SQL Supabase</span>
+              </button>
+            </div>
+          )}
 
           {/* Competition Selector & Add Criterion Button */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -4149,6 +4377,188 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* SQL Setup Modal for Supabase Database via Portal */}
+      {typeof document !== 'undefined' && isSqlModalOpen && createPortal(
+        <div
+          className="fixed inset-0 z-[999999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto animate-fade-in"
+          style={{ zIndex: 999999 }}
+          onClick={() => setIsSqlModalOpen(false)}
+        >
+          <div
+            className="max-w-3xl w-full rounded-3xl bg-[#031525] border border-[#00D9F5]/40 p-6 shadow-2xl space-y-4 animate-scale-up text-white my-auto max-h-[92vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#00D9F5]/20 border border-[#00D9F5]/40 flex items-center justify-center text-[#00D9F5] shrink-0">
+                  <Database className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-base font-bold text-white flex items-center gap-2">
+                    <span>Setup Database Supabase: CMS Penilaian Juri</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                      PostgreSQL
+                    </span>
+                  </h4>
+                  <p className="text-xs text-[#DDE7E8]/70">
+                    Skrip SQL tabel Dewan Juri, Penugasan 25 Cabang Lomba, Kriteria & Bobot Penilaian
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSqlModalOpen(false)}
+                className="p-1.5 rounded-xl text-white/60 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Scrollable Content */}
+            <div className="overflow-y-auto space-y-4 pr-1 text-xs text-[#DDE7E8] flex-1">
+              {/* Status Kesiapan Tabel Supabase */}
+              <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-[#00D9F5]" />
+                    <span>Status Kesiapan Tabel di Database Supabase:</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={refreshJuryDbStatus}
+                    disabled={isCheckingJuryDb}
+                    className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] text-[#00D9F5] font-bold flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isCheckingJuryDb ? 'animate-spin' : ''}`} />
+                    <span>Periksa Ulang</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px]">
+                  {[
+                    { key: 'admin_users', label: 'admin_users (Akun Panitia/Juri)', ready: juryDbStatus?.tables?.admin_users },
+                    { key: 'profiles', label: 'profiles (Profil Dewan Juri)', ready: juryDbStatus?.tables?.profiles },
+                    { key: 'jury_assignments', label: 'jury_assignments (Penugasan)', ready: juryDbStatus?.tables?.jury_assignments },
+                    { key: 'scoring_criteria', label: 'scoring_criteria (Kriteria & Bobot)', ready: juryDbStatus?.tables?.scoring_criteria },
+                    { key: 'jury_scores', label: 'jury_scores (Nilai & Draf)', ready: juryDbStatus?.tables?.jury_scores },
+                    { key: 'competition_results', label: 'competition_results (Juara)', ready: juryDbStatus?.tables?.competition_results },
+                  ].map((t) => (
+                    <div
+                      key={t.key}
+                      className={`p-2 rounded-xl border flex items-center justify-between gap-1.5 ${
+                        t.ready
+                          ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
+                          : 'bg-rose-950/40 border-rose-500/40 text-rose-300'
+                      }`}
+                    >
+                      <span className="truncate">{t.label}</span>
+                      {t.ready ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      ) : (
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {juryDbStatus && !juryDbStatus.allJuryTablesReady && (
+                  <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 p-2.5 rounded-xl leading-relaxed">
+                    ⚠️ Beberapa tabel belum terdeteksi di Supabase. Salin skrip SQL di bawah lalu jalankan di Supabase Dashboard untuk mengaktifkan sinkronisasi database Dewan Juri, Penugasan Lomba, dan Kriteria & Bobot.
+                  </p>
+                )}
+              </div>
+
+              {/* Petunjuk Penggunaan */}
+              <div className="p-3.5 rounded-2xl bg-cyan-950/30 border border-cyan-500/30 text-cyan-200 text-xs space-y-1.5 leading-relaxed">
+                <p className="font-bold text-white flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-[#F2C96D]" />
+                  <span>Langkah Cepat Setup di Supabase (1 Menit):</span>
+                </p>
+                <ol className="list-decimal list-inside space-y-1 text-[#DDE7E8]/90 pl-1">
+                  <li>Klik tombol <strong>"Salin Skrip SQL Lengkap"</strong> di bawah.</li>
+                  <li>Buka <strong>Supabase Dashboard</strong> proyek Anda → Pilih menu <strong>SQL Editor</strong> di bilah kiri.</li>
+                  <li>Klik <strong>New Query</strong>, tempel (paste) skrip ini, lalu klik tombol <strong>Run</strong> (atau tekan Ctrl+Enter).</li>
+                  <li>Kembali ke CMS ini, lalu klik tombol <strong>"Sinkronkan Semua Data ke Supabase Sekarang"</strong>.</li>
+                </ol>
+              </div>
+
+              {/* Code Box */}
+              <div className="relative rounded-2xl bg-[#010810] border border-white/10 p-3 font-mono text-[11px] text-emerald-400/90 overflow-hidden">
+                <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10 text-white/60">
+                  <span className="text-[10px] uppercase font-bold tracking-wider">JURY_SYSTEM_SETUP_SQL</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(JURY_SYSTEM_SETUP_SQL).then(() => {
+                        setCopiedSql(true);
+                        setTimeout(() => setCopiedSql(false), 4000);
+                      });
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-sans text-xs font-bold flex items-center gap-1 cursor-pointer transition-all shadow-md active:scale-95"
+                  >
+                    {copiedSql ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Tersalin!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Salin Skrip SQL</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <pre className="max-h-60 overflow-y-auto whitespace-pre leading-relaxed select-all text-white/80 pr-2">
+                  {JURY_SYSTEM_SETUP_SQL}
+                </pre>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="flex items-center justify-between gap-3 pt-3 border-t border-white/10 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(JURY_SYSTEM_SETUP_SQL).then(() => {
+                    setCopiedSql(true);
+                    setTimeout(() => setCopiedSql(false), 4000);
+                  });
+                }}
+                className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+              >
+                {copiedSql ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-[#F2C96D]" />}
+                <span>{copiedSql ? 'Skrip SQL Tersalin!' : 'Salin Skrip SQL'}</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await handleSyncToSupabase();
+                    await refreshJuryDbStatus();
+                  }}
+                  disabled={isSyncingSupabase}
+                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:opacity-95 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSupabase ? 'animate-spin' : ''}`} />
+                  <span>{isSyncingSupabase ? 'Menyinkronkan...' : 'Sinkronkan Semua Data ke Supabase'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsSqlModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
             </div>
           </div>
         </div>,
