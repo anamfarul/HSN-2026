@@ -30,10 +30,12 @@ ALTER TABLE IF EXISTS public.participants
 -- 3. TABEL 1: PROFILES (SUPER ADMIN, ADMIN, JURY)
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.profiles (
-  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  id UUID PRIMARY KEY,
   full_name TEXT NOT NULL,
-  email TEXT NOT NULL UNIQUE,
-  role TEXT NOT NULL CHECK (role IN ('super_admin', 'admin', 'jury')),
+  email TEXT NOT NULL,
+  username TEXT,
+  password TEXT,
+  role TEXT NOT NULL DEFAULT 'jury',
   institution TEXT DEFAULT 'MWC NU Poncokusumo',
   phone TEXT,
   is_active BOOLEAN NOT NULL DEFAULT true,
@@ -41,19 +43,36 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Lepas foreign key lama profiles jika sebelumnya terhubung ke auth.users
+DO $$ BEGIN
+  ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_id_fkey;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
 -- ==============================================================================
 -- 4. TABEL 2: PENUGASAN JURI (JURY ASSIGNMENTS)
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.jury_assignments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  jury_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  competition_id VARCHAR(50) NOT NULL REFERENCES public.competitions(id) ON DELETE CASCADE,
-  assigned_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  jury_id UUID NOT NULL,
+  competition_id VARCHAR(50) NOT NULL,
+  competition_title TEXT,
+  competition_category TEXT,
+  jury_name TEXT,
+  jury_email TEXT,
+  jury_institution TEXT,
+  assigned_by TEXT DEFAULT 'Admin CMS',
   is_active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT uq_jury_competition UNIQUE (jury_id, competition_id)
 );
+
+-- Lepas foreign key lama jury_assignments jika sebelumnya merujuk ke profiles
+DO $$ BEGIN
+  ALTER TABLE public.jury_assignments DROP CONSTRAINT IF EXISTS jury_assignments_jury_id_fkey;
+  ALTER TABLE public.jury_assignments DROP CONSTRAINT IF EXISTS jury_assignments_competition_id_fkey;
+  ALTER TABLE public.jury_assignments DROP CONSTRAINT IF EXISTS jury_assignments_assigned_by_fkey;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ==============================================================================
 -- 5. TABEL 3: KRITERIA PENILAIAN (SCORING CRITERIA)

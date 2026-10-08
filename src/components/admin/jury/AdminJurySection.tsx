@@ -83,9 +83,10 @@ import {
   initJuryRealtimeSubscription,
   isAssignmentForJury,
   JURY_SYSTEM_SETUP_SQL,
+  JURY_FIX_FOREIGN_KEY_SQL,
   checkJuryTablesStatus
 } from '../../../lib/juryService';
-import { isSupabaseConnected } from '../../../lib/supabaseClient';
+import { isSupabaseConnected, getSupabaseCredentials } from '../../../lib/supabaseClient';
 import { exportScoreRecapCSV, exportScoreRecapPDF, exportBeritaAcaraPDF } from '../../../lib/juryReportService';
 
 interface AdminJurySectionProps {
@@ -377,6 +378,19 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
   const [isCheckingJuryDb, setIsCheckingJuryDb] = useState(false);
   const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
+  const [isForeignKeyModalOpen, setIsForeignKeyModalOpen] = useState(false);
+  const [copiedFkSql, setCopiedFkSql] = useState(false);
+
+  const supabaseSqlEditorUrl = useMemo(() => {
+    try {
+      const { url } = getSupabaseCredentials();
+      const match = url.match(/https:\/\/([a-zA-Z0-9_-]+)\.supabase\.co/i);
+      if (match && match[1]) {
+        return `https://supabase.com/dashboard/project/${match[1]}/sql/new`;
+      }
+    } catch {}
+    return 'https://supabase.com/dashboard';
+  }, []);
 
   const refreshJuryDbStatus = async () => {
     if (!isSupabaseConnected()) return;
@@ -403,6 +417,9 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
         message: res.message,
         type: res.success ? 'success' : 'error',
       });
+      if (res.hasForeignKeyError) {
+        setIsForeignKeyModalOpen(true);
+      }
       if (res.success) {
         await loadAllData();
         await refreshJuryDbStatus();
@@ -2211,7 +2228,16 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setIsForeignKeyModalOpen(true)}
+                  className="px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/35 text-rose-300 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+                  title="Buka Skrip Perbaikan Cepat Foreign Key Penugasan Juri di Supabase"
+                >
+                  <AlertCircle className="w-3 h-3 text-rose-400" />
+                  <span>Perbaiki Foreign Key</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setIsSqlModalOpen(true)}
@@ -4555,6 +4581,151 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                   type="button"
                   onClick={() => setIsSqlModalOpen(false)}
                   className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Modal Khusus Perbaikan Cepat Foreign Key Penugasan Juri di Supabase */}
+      {isForeignKeyModalOpen && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-2xl bg-[#031525] border-2 border-rose-500/50 rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col max-h-[92vh] overflow-hidden text-[#E4F0EC]">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3 pb-3 border-b border-rose-500/20 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/40">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                    <span>Perbaikan Foreign Key Penugasan Juri</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                      1 Detik
+                    </span>
+                  </h3>
+                  <p className="text-xs text-[#DDE7E8]/80 mt-0.5">
+                    Lepas constraint foreign key lama pada tabel <code className="bg-white/10 px-1 py-0.5 rounded text-rose-200">jury_assignments</code> di Supabase.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsForeignKeyModalOpen(false)}
+                className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Scrollable Content */}
+            <div className="overflow-y-auto my-3 space-y-3.5 pr-1 text-xs">
+              <div className="p-3.5 rounded-2xl bg-rose-950/30 border border-rose-500/30 text-rose-200 text-xs space-y-1.5 leading-relaxed">
+                <p className="font-bold text-white flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 text-rose-400" />
+                  <span>Mengapa penugasan juri belum tersimpan ke Supabase?</span>
+                </p>
+                <p className="text-[#DDE7E8]/90">
+                  Tabel <code className="bg-white/10 px-1 rounded text-white">jury_assignments</code> di PostgreSQL Supabase Anda memiliki foreign key constraint lama (<code className="bg-white/10 px-1 rounded text-rose-200">jury_assignments_jury_id_fkey</code>) yang membatasi kolom <code>jury_id</code> harus terhubung ke tabel akun Auth. Karena dewan juri dikelola melalui CMS festival, batasan ini harus dilepas agar data penugasan juri dapat tersimpan secara bebas.
+                </p>
+              </div>
+
+              {/* Langkah Cepat */}
+              <div className="p-3 rounded-2xl bg-[#020e19] border border-white/10 space-y-1.5 text-xs text-[#DDE7E8]/90">
+                <p className="font-bold text-white flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-[#F2C96D]" />
+                  <span>3 Langkah Cepat Mengatasinya:</span>
+                </p>
+                <ol className="list-decimal list-inside space-y-1 pl-1 text-[11px]">
+                  <li>Klik tombol <strong>"Salin Skrip SQL Perbaikan"</strong> di bawah.</li>
+                  <li>Buka <strong>Supabase SQL Editor</strong> proyek Anda, tempel (paste), lalu klik <strong>Run</strong>.</li>
+                  <li>Kembali ke sini dan klik tombol <strong>"Sinkronkan Ulang Sekarang"</strong>.</li>
+                </ol>
+              </div>
+
+              {/* Code Box */}
+              <div className="relative rounded-2xl bg-[#010810] border border-rose-500/30 p-3 font-mono text-[11px] text-emerald-400/90 overflow-hidden">
+                <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10 text-white/60">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-rose-400">JURY_FIX_FOREIGN_KEY_SQL</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(JURY_FIX_FOREIGN_KEY_SQL).then(() => {
+                        setCopiedFkSql(true);
+                        setTimeout(() => setCopiedFkSql(false), 4000);
+                      });
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-sans text-xs font-bold flex items-center gap-1 cursor-pointer transition-all shadow-md active:scale-95"
+                  >
+                    {copiedFkSql ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Tersalin!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Salin Skrip SQL</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <pre className="max-h-52 overflow-y-auto whitespace-pre leading-relaxed select-all text-white/90 pr-2">
+                  {JURY_FIX_FOREIGN_KEY_SQL}
+                </pre>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5 pt-3 border-t border-white/10 shrink-0">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(JURY_FIX_FOREIGN_KEY_SQL).then(() => {
+                      setCopiedFkSql(true);
+                      setTimeout(() => setCopiedFkSql(false), 4000);
+                    });
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95 flex-1 sm:flex-none"
+                >
+                  {copiedFkSql ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-[#F2C96D]" />}
+                  <span>{copiedFkSql ? 'Skrip Tersalin!' : 'Salin Skrip'}</span>
+                </button>
+
+                <a
+                  href={supabaseSqlEditorUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95 flex-1 sm:flex-none"
+                  title="Buka Halaman SQL Editor Supabase di Tab Baru"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Buka SQL Editor</span>
+                </a>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await handleSyncToSupabase();
+                    await refreshJuryDbStatus();
+                  }}
+                  disabled={isSyncingSupabase}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:opacity-95 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition-all cursor-pointer disabled:opacity-50 flex-1 sm:flex-none"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSupabase ? 'animate-spin' : ''}`} />
+                  <span>{isSyncingSupabase ? 'Menyinkronkan...' : 'Sinkronkan Ulang Sekarang'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsForeignKeyModalOpen(false)}
+                  className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-colors cursor-pointer"
                 >
                   Tutup
                 </button>
