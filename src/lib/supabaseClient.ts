@@ -1145,17 +1145,48 @@ export async function purgeMockParticipantsFromSupabase(): Promise<{ success: bo
   }
 
   try {
-    const { data, error } = await client
+    const { data: allParticipants } = await client
+      .from('participants')
+      .select('id, registration_number, full_name');
+
+    const mockNames = [
+      'ahmad faiz al-hafidz',
+      'siti nur khadijah',
+      'rizki bayu pratama',
+      'umi kalsum',
+      'muhammad bilal ramadhan',
+      'ahmad fauzi rabbani',
+      'siti maryam azzahra',
+      'm. rizqi maulana',
+    ];
+
+    const mockIds = (allParticipants || []).filter((p: any) => {
+      const reg = String(p.registration_number || '').toUpperCase();
+      const idStr = String(p.id || '').toLowerCase();
+      const name = String(p.full_name || '').toLowerCase().trim();
+      return (
+        reg.startsWith('HSN-2026-00') ||
+        (reg.startsWith('HSN26-') && reg.includes('-000')) ||
+        idStr.startsWith('reg-00') ||
+        mockNames.includes(name)
+      );
+    }).map((p: any) => p.id);
+
+    if (mockIds.length === 0) {
+      return { success: true, count: 0, error: null };
+    }
+
+    const { data: deleted, error } = await client
       .from('participants')
       .delete()
-      .or('registration_number.ilike.HSN-2026-00%,registration_number.ilike.HSN26-%-000%,id.ilike.reg-00%')
+      .in('id', mockIds)
       .select('id');
 
     if (error) {
       return { success: false, count: 0, error: error.message };
     }
 
-    return { success: true, count: data?.length || 0, error: null };
+    return { success: true, count: deleted?.length || mockIds.length, error: null };
   } catch (err: any) {
     return { success: false, count: 0, error: err.message || 'Gagal membersihkan data dummy peserta' };
   }
@@ -1163,13 +1194,33 @@ export async function purgeMockParticipantsFromSupabase(): Promise<{ success: bo
 
 export const DELETE_MOCK_PARTICIPANTS_SQL = `-- ==============================================================================
 -- SKRIP HAPUS DATA CONTOH/DUMMY PESERTA AWAL SECARA PERMANEN DI SUPABASE
+-- Kompatibel dengan semua tipe data (UUID, TEXT, VARCHAR)
 -- Jalankan di Supabase Dashboard -> SQL Editor -> New Query -> Run
 -- ==============================================================================
 
-DELETE FROM public.participants 
-WHERE registration_number LIKE 'HSN-2026-00%' 
-   OR registration_number LIKE 'HSN26-%-000%' 
-   OR id LIKE 'reg-00%';
+DO $$ 
+BEGIN
+  IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'participants') THEN
+    BEGIN
+      DELETE FROM public.participants 
+      WHERE registration_number::text LIKE 'HSN-2026-00%' 
+         OR registration_number::text LIKE 'HSN26-%-000%' 
+         OR id::text LIKE 'reg-00%'
+         OR LOWER(full_name::text) IN (
+           'ahmad faiz al-hafidz',
+           'siti nur khadijah',
+           'rizki bayu pratama',
+           'umi kalsum',
+           'muhammad bilal ramadhan',
+           'ahmad fauzi rabbani',
+           'siti maryam azzahra',
+           'm. rizqi maulana'
+         );
+    EXCEPTION WHEN OTHERS THEN 
+      RAISE NOTICE 'Catatan participants: %', SQLERRM;
+    END;
+  END IF;
+END $$;
 
 -- Muat ulang cache schema PostgREST Supabase
 NOTIFY pgrst, 'reload schema';

@@ -4620,64 +4620,117 @@ export async function fetchAllJuryDataFromSupabase(): Promise<{
  */
 export const PURGE_ALL_DUMMY_DATA_SQL = `-- ==============================================================================
 -- SKRIP PEMBERSIHAN TOTAL DATA DUMMY / PENGUJIAN HSN 2026 DI SUPABASE
+-- Kompatibel dengan semua tipe data (UUID, TEXT, VARCHAR) & bebas dari error operator!
 -- Salin dan jalankan di: Supabase Dashboard -> SQL Editor -> New Query -> Run
 -- ==============================================================================
 
--- 1. Hapus nilai juri dummy / penugasan uji coba
-DELETE FROM public.jury_scores 
-WHERE participant_id LIKE 'reg-00%' 
-   OR participant_id LIKE 'HSN-2026-00%'
-   OR participant_id LIKE 'HSN26-%-000%'
-   OR id LIKE '%dummy%' OR id LIKE '%mock%' OR id LIKE '%test%';
+DO $$ 
+BEGIN
+  -- 1. Hapus nilai juri dummy / penugasan uji coba (cast UUID ke TEXT dengan aman)
+  IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'jury_scores') THEN
+    BEGIN
+      DELETE FROM public.jury_scores 
+      WHERE participant_id::text LIKE 'reg-00%' 
+         OR participant_id::text LIKE 'HSN-2026-00%'
+         OR participant_id::text LIKE 'HSN26-%-000%'
+         OR id::text LIKE '%dummy%' 
+         OR id::text LIKE '%mock%' 
+         OR id::text LIKE '%test%';
+    EXCEPTION WHEN OTHERS THEN 
+      RAISE NOTICE 'Catatan jury_scores: %', SQLERRM;
+    END;
+  END IF;
 
--- 2. Hapus hasil juara dummy
-DELETE FROM public.competition_results 
-WHERE participant_id LIKE 'reg-00%' 
-   OR participant_id LIKE 'HSN-2026-00%'
-   OR participant_id LIKE 'HSN26-%-000%'
-   OR id LIKE '%dummy%' OR id LIKE '%mock%' OR id LIKE '%test%';
+  -- 2. Hapus hasil juara dummy
+  IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'competition_results') THEN
+    BEGIN
+      DELETE FROM public.competition_results 
+      WHERE participant_id::text LIKE 'reg-00%' 
+         OR participant_id::text LIKE 'HSN-2026-00%'
+         OR participant_id::text LIKE 'HSN26-%-000%'
+         OR id::text LIKE '%dummy%' 
+         OR id::text LIKE '%mock%' 
+         OR id::text LIKE '%test%';
+    EXCEPTION WHEN OTHERS THEN 
+      RAISE NOTICE 'Catatan competition_results: %', SQLERRM;
+    END;
+  END IF;
 
--- 3. Hapus penugasan juri dummy / testing
-DELETE FROM public.jury_assignments 
-WHERE id ~ '^assign-0[0-9]{2}$'
-   OR id LIKE '%dummy%' OR id LIKE '%mock%' OR id LIKE '%test%'
-   OR jury_id LIKE '%dummy%' OR jury_id LIKE '%mock%'
-   OR jury_id LIKE '00000000-0000-%';
+  -- 3. Hapus penugasan juri dummy / testing
+  IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'jury_assignments') THEN
+    BEGIN
+      DELETE FROM public.jury_assignments 
+      WHERE id::text ~ '^assign-0[0-9]{2}$'
+         OR id::text LIKE '%dummy%' 
+         OR id::text LIKE '%mock%' 
+         OR id::text LIKE '%test%'
+         OR jury_id::text LIKE '%dummy%' 
+         OR jury_id::text LIKE '%mock%'
+         OR jury_id::text LIKE '00000000-0000-%';
+    EXCEPTION WHEN OTHERS THEN 
+      RAISE NOTICE 'Catatan jury_assignments: %', SQLERRM;
+    END;
+  END IF;
 
--- 4. Hapus data peserta contoh awal di database
-DELETE FROM public.participants 
-WHERE registration_number LIKE 'HSN-2026-00%' 
-   OR registration_number LIKE 'HSN26-%-000%' 
-   OR id LIKE 'reg-00%'
-   OR LOWER(full_name) IN (
-     'ahmad faiz al-hafidz',
-     'siti nur khadijah',
-     'rizki bayu pratama',
-     'umi kalsum',
-     'muhammad bilal ramadhan',
-     'ahmad fauzi rabbani',
-     'siti maryam azzahra',
-     'm. rizqi maulana'
-   );
+  -- 4. Hapus data peserta contoh awal di database
+  IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'participants') THEN
+    BEGIN
+      DELETE FROM public.participants 
+      WHERE registration_number::text LIKE 'HSN-2026-00%' 
+         OR registration_number::text LIKE 'HSN26-%-000%' 
+         OR id::text LIKE 'reg-00%'
+         OR LOWER(full_name::text) IN (
+           'ahmad faiz al-hafidz',
+           'siti nur khadijah',
+           'rizki bayu pratama',
+           'umi kalsum',
+           'muhammad bilal ramadhan',
+           'ahmad fauzi rabbani',
+           'siti maryam azzahra',
+           'm. rizqi maulana'
+         );
+    EXCEPTION WHEN OTHERS THEN 
+      RAISE NOTICE 'Catatan participants: %', SQLERRM;
+    END;
+  END IF;
 
--- 5. Hapus akun profil pengujian / mock jika ada
-DELETE FROM public.profiles 
-WHERE id LIKE '00000000-0000-%' 
-   OR LOWER(email) LIKE '%test%jury%' 
-   OR LOWER(email) LIKE '%mock%' 
-   OR LOWER(email) LIKE '%dummy%';
+  -- 5. Hapus akun profil pengujian / mock jika ada
+  IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'profiles') THEN
+    BEGIN
+      DELETE FROM public.profiles 
+      WHERE id::text LIKE '00000000-0000-%' 
+         OR LOWER(email::text) LIKE '%test%jury%' 
+         OR LOWER(email::text) LIKE '%mock%' 
+         OR LOWER(email::text) LIKE '%dummy%';
+    EXCEPTION WHEN OTHERS THEN 
+      RAISE NOTICE 'Catatan profiles: %', SQLERRM;
+    END;
+  END IF;
 
-DELETE FROM public.jury_profiles 
-WHERE id LIKE '00000000-0000-%' 
-   OR LOWER(email) LIKE '%test%jury%' 
-   OR LOWER(email) LIKE '%mock%' 
-   OR LOWER(email) LIKE '%dummy%';
+  IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'jury_profiles') THEN
+    BEGIN
+      DELETE FROM public.jury_profiles 
+      WHERE id::text LIKE '00000000-0000-%' 
+         OR LOWER(email::text) LIKE '%test%jury%' 
+         OR LOWER(email::text) LIKE '%mock%' 
+         OR LOWER(email::text) LIKE '%dummy%';
+    EXCEPTION WHEN OTHERS THEN 
+      RAISE NOTICE 'Catatan jury_profiles: %', SQLERRM;
+    END;
+  END IF;
 
--- 6. Hapus kriteria uji coba dummy
-DELETE FROM public.scoring_criteria
-WHERE id LIKE '10000000-0000-%'
-   OR criterion_name LIKE '%[DUMMY]%'
-   OR criterion_name LIKE '%[TEST]%';
+  -- 6. Hapus kriteria uji coba dummy
+  IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'scoring_criteria') THEN
+    BEGIN
+      DELETE FROM public.scoring_criteria
+      WHERE id::text LIKE '10000000-0000-%'
+         OR criterion_name::text LIKE '%[DUMMY]%'
+         OR criterion_name::text LIKE '%[TEST]%';
+    EXCEPTION WHEN OTHERS THEN 
+      RAISE NOTICE 'Catatan scoring_criteria: %', SQLERRM;
+    END;
+  END IF;
+END $$;
 
 -- 7. Muat ulang skema PostgREST
 NOTIFY pgrst, 'reload schema';
@@ -4778,37 +4831,64 @@ export async function purgeAllDummyDataAndSync(customCompetitions?: Competition[
 
   if (connected && supabase) {
     try {
-      // Hapus nilai juri dummy
-      const { data: delScores } = await supabase
-        .from('jury_scores')
-        .delete()
-        .or('participant_id.ilike.reg-00%,participant_id.ilike.HSN-2026-00%,participant_id.ilike.HSN26-%-000%,id.ilike.%dummy%,id.ilike.%mock%')
-        .select('id');
-      sbScoresCount = delScores?.length || 0;
+      // Hapus nilai juri dummy (Ambil ID terlebih dahulu agar aman dari masalah tipe UUID vs TEXT)
+      const { data: allScores } = await supabase.from('jury_scores').select('id, participant_id');
+      const dummyScoreIds = (allScores || []).filter((s: any) => {
+        const pId = String(s.participant_id || '').toLowerCase();
+        const sId = String(s.id || '').toLowerCase();
+        return pId.startsWith('reg-00') || pId.startsWith('hsn-2026-00') || pId.startsWith('hsn26-') || sId.includes('dummy') || sId.includes('mock') || sId.includes('test');
+      }).map((s: any) => s.id);
+
+      if (dummyScoreIds.length > 0) {
+        const { data: delScores } = await supabase
+          .from('jury_scores')
+          .delete()
+          .in('id', dummyScoreIds)
+          .select('id');
+        sbScoresCount = delScores?.length || dummyScoreIds.length;
+      }
     } catch (e) {
       console.warn('Catatan hapus jury_scores Supabase:', e);
     }
 
     try {
       // Hapus hasil juara dummy
-      const { data: delResults } = await supabase
-        .from('competition_results')
-        .delete()
-        .or('participant_id.ilike.reg-00%,participant_id.ilike.HSN-2026-00%,participant_id.ilike.HSN26-%-000%,id.ilike.%dummy%,id.ilike.%mock%')
-        .select('id');
-      sbResultsCount = delResults?.length || 0;
+      const { data: allResults } = await supabase.from('competition_results').select('id, participant_id');
+      const dummyResultIds = (allResults || []).filter((r: any) => {
+        const pId = String(r.participant_id || '').toLowerCase();
+        const rId = String(r.id || '').toLowerCase();
+        return pId.startsWith('reg-00') || pId.startsWith('hsn-2026-00') || pId.startsWith('hsn26-') || rId.includes('dummy') || rId.includes('mock') || rId.includes('test');
+      }).map((r: any) => r.id);
+
+      if (dummyResultIds.length > 0) {
+        const { data: delResults } = await supabase
+          .from('competition_results')
+          .delete()
+          .in('id', dummyResultIds)
+          .select('id');
+        sbResultsCount = delResults?.length || dummyResultIds.length;
+      }
     } catch (e) {
       console.warn('Catatan hapus competition_results Supabase:', e);
     }
 
     try {
       // Hapus penugasan dummy
-      const { data: delAssigns } = await supabase
-        .from('jury_assignments')
-        .delete()
-        .or('id.ilike.%dummy%,id.ilike.%mock%,id.ilike.assign-00%,id.ilike.assign-01%,id.ilike.assign-02%,jury_id.ilike.00000000-0000-%')
-        .select('id');
-      sbAssignmentsCount = delAssigns?.length || 0;
+      const { data: allAssigns } = await supabase.from('jury_assignments').select('id, jury_id');
+      const dummyAssignIds = (allAssigns || []).filter((a: any) => {
+        const aId = String(a.id || '').toLowerCase();
+        const jId = String(a.jury_id || '').toLowerCase();
+        return aId.startsWith('assign-0') || aId.includes('dummy') || aId.includes('mock') || aId.includes('test') || jId.includes('dummy') || jId.includes('mock') || jId.startsWith('00000000-0000-');
+      }).map((a: any) => a.id);
+
+      if (dummyAssignIds.length > 0) {
+        const { data: delAssigns } = await supabase
+          .from('jury_assignments')
+          .delete()
+          .in('id', dummyAssignIds)
+          .select('id');
+        sbAssignmentsCount = delAssigns?.length || dummyAssignIds.length;
+      }
     } catch (e) {
       console.warn('Catatan hapus jury_assignments Supabase:', e);
     }
@@ -4823,19 +4903,37 @@ export async function purgeAllDummyDataAndSync(customCompetitions?: Competition[
 
     try {
       // Hapus profil pengujian dummy jika ada
-      const { data: delProfs } = await supabase
-        .from('profiles')
-        .delete()
-        .or('id.ilike.00000000-0000-%,email.ilike.%test%jury%,email.ilike.%mock%,email.ilike.%dummy%')
-        .select('id');
-      sbProfilesCount = delProfs?.length || 0;
+      const { data: allProfs } = await supabase.from('profiles').select('id, email');
+      const dummyProfIds = (allProfs || []).filter((p: any) => {
+        const pId = String(p.id || '').toLowerCase();
+        const email = String(p.email || '').toLowerCase();
+        return pId.startsWith('00000000-0000-') || email.includes('test_jury') || email.includes('mock') || email.includes('dummy');
+      }).map((p: any) => p.id);
+
+      if (dummyProfIds.length > 0) {
+        const { data: delProfs } = await supabase
+          .from('profiles')
+          .delete()
+          .in('id', dummyProfIds)
+          .select('id');
+        sbProfilesCount = delProfs?.length || dummyProfIds.length;
+      }
     } catch {}
 
     try {
-      await supabase
-        .from('jury_profiles')
-        .delete()
-        .or('id.ilike.00000000-0000-%,email.ilike.%test%jury%,email.ilike.%mock%,email.ilike.%dummy%');
+      const { data: allJProfs } = await supabase.from('jury_profiles').select('id, email');
+      const dummyJProfIds = (allJProfs || []).filter((p: any) => {
+        const pId = String(p.id || '').toLowerCase();
+        const email = String(p.email || '').toLowerCase();
+        return pId.startsWith('00000000-0000-') || email.includes('test_jury') || email.includes('mock') || email.includes('dummy');
+      }).map((p: any) => p.id);
+
+      if (dummyJProfIds.length > 0) {
+        await supabase
+          .from('jury_profiles')
+          .delete()
+          .in('id', dummyJProfIds);
+      }
     } catch {}
   }
 
