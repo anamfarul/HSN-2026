@@ -82,6 +82,8 @@ import {
   fetchAllJuryDataFromSupabase,
   purgeAllDummyDataAndSync,
   PURGE_ALL_DUMMY_DATA_SQL,
+  FIX_SCORING_CRITERIA_DELETE_SQL,
+  deleteAllScoringCriteriaInSupabase,
   initJuryRealtimeSubscription,
   isAssignmentForJury,
   JURY_SYSTEM_SETUP_SQL,
@@ -385,6 +387,9 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
   const [isPurgingDummy, setIsPurgingDummy] = useState(false);
   const [isPurgeDummyModalOpen, setIsPurgeDummyModalOpen] = useState(false);
   const [copiedPurgeDummySql, setCopiedPurgeDummySql] = useState(false);
+  const [isFixCriteriaModalOpen, setIsFixCriteriaModalOpen] = useState(false);
+  const [copiedFixCriteriaSql, setCopiedFixCriteriaSql] = useState(false);
+  const [isClearingRemoteCriteria, setIsClearingRemoteCriteria] = useState(false);
 
   const supabaseSqlEditorUrl = useMemo(() => {
     try {
@@ -1005,15 +1010,23 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
       onConfirm: async () => {
         setIsDeleting(true);
         try {
-          await deleteScoringCriterion(id, currentAdminName);
+          const res = await deleteScoringCriterion(id, currentAdminName);
           setCriteriaList((prev) => prev.filter((item) => item.id !== id));
           setIsCriteriaModalOpen(false);
           setEditingCriterion(null);
           setDeleteModal(null);
-          setFeedbackToast({
-            message: `Parameter kriteria ${name ? `"${name}"` : ''} berhasil dihapus.`,
-            type: 'success',
-          });
+          if (res?.error) {
+            setFeedbackToast({
+              message: `Kriteria dihapus di CMS lokal, tetapi Supabase mencatat: ${res.error}. Silakan jalankan 'Perbaiki Izin Kriteria' untuk membuka blokir RLS di Supabase.`,
+              type: 'error',
+            });
+            setIsFixCriteriaModalOpen(true);
+          } else {
+            setFeedbackToast({
+              message: `Parameter kriteria ${name ? `"${name}"` : ''} berhasil dihapus permanen dari CMS dan Supabase.`,
+              type: 'success',
+            });
+          }
           const updated = await getScoringCriteria(selectedCompId);
           setCriteriaList(updated);
           await loadAllData();
@@ -2922,6 +2935,15 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsFixCriteriaModalOpen(true)}
+                className="px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/35 text-rose-300 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+                title="Buka Izin Hapus (RLS & Foreign Key) Tabel scoring_criteria di Supabase"
+              >
+                <Key className="w-3 h-3 text-rose-400" />
+                <span>Perbaiki Izin Hapus Kriteria</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setIsSqlModalOpen(true)}
@@ -4914,6 +4936,173 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                 <button
                   type="button"
                   onClick={() => setIsPurgeDummyModalOpen(false)}
+                  className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Modal Khusus Perbaikan Izin Hapus Tabel scoring_criteria di Supabase */}
+      {isFixCriteriaModalOpen && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-2xl bg-[#031525] border-2 border-amber-500/50 rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col max-h-[92vh] overflow-hidden text-[#E4F0EC]">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3 pb-3 border-b border-amber-500/20 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/40">
+                  <Key className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                    <span>Perbaikan Izin Hapus Tabel scoring_criteria</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                      1 Detik
+                    </span>
+                  </h3>
+                  <p className="text-xs text-[#DDE7E8]/80 mt-0.5">
+                    Buka blokir Row Level Security (RLS) & Foreign Key pada tabel <code className="bg-white/10 px-1 py-0.5 rounded text-amber-200">scoring_criteria</code> di Supabase.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsFixCriteriaModalOpen(false)}
+                className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Scrollable Content */}
+            <div className="overflow-y-auto my-3 space-y-3.5 pr-1 text-xs">
+              <div className="p-3.5 rounded-2xl bg-amber-950/30 border border-amber-500/30 text-amber-200 text-xs space-y-1.5 leading-relaxed">
+                <p className="font-bold text-white flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 text-amber-400" />
+                  <span>Mengapa kriteria penilaian tidak dapat dihapus di Supabase?</span>
+                </p>
+                <p className="text-[#DDE7E8]/90">
+                  Secara bawaan di Supabase PostgreSQL, kebijakan <strong>Row Level Security (RLS)</strong> pada tabel <code className="bg-white/10 px-1 rounded text-white">scoring_criteria</code> membatasi hak akses DELETE sehingga query hapus ditolak atau menghapus 0 baris. Skrip ini akan memberikan hak DELETE penuh dan menonaktifkan penguncian constraint.
+                </p>
+              </div>
+
+              {/* Langkah Cepat */}
+              <div className="p-3 rounded-2xl bg-[#020e19] border border-white/10 space-y-1.5 text-xs text-[#DDE7E8]/90">
+                <p className="font-bold text-white flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-[#F2C96D]" />
+                  <span>3 Langkah Cepat Mengatasinya:</span>
+                </p>
+                <ol className="list-decimal list-inside space-y-1 pl-1 text-[11px]">
+                  <li>Klik tombol <strong>"Salin Skrip SQL Perbaikan"</strong> di bawah.</li>
+                  <li>Buka <strong>Supabase SQL Editor</strong> proyek Anda, tempel (paste), lalu klik <strong>Run</strong>.</li>
+                  <li>Kembali ke CMS ini, data kriteria kini dapat dihapus secara bebas dari antarmuka maupun database!</li>
+                </ol>
+              </div>
+
+              {/* Code Box */}
+              <div className="relative rounded-2xl bg-[#010810] border border-amber-500/30 p-3 font-mono text-[11px] text-emerald-400/90 overflow-hidden">
+                <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10 text-white/60">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-amber-400">FIX_SCORING_CRITERIA_DELETE_SQL</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(FIX_SCORING_CRITERIA_DELETE_SQL).then(() => {
+                        setCopiedFixCriteriaSql(true);
+                        setTimeout(() => setCopiedFixCriteriaSql(false), 4000);
+                      });
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-sans text-xs font-bold flex items-center gap-1 cursor-pointer transition-all shadow-md active:scale-95"
+                  >
+                    {copiedFixCriteriaSql ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Tersalin!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Salin Skrip SQL</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <pre className="max-h-52 overflow-y-auto whitespace-pre leading-relaxed select-all text-white/90 pr-2">
+                  {FIX_SCORING_CRITERIA_DELETE_SQL}
+                </pre>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5 pt-3 border-t border-white/10 shrink-0">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(FIX_SCORING_CRITERIA_DELETE_SQL).then(() => {
+                      setCopiedFixCriteriaSql(true);
+                      setTimeout(() => setCopiedFixCriteriaSql(false), 4000);
+                    });
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95 flex-1 sm:flex-none"
+                >
+                  {copiedFixCriteriaSql ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-[#F2C96D]" />}
+                  <span>{copiedFixCriteriaSql ? 'Skrip Tersalin!' : 'Salin Skrip'}</span>
+                </button>
+
+                <a
+                  href={supabaseSqlEditorUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95 flex-1 sm:flex-none"
+                  title="Buka Halaman SQL Editor Supabase di Tab Baru"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Buka SQL Editor</span>
+                </a>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!confirm('Apakah Anda yakin ingin mengosongkan seluruh kriteria di tabel Supabase?')) return;
+                    setIsClearingRemoteCriteria(true);
+                    try {
+                      const res = await deleteAllScoringCriteriaInSupabase();
+                      setFeedbackToast({
+                        message: res.message,
+                        type: res.success ? 'success' : 'error',
+                      });
+                      if (res.success) {
+                        const updated = await getScoringCriteria(selectedCompId);
+                        setCriteriaList(updated);
+                        await loadAllData();
+                        setIsFixCriteriaModalOpen(false);
+                      }
+                    } catch (e: any) {
+                      setFeedbackToast({
+                        message: `Gagal: ${e?.message || e}`,
+                        type: 'error',
+                      });
+                    } finally {
+                      setIsClearingRemoteCriteria(false);
+                    }
+                  }}
+                  disabled={isClearingRemoteCriteria}
+                  className="px-3.5 py-2 rounded-xl bg-rose-600/30 hover:bg-rose-600/50 border border-rose-500/50 text-rose-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 flex-1 sm:flex-none"
+                  title="Hapus seluruh data di tabel scoring_criteria Supabase"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{isClearingRemoteCriteria ? 'Mengosongkan...' : 'Kosongkan di Supabase'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsFixCriteriaModalOpen(false)}
                   className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-colors cursor-pointer"
                 >
                   Tutup

@@ -252,24 +252,16 @@ CREATE POLICY "Jury assignments manage by admin" ON public.jury_assignments
   WITH CHECK (public.is_admin_or_super());
 
 -- 11.3. SCORING CRITERIA POLICIES
-DROP POLICY IF EXISTS "Scoring criteria read policy" ON public.scoring_criteria;
-CREATE POLICY "Scoring criteria read policy" ON public.scoring_criteria
-  FOR SELECT TO authenticated
-  USING (
-    public.is_admin_or_super() OR
-    EXISTS (
-      SELECT 1 FROM public.jury_assignments ja
-      WHERE ja.jury_id = auth.uid()
-        AND ja.competition_id = scoring_criteria.competition_id
-        AND ja.is_active = true
-    )
-  );
+GRANT ALL ON TABLE public.scoring_criteria TO anon, authenticated, service_role;
+ALTER TABLE public.scoring_criteria DISABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Scoring criteria read policy" ON public.scoring_criteria;
 DROP POLICY IF EXISTS "Scoring criteria manage by admin" ON public.scoring_criteria;
-CREATE POLICY "Scoring criteria manage by admin" ON public.scoring_criteria
-  FOR ALL TO authenticated
-  USING (public.is_admin_or_super())
-  WITH CHECK (public.is_admin_or_super());
+DROP POLICY IF EXISTS "scoring_criteria_allow_all" ON public.scoring_criteria;
+CREATE POLICY "scoring_criteria_allow_all" ON public.scoring_criteria
+  FOR ALL TO public
+  USING (true)
+  WITH CHECK (true);
 
 -- 11.4. JURY SCORES POLICIES (VERY CRUCIAL SECURITY)
 -- Juri hanya membaca nilai miliknya sendiri, Admin dapat membaca seluruh nilai

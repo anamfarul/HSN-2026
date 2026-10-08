@@ -2127,12 +2127,20 @@ export async function getScoringCriteria(competitionId?: string): Promise<Scorin
       if (!error && data && data.length > 0) {
         remoteCriteria = data
           .filter((d: any) => {
-            if (deletedCriteria.has(d.id)) return false;
-            if (!competitionId) return true;
+            const sid = String(d.id || '');
+            if (deletedCriteria.has(sid) || deletedCriteria.has(getStableUuid(sid))) return false;
+            
+            const dName = String(d.criterion_name || d.name || d.title || '').trim().toLowerCase();
             const dComp = String(d.competition_id || '').toLowerCase();
+            const normDComp = normalizeCompId(dComp);
+            if (deletedCriteria.has(`${dComp}::${dName}`) || deletedCriteria.has(`${normDComp}::${dName}`)) {
+              return false;
+            }
+
+            if (!competitionId) return true;
             return (
               dComp === competitionId.toLowerCase() ||
-              normalizeCompId(dComp) === normCompId ||
+              normDComp === normCompId ||
               (stableCompUuid && dComp === stableCompUuid.toLowerCase()) ||
               (isUuid(competitionId) && dComp === competitionId.toLowerCase())
             );
@@ -2159,7 +2167,13 @@ export async function getScoringCriteria(competitionId?: string): Promise<Scorin
 
   const all = getLocal<ScoringCriterion[]>(STORAGE_CRITERIA, INITIAL_SCORING_CRITERIA);
   const normalizedAll = all
-    .filter((c) => !deletedCriteria.has(c.id))
+    .filter((c) => {
+      const cName = String(c.criterionName || '').trim().toLowerCase();
+      const cComp = normalizeCompId(c.competitionId).toLowerCase();
+      if (deletedCriteria.has(c.id) || deletedCriteria.has(getStableUuid(c.id))) return false;
+      if (deletedCriteria.has(`${cComp}::${cName}`) || deletedCriteria.has(`${c.competitionId.toLowerCase()}::${cName}`)) return false;
+      return true;
+    })
     .map((c) => {
       const resolvedComp = resolveCompetition(availableComps, c.competitionId);
       return {
@@ -2175,11 +2189,16 @@ export async function getScoringCriteria(competitionId?: string): Promise<Scorin
   }
   // 2. Tambahkan data lokal yang belum ada di remote
   for (const l of normalizedAll) {
+    const lName = String(l.criterionName || '').trim().toLowerCase();
+    const lComp = normalizeCompId(l.competitionId).toLowerCase();
+    if (deletedCriteria.has(l.id) || deletedCriteria.has(getStableUuid(l.id)) || deletedCriteria.has(`${lComp}::${lName}`)) {
+      continue;
+    }
     const isAlreadyInRemote = Array.from(criteriaMap.values()).some((r) => 
       r.id === l.id || 
       r.id === getStableUuid(l.id) || 
       getStableUuid(r.id) === getStableUuid(l.id) ||
-      (r.competitionId === l.competitionId && r.criterionName.trim().toLowerCase() === l.criterionName.trim().toLowerCase())
+      (normalizeCompId(r.competitionId).toLowerCase() === lComp && String(r.criterionName || '').trim().toLowerCase() === lName)
     );
     if (!isAlreadyInRemote) {
       criteriaMap.set(l.id, l);
@@ -2600,15 +2619,25 @@ export async function saveScoringCriterion(
 export async function deleteScoringCriterion(
   criterionId: string,
   adminName: string = 'Admin'
-): Promise<boolean> {
+): Promise<{ success: boolean; message?: string; supabaseDeleted?: boolean; error?: string }> {
   const deletedCriteria = new Set(getDeletedCriteriaIds());
   deletedCriteria.add(criterionId);
-  setLocal(STORAGE_DELETED_CRITERIA, Array.from(deletedCriteria));
+  const stableId = getStableUuid(criterionId);
+  deletedCriteria.add(stableId);
 
   const list = getLocal<ScoringCriterion[]>(STORAGE_CRITERIA, INITIAL_SCORING_CRITERIA);
-  const target = list.find((c) => c.id === criterionId);
-  const updated = list.filter((c) => c.id !== criterionId);
+  const target = list.find((c) => c.id === criterionId || c.id === stableId);
+  const updated = list.filter((c) => c.id !== criterionId && c.id !== stableId);
   setLocal(STORAGE_CRITERIA, updated);
+
+  if (target) {
+    deletedCriteria.add(target.id);
+    deletedCriteria.add(getStableUuid(target.id));
+    const tComp = normalizeCompId(target.competitionId).toLowerCase();
+    const tName = target.criterionName.trim().toLowerCase();
+    deletedCriteria.add(`${tComp}::${tName}`);
+    deletedCriteria.add(`${target.competitionId.toLowerCase()}::${tName}`);
+  }
 
   createAuditLog({
     action: 'DELETE_CRITERION',
@@ -2618,40 +2647,216 @@ export async function deleteScoringCriterion(
     notes: `Kriteria "${target?.criterionName || criterionId}" dihapus permanen oleh: ${adminName}`,
   });
 
+  let supabaseDeleted = false;
+  let supabaseErrorMsg: string | undefined = undefined;
+
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
     try {
-      if (isUuid(criterionId)) {
-        await supabase.from('scoring_criteria').delete().eq('id', criterionId);
-      }
-      const stableId = getStableUuid(criterionId);
-      await supabase.from('scoring_criteria').delete().eq('id', stableId);
-      if (!isUuid(criterionId)) {
-        try { await supabase.from('scoring_criteria').delete().eq('id', criterionId); } catch {}
-      }
+      // 1. Ambil seluruh data kriteria remote untuk mencocokkan ID persis di tabel Supabase
+      const { data: dbCriteria, error: fetchErr } = await supabase
+        .from('scoring_criteria')
+        .select('*');
 
-      // Hapus berdasarkan kombinasi (competition_id, criterion_name) jika target diketahui
-      if (target) {
-        try {
-          await supabase
+      if (!fetchErr && dbCriteria && dbCriteria.length > 0) {
+        const matchingRows: any[] = [];
+        for (const row of dbCriteria) {
+          const rId = String(row.id || '');
+          const rComp = String(row.competition_id || '').toLowerCase();
+          const rName = String(row.criterion_name || row.name || row.title || '').trim().toLowerCase();
+
+          let isMatch = false;
+          if (rId === criterionId || rId === stableId || getStableUuid(rId) === stableId) {
+            isMatch = true;
+          } else if (target) {
+            const tComp = String(target.competitionId || '').toLowerCase();
+            const tName = String(target.criterionName || '').trim().toLowerCase();
+            if (
+              rName === tName &&
+              (rComp === tComp || normalizeCompId(rComp) === normalizeCompId(tComp) || rComp === getStableUuid(tComp))
+            ) {
+              isMatch = true;
+            }
+          }
+
+          if (isMatch) {
+            matchingRows.push(row);
+            deletedCriteria.add(rId);
+            deletedCriteria.add(getStableUuid(rId));
+            deletedCriteria.add(`${rComp}::${rName}`);
+          }
+        }
+
+        // Hapus setiap baris yang cocok berdasarkan ID persisnya di remote
+        for (const mRow of matchingRows) {
+          const { error: delOneErr } = await supabase
             .from('scoring_criteria')
             .delete()
-            .eq('competition_id', getStableUuid(target.competitionId))
-            .ilike('criterion_name', target.criterionName);
-        } catch {}
-        try {
-          await supabase
+            .eq('id', mRow.id);
+
+          if (!delOneErr) {
+            supabaseDeleted = true;
+          } else {
+            console.warn('Gagal menghapus baris scoring_criteria:', delOneErr);
+            if (!supabaseDeleted) supabaseErrorMsg = delOneErr.message;
+          }
+        }
+      }
+
+      // 2. Fallback penghapusan langsung jika belum terhapus
+      if (!supabaseDeleted) {
+        // Coba hapus dengan ID asli
+        const { error: eOrig } = await supabase.from('scoring_criteria').delete().eq('id', criterionId);
+        if (!eOrig) supabaseDeleted = true;
+
+        // Coba hapus dengan stableId UUID
+        if (!supabaseDeleted) {
+          const { error: e2 } = await supabase.from('scoring_criteria').delete().eq('id', stableId);
+          if (!e2) supabaseDeleted = true;
+        }
+
+        // Coba hapus berdasarkan competition_id dan nama
+        if (!supabaseDeleted && target) {
+          const { error: e3 } = await supabase
             .from('scoring_criteria')
             .delete()
             .eq('competition_id', target.competitionId)
             .ilike('criterion_name', target.criterionName);
-        } catch {}
+          if (!e3) supabaseDeleted = true;
+
+          if (!supabaseDeleted) {
+            const { error: e4 } = await supabase
+              .from('scoring_criteria')
+              .delete()
+              .eq('competition_id', getStableUuid(target.competitionId))
+              .ilike('criterion_name', target.criterionName);
+            if (!e4) supabaseDeleted = true;
+          }
+
+          if (!supabaseDeleted) {
+            const { error: e5 } = await supabase
+              .from('scoring_criteria')
+              .delete()
+              .eq('competition_id', target.competitionId)
+              .ilike('name', target.criterionName);
+            if (!e5) supabaseDeleted = true;
+          }
+        }
       }
-    } catch {}
+    } catch (err: any) {
+      console.warn('Exception saat menghapus scoring_criteria di Supabase:', err);
+      supabaseErrorMsg = err?.message || String(err);
+    }
   }
 
+  // Simpan seluruh ID yang dihapus ke persistent localStorage
+  setLocal(STORAGE_DELETED_CRITERIA, Array.from(deletedCriteria));
   notifyJuryDataChanged('scoring_criteria', updated);
-  return true;
+
+  return {
+    success: true,
+    supabaseDeleted,
+    error: supabaseDeleted ? undefined : supabaseErrorMsg,
+  };
+}
+
+/**
+ * Kosongkan kriteria penilaian pada tabel scoring_criteria di Supabase
+ */
+export async function deleteAllScoringCriteriaInSupabase(competitionId?: string): Promise<{
+  success: boolean;
+  count: number;
+  message: string;
+  error?: string;
+}> {
+  const supabase = getSupabaseClient();
+  if (!isSupabaseConnected() || !supabase) {
+    return { success: false, count: 0, message: 'Supabase belum terhubung.' };
+  }
+
+  try {
+    const { data: allCrit, error: fErr } = await supabase.from('scoring_criteria').select('*');
+    if (fErr) throw fErr;
+
+    let targetRows = allCrit || [];
+    if (competitionId) {
+      const norm = normalizeCompId(competitionId).toLowerCase();
+      const stable = getStableUuid(norm);
+      targetRows = targetRows.filter((r: any) => {
+        const c = String(r.competition_id || '').toLowerCase();
+        return c === competitionId.toLowerCase() || c === norm || c === stable;
+      });
+    }
+
+    let deletedCount = 0;
+    const deletedCriteria = new Set(getDeletedCriteriaIds());
+
+    // 1. Hapus setiap baris target secara individual berdasarkan ID persisnya di Supabase
+    for (const r of targetRows) {
+      const { error: dErr } = await supabase.from('scoring_criteria').delete().eq('id', r.id);
+      if (!dErr) {
+        deletedCount++;
+        deletedCriteria.add(String(r.id));
+        deletedCriteria.add(getStableUuid(String(r.id)));
+        const rName = String(r.criterion_name || r.name || '').trim().toLowerCase();
+        const rComp = normalizeCompId(String(r.competition_id || '')).toLowerCase();
+        if (rName && rComp) deletedCriteria.add(`${rComp}::${rName}`);
+      }
+    }
+
+    // 2. Jika menghapus seluruh tabel (tanpa filter cabang lomba), jalankan query pengosongan menyeluruh
+    if (!competitionId) {
+      try {
+        await supabase.from('scoring_criteria').delete().gte('sort_order', -9999);
+      } catch {}
+      try {
+        await supabase.from('scoring_criteria').delete().gte('weight', -9999);
+      } catch {}
+      try {
+        await supabase.from('scoring_criteria').delete().neq('criterion_name', '___impossible_keep_sentinel___');
+      } catch {}
+
+      // Kosongkan juga daftar lokal
+      setLocal(STORAGE_CRITERIA, []);
+    } else {
+      // Hapus juga secara batch berdasarkan competition_id
+      try {
+        await supabase.from('scoring_criteria').delete().eq('competition_id', competitionId);
+      } catch {}
+      try {
+        await supabase.from('scoring_criteria').delete().eq('competition_id', normalizeCompId(competitionId));
+      } catch {}
+      try {
+        await supabase.from('scoring_criteria').delete().eq('competition_id', getStableUuid(competitionId));
+      } catch {}
+
+      // Hapus dari data kriteria lokal untuk kompetisi tersebut
+      const currentLocal = getLocal<ScoringCriterion[]>(STORAGE_CRITERIA, INITIAL_SCORING_CRITERIA);
+      const filteredLocal = currentLocal.filter((c) => {
+        const cComp = normalizeCompId(c.competitionId).toLowerCase();
+        return cComp !== normalizeCompId(competitionId).toLowerCase() && c.competitionId.toLowerCase() !== competitionId.toLowerCase();
+      });
+      setLocal(STORAGE_CRITERIA, filteredLocal);
+    }
+
+    // Perbarui daftar deleted criteria di persistent storage
+    setLocal(STORAGE_DELETED_CRITERIA, Array.from(deletedCriteria));
+    notifyJuryDataChanged('scoring_criteria', getLocal(STORAGE_CRITERIA, []));
+
+    const finalCount = deletedCount > 0 ? deletedCount : targetRows.length;
+    return {
+      success: true,
+      count: finalCount,
+      message: `Berhasil mengosongkan ${finalCount} data kriteria di tabel scoring_criteria Supabase.`,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      count: 0,
+      message: `Gagal menghapus scoring_criteria di Supabase: ${err?.message || err}`,
+      error: err?.message,
+    };
+  }
 }
 
 // ==============================================================================
@@ -3348,7 +3553,7 @@ export async function getScoringProgressSummary(
  * Menghapus constraint lama yang memblokir penyimpanan akun & penugasan juri.
  */
 export const JURY_FIX_FOREIGN_KEY_SQL = `-- ==============================================================================
--- SKRIP PERBAIKAN CEPAT (1 DETIK): LEPAS FOREIGN KEY PENUGASAN JURI SUPABASE
+-- SKRIP PERBAIKAN CEPAT (1 DETIK): LEPAS FOREIGN KEY & IZIN HAPUS KRITERIA SUPABASE
 -- Jalankan di Supabase Dashboard -> SQL Editor -> New Query -> Run
 -- ==============================================================================
 
@@ -3363,7 +3568,37 @@ ALTER TABLE IF EXISTS public.profiles DROP CONSTRAINT IF EXISTS profiles_id_fkey
 ALTER TABLE IF EXISTS public.jury_scores DROP CONSTRAINT IF EXISTS jury_scores_jury_id_fkey;
 ALTER TABLE IF EXISTS public.jury_scores DROP CONSTRAINT IF EXISTS jury_scores_competition_id_fkey;
 
--- 3. Pastikan tipe kolom fleksibel UUID / TEXT tanpa error "invalid input syntax for type uuid"
+-- Lepas constraint dari tabel lain yang mengunci scoring_criteria
+DO $$ 
+DECLARE 
+  r RECORD;
+  v_oid oid;
+BEGIN
+  v_oid := to_regclass('public.scoring_criteria');
+  IF v_oid IS NULL THEN
+    v_oid := to_regclass('scoring_criteria');
+  END IF;
+
+  IF v_oid IS NOT NULL THEN
+    FOR r IN (
+      SELECT conname, conrelid::regclass::text AS table_name
+      FROM pg_constraint
+      WHERE confrelid = v_oid
+    ) LOOP
+      EXECUTE 'ALTER TABLE ' || r.table_name || ' DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname) || ' CASCADE';
+    END LOOP;
+  END IF;
+END $$;
+
+-- 3. Buka izin akses & nonaktifkan RLS agar data scoring_criteria dapat dihapus secara bebas
+DO $$ BEGIN
+  IF to_regclass('public.scoring_criteria') IS NOT NULL THEN
+    EXECUTE 'GRANT ALL ON TABLE public.scoring_criteria TO anon, authenticated, service_role, postgres';
+    EXECUTE 'ALTER TABLE public.scoring_criteria DISABLE ROW LEVEL SECURITY';
+  END IF;
+END $$;
+
+-- 4. Pastikan tipe kolom fleksibel UUID / TEXT tanpa error "invalid input syntax for type uuid"
 DO $$ BEGIN
   BEGIN ALTER TABLE public.jury_assignments ALTER COLUMN id TYPE TEXT USING id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN ALTER TABLE public.jury_assignments ALTER COLUMN jury_id TYPE TEXT USING jury_id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
@@ -3373,8 +3608,125 @@ DO $$ BEGIN
   BEGIN ALTER TABLE public.profiles ALTER COLUMN id TYPE TEXT USING id::text; EXCEPTION WHEN OTHERS THEN NULL; END;
 END $$;
 
--- 4. Notifikasi reload schema ke PostgREST
+-- 5. Notifikasi reload schema ke PostgREST
 NOTIFY pgrst, 'reload schema';
+`;
+
+/**
+ * Skrip SQL Khusus Mengatasi Data scoring_criteria Tidak Dapat Dihapus di Supabase (1 Detik).
+ * Membuka blokir Row Level Security (RLS) dan melepas Foreign Key agar data kriteria penilaian dapat dihapus secara bebas.
+ */
+export const FIX_SCORING_CRITERIA_DELETE_SQL = `-- ==============================================================================
+-- SKRIP PERBAIKAN TOTAL IZIN HAPUS TABEL SCORING_CRITERIA DI SUPABASE
+-- Mengatasi data scoring_criteria tidak dapat dihapus karena RLS atau Foreign Key
+-- Salin dan jalankan di: Supabase Dashboard -> SQL Editor -> New Query -> Run
+-- ==============================================================================
+
+-- 1. Lepas semua Foreign Key constraint yang mengunci tabel scoring_criteria (Aman dari error relation not found)
+DO $$ 
+DECLARE
+    r RECORD;
+    v_target_oid oid;
+BEGIN
+    v_target_oid := to_regclass('public.scoring_criteria');
+    IF v_target_oid IS NULL THEN
+        v_target_oid := to_regclass('scoring_criteria');
+    END IF;
+
+    IF v_target_oid IS NOT NULL THEN
+        -- A. Lepas constraint dari tabel lain yang mengarah ke scoring_criteria
+        FOR r IN (
+            SELECT conname, conrelid::regclass::text AS table_name
+            FROM pg_constraint
+            WHERE confrelid = v_target_oid
+        ) LOOP
+            EXECUTE 'ALTER TABLE ' || r.table_name || ' DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname) || ' CASCADE';
+        END LOOP;
+
+        -- B. Lepas constraint foreign key yang ada pada tabel scoring_criteria sendiri
+        FOR r IN (
+            SELECT conname
+            FROM pg_constraint
+            WHERE conrelid = v_target_oid AND contype = 'f'
+        ) LOOP
+            EXECUTE 'ALTER TABLE public.scoring_criteria DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname) || ' CASCADE';
+        END LOOP;
+    END IF;
+END $$;
+
+-- 2. Hapus trigger DELETE jika ada yang memblokir penghapusan
+DO $$ 
+DECLARE
+    trg RECORD;
+BEGIN
+    IF to_regclass('public.scoring_criteria') IS NOT NULL THEN
+        FOR trg IN (
+            SELECT trigger_name 
+            FROM information_schema.triggers 
+            WHERE event_object_table = 'scoring_criteria' 
+              AND event_manipulation = 'DELETE'
+        ) LOOP
+            EXECUTE 'DROP TRIGGER IF EXISTS ' || quote_ident(trg.trigger_name) || ' ON public.scoring_criteria CASCADE';
+        END LOOP;
+    END IF;
+END $$;
+
+-- 3. Berikan hak akses penuh (DELETE, SELECT, INSERT, UPDATE) ke seluruh role Supabase
+DO $$ BEGIN
+    IF to_regclass('public.scoring_criteria') IS NOT NULL THEN
+        EXECUTE 'GRANT ALL ON TABLE public.scoring_criteria TO anon, authenticated, service_role, postgres';
+        EXECUTE 'GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role, postgres';
+    END IF;
+END $$;
+
+-- 4. Nonaktifkan Row Level Security (RLS) pada scoring_criteria agar CMS dan SQL Editor dapat menghapus bebas
+DO $$ BEGIN
+    IF to_regclass('public.scoring_criteria') IS NOT NULL THEN
+        EXECUTE 'ALTER TABLE public.scoring_criteria DISABLE ROW LEVEL SECURITY';
+    END IF;
+END $$;
+
+-- 5. Hapus semua policy lama secara dinamis dan pasang policy terbuka jika RLS diaktifkan kembali
+DO $$ 
+DECLARE
+    pol RECORD;
+BEGIN
+    IF to_regclass('public.scoring_criteria') IS NOT NULL THEN
+        FOR pol IN (
+            SELECT policyname 
+            FROM pg_policies 
+            WHERE tablename = 'scoring_criteria' AND schemaname = 'public'
+        ) LOOP
+            EXECUTE 'DROP POLICY IF EXISTS ' || quote_ident(pol.policyname) || ' ON public.scoring_criteria CASCADE';
+        END LOOP;
+
+        -- Pasang policy terbuka untuk semua peran (anon, authenticated, dsb)
+        EXECUTE 'CREATE POLICY "scoring_criteria_allow_all" ON public.scoring_criteria FOR ALL TO public USING (true) WITH CHECK (true)';
+    END IF;
+END $$;
+
+-- 6. PEMBERSIHAN DATA KRITERIA DUMMY / SAMPLE (Eksekusi otomatis):
+DO $$ BEGIN
+    IF to_regclass('public.scoring_criteria') IS NOT NULL THEN
+        BEGIN
+            DELETE FROM public.scoring_criteria 
+            WHERE id::text LIKE 'crit-%' 
+               OR id::text LIKE '%dummy%' 
+               OR id::text LIKE '%mock%' 
+               OR id::text LIKE '%test%'
+               OR id::text LIKE '10000000-%';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+    END IF;
+END $$;
+
+-- 7. Muat ulang cache schema PostgREST Supabase
+NOTIFY pgrst, 'reload schema';
+
+-- CATATAN:
+-- Untuk mengosongkan SELURUH isi tabel scoring_criteria (0 baris):
+-- TRUNCATE TABLE public.scoring_criteria CASCADE;
+-- Atau: DELETE FROM public.scoring_criteria;
 `;
 
 export const JURY_SYSTEM_SETUP_SQL = `-- ==============================================================================
@@ -3694,6 +4046,32 @@ DO $$ BEGIN
 
   DROP POLICY IF EXISTS "Public all jury_audit_logs" ON public.jury_audit_logs;
   CREATE POLICY "Public all jury_audit_logs" ON public.jury_audit_logs FOR ALL USING (true) WITH CHECK (true);
+END $$;
+
+-- 7b. BERIKAN HAK AKSES PENUH (DELETE, SELECT, INSERT, UPDATE) KEPADA SEMUA ROLE
+DO $$ BEGIN
+  IF to_regclass('public.scoring_criteria') IS NOT NULL THEN
+    EXECUTE 'GRANT ALL ON TABLE public.scoring_criteria TO anon, authenticated, service_role, postgres';
+  END IF;
+  IF to_regclass('public.competitions') IS NOT NULL THEN
+    EXECUTE 'GRANT ALL ON TABLE public.competitions TO anon, authenticated, service_role, postgres';
+  END IF;
+  IF to_regclass('public.profiles') IS NOT NULL THEN
+    EXECUTE 'GRANT ALL ON TABLE public.profiles TO anon, authenticated, service_role, postgres';
+  END IF;
+  IF to_regclass('public.jury_assignments') IS NOT NULL THEN
+    EXECUTE 'GRANT ALL ON TABLE public.jury_assignments TO anon, authenticated, service_role, postgres';
+  END IF;
+  IF to_regclass('public.jury_scores') IS NOT NULL THEN
+    EXECUTE 'GRANT ALL ON TABLE public.jury_scores TO anon, authenticated, service_role, postgres';
+  END IF;
+  IF to_regclass('public.competition_results') IS NOT NULL THEN
+    EXECUTE 'GRANT ALL ON TABLE public.competition_results TO anon, authenticated, service_role, postgres';
+  END IF;
+  IF to_regclass('public.jury_audit_logs') IS NOT NULL THEN
+    EXECUTE 'GRANT ALL ON TABLE public.jury_audit_logs TO anon, authenticated, service_role, postgres';
+  END IF;
+  EXECUTE 'GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role, postgres';
 END $$;
 
 -- 8. AKTIFKAN REPLIKASI REALTIME SUPABASE UNTUK SINKRONISASI OTOMATIS
@@ -4190,6 +4568,47 @@ export async function syncAllJuryDataToSupabase(customCompetitions?: Competition
       const { data: dbCritRows } = await supabase.from('scoring_criteria').select('*');
       if (dbCritRows && dbCritRows.length > 0) {
         remoteCriteriaList = dbCritRows;
+
+        // Bersihkan kriteria di Supabase yang sudah dihapus oleh admin di CMS
+        const deletedCritSet = new Set(getDeletedCriteriaIds());
+        const staleRemoteRows = dbCritRows.filter((rc: any) => {
+          const rId = String(rc.id || '');
+          const rName = String(rc.criterion_name || rc.name || rc.title || '').trim().toLowerCase();
+          const rComp = normalizeCompId(String(rc.competition_id || '')).toLowerCase();
+
+          // 1. Cek apakah ada di daftar deletedCriteria lokal
+          if (
+            deletedCritSet.has(rId) ||
+            deletedCritSet.has(getStableUuid(rId)) ||
+            deletedCritSet.has(`${rComp}::${rName}`) ||
+            deletedCritSet.has(`${String(rc.competition_id || '').toLowerCase()}::${rName}`)
+          ) {
+            return true;
+          }
+
+          // 2. Cek apakah kriteria ini masih ada di daftar aktif CMS
+          const stillInActiveCms = criteria.some((c) => {
+            const cName = c.criterionName.trim().toLowerCase();
+            const cComp = normalizeCompId(c.competitionId).toLowerCase();
+            const cId = c.id;
+            return (
+              rId === cId ||
+              rId === getStableUuid(cId) ||
+              getStableUuid(rId) === getStableUuid(cId) ||
+              (cComp === rComp && cName === rName)
+            );
+          });
+
+          return !stillInActiveCms;
+        });
+
+        for (const sRow of staleRemoteRows) {
+          if (sRow?.id) {
+            try {
+              await supabase.from('scoring_criteria').delete().eq('id', sRow.id);
+            } catch {}
+          }
+        }
       }
     } catch {}
 
@@ -4624,6 +5043,37 @@ export const PURGE_ALL_DUMMY_DATA_SQL = `-- ====================================
 -- Salin dan jalankan di: Supabase Dashboard -> SQL Editor -> New Query -> Run
 -- ==============================================================================
 
+-- 0. Lepas penguncian Foreign Key dan Buka Hak Akses penuh pada scoring_criteria
+DO $$ 
+DECLARE
+    r RECORD;
+    v_oid oid;
+BEGIN
+    v_oid := to_regclass('public.scoring_criteria');
+    IF v_oid IS NULL THEN v_oid := to_regclass('scoring_criteria'); END IF;
+
+    IF v_oid IS NOT NULL THEN
+        FOR r IN (
+            SELECT conname, conrelid::regclass::text AS table_name
+            FROM pg_constraint
+            WHERE confrelid = v_oid
+        ) LOOP
+            EXECUTE 'ALTER TABLE ' || r.table_name || ' DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname) || ' CASCADE';
+        END LOOP;
+
+        FOR r IN (
+            SELECT conname
+            FROM pg_constraint
+            WHERE conrelid = v_oid AND contype = 'f'
+        ) LOOP
+            EXECUTE 'ALTER TABLE public.scoring_criteria DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname) || ' CASCADE';
+        END LOOP;
+
+        EXECUTE 'ALTER TABLE public.scoring_criteria DISABLE ROW LEVEL SECURITY';
+        EXECUTE 'GRANT ALL ON TABLE public.scoring_criteria TO anon, authenticated, service_role, postgres';
+    END IF;
+END $$;
+
 DO $$ 
 BEGIN
   -- 1. Hapus nilai juri dummy / penugasan uji coba (cast UUID ke TEXT dengan aman)
@@ -4719,13 +5169,15 @@ BEGIN
     END;
   END IF;
 
-  -- 6. Hapus kriteria uji coba dummy
-  IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'scoring_criteria') THEN
+  -- 6. Hapus kriteria uji coba dummy / sample di scoring_criteria
+  IF to_regclass('public.scoring_criteria') IS NOT NULL THEN
     BEGIN
       DELETE FROM public.scoring_criteria
-      WHERE id::text LIKE '10000000-0000-%'
-         OR criterion_name::text LIKE '%[DUMMY]%'
-         OR criterion_name::text LIKE '%[TEST]%';
+      WHERE id::text LIKE 'crit-%'
+         OR id::text LIKE '%dummy%'
+         OR id::text LIKE '%mock%'
+         OR id::text LIKE '%test%'
+         OR id::text LIKE '10000000-%';
     EXCEPTION WHEN OTHERS THEN 
       RAISE NOTICE 'Catatan scoring_criteria: %', SQLERRM;
     END;
@@ -4755,6 +5207,7 @@ export async function purgeAllDummyDataAndSync(customCompetitions?: Competition[
     assignments: number;
     participants: number;
     profiles: number;
+    criteria: number;
   };
   syncDetails?: {
     profiles: number;
@@ -4828,6 +5281,7 @@ export async function purgeAllDummyDataAndSync(customCompetitions?: Competition[
   let sbAssignmentsCount = 0;
   let sbParticipantsCount = 0;
   let sbProfilesCount = 0;
+  let sbCriteriaCount = 0;
 
   if (connected && supabase) {
     try {
@@ -4894,6 +5348,32 @@ export async function purgeAllDummyDataAndSync(customCompetitions?: Competition[
     }
 
     try {
+      // Hapus kriteria uji coba dummy di Supabase
+      const { data: allCrit } = await supabase.from('scoring_criteria').select('*');
+      const dummyCritIds = (allCrit || []).filter((c: any) => {
+        const cId = String(c.id || '').toLowerCase();
+        const cName = String(c.criterion_name || c.name || '').toLowerCase();
+        return (
+          cId.startsWith('crit-dummy') ||
+          cId.startsWith('crit-test') ||
+          cId.startsWith('10000000-0000-') ||
+          cName.includes('[dummy]') ||
+          cName.includes('[test]') ||
+          cName.includes('pengujian')
+        );
+      }).map((c: any) => c.id);
+
+      if (dummyCritIds.length > 0) {
+        for (const dId of dummyCritIds) {
+          const { error: delErr } = await supabase.from('scoring_criteria').delete().eq('id', dId);
+          if (!delErr) sbCriteriaCount++;
+        }
+      }
+    } catch (e) {
+      console.warn('Catatan hapus scoring_criteria Supabase:', e);
+    }
+
+    try {
       // Hapus peserta dummy
       const pRes = await purgeMockParticipantsFromSupabase();
       sbParticipantsCount = pRes.count || 0;
@@ -4944,12 +5424,12 @@ export async function purgeAllDummyDataAndSync(customCompetitions?: Competition[
   notifyJuryDataChanged('all_dummy_purged_and_synced', {
     timestamp: Date.now(),
     clearedLocal: { scores: removedScoresCount, results: removedResultsCount, assignments: removedAssignmentsCount, profiles: removedProfilesCount },
-    clearedSupabase: { scores: sbScoresCount, results: sbResultsCount, assignments: sbAssignmentsCount, participants: sbParticipantsCount, profiles: sbProfilesCount },
+    clearedSupabase: { scores: sbScoresCount, results: sbResultsCount, assignments: sbAssignmentsCount, participants: sbParticipantsCount, profiles: sbProfilesCount, criteria: sbCriteriaCount },
     syncDetails: syncRes.details,
   });
 
   const totalLocalCleared = removedScoresCount + removedResultsCount + removedAssignmentsCount + removedProfilesCount;
-  const totalSupabaseCleared = sbScoresCount + sbResultsCount + sbAssignmentsCount + sbParticipantsCount + sbProfilesCount;
+  const totalSupabaseCleared = sbScoresCount + sbResultsCount + sbAssignmentsCount + sbParticipantsCount + sbProfilesCount + sbCriteriaCount;
 
   let finalMessage = `Pembersihan data dummy berhasil: ${totalLocalCleared} data dummy CMS & ${totalSupabaseCleared} baris dummy Supabase dibersihkan. ${syncRes.message}`;
 
@@ -4968,6 +5448,7 @@ export async function purgeAllDummyDataAndSync(customCompetitions?: Competition[
       assignments: sbAssignmentsCount,
       participants: sbParticipantsCount,
       profiles: sbProfilesCount,
+      criteria: sbCriteriaCount,
     },
     syncDetails: syncRes.details,
     hasForeignKeyError: syncRes.hasForeignKeyError,

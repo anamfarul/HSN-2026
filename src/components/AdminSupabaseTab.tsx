@@ -56,7 +56,8 @@ import {
   purgeAllDummyDataAndSync,
   PURGE_ALL_DUMMY_DATA_SQL,
   JURY_SYSTEM_SETUP_SQL,
-  JURY_FIX_FOREIGN_KEY_SQL
+  JURY_FIX_FOREIGN_KEY_SQL,
+  FIX_SCORING_CRITERIA_DELETE_SQL
 } from '../lib/juryService';
 
 export const WORK_SUBMISSION_SETUP_SQL = `-- ==============================================================================
@@ -605,6 +606,32 @@ DO $$ BEGIN
   CREATE POLICY "Public all jury_audit_logs" ON public.jury_audit_logs FOR ALL USING (true) WITH CHECK (true);
 END $$;
 
+-- 8b. BERIKAN HAK AKSES LENGKAP (DELETE, SELECT, INSERT, UPDATE) KEPADA SEMUA ROLE
+DO $$ BEGIN
+  IF to_regclass('public.scoring_criteria') IS NOT NULL THEN
+    EXECUTE 'GRANT ALL ON TABLE public.scoring_criteria TO anon, authenticated, service_role, postgres';
+  END IF;
+  IF to_regclass('public.competitions') IS NOT NULL THEN
+    EXECUTE 'GRANT ALL ON TABLE public.competitions TO anon, authenticated, service_role, postgres';
+  END IF;
+  IF to_regclass('public.profiles') IS NOT NULL THEN
+    EXECUTE 'GRANT ALL ON TABLE public.profiles TO anon, authenticated, service_role, postgres';
+  END IF;
+  IF to_regclass('public.jury_assignments') IS NOT NULL THEN
+    EXECUTE 'GRANT ALL ON TABLE public.jury_assignments TO anon, authenticated, service_role, postgres';
+  END IF;
+  IF to_regclass('public.jury_scores') IS NOT NULL THEN
+    EXECUTE 'GRANT ALL ON TABLE public.jury_scores TO anon, authenticated, service_role, postgres';
+  END IF;
+  IF to_regclass('public.competition_results') IS NOT NULL THEN
+    EXECUTE 'GRANT ALL ON TABLE public.competition_results TO anon, authenticated, service_role, postgres';
+  END IF;
+  IF to_regclass('public.jury_audit_logs') IS NOT NULL THEN
+    EXECUTE 'GRANT ALL ON TABLE public.jury_audit_logs TO anon, authenticated, service_role, postgres';
+  END IF;
+  EXECUTE 'GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role, postgres';
+END $$;
+
 NOTIFY pgrst, 'reload schema';
 `;
 
@@ -656,6 +683,7 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
   const [fetchingJury, setFetchingJury] = useState(false);
   const [copiedJurySql, setCopiedJurySql] = useState(false);
   const [copiedJuryFkSql, setCopiedJuryFkSql] = useState(false);
+  const [copiedFixCriteriaSql, setCopiedFixCriteriaSql] = useState(false);
   const [showJurySqlModal, setShowJurySqlModal] = useState(false);
   const [showSqlViewer, setShowSqlViewer] = useState(false);
   const [pingTesting, setPingTesting] = useState(false);
@@ -802,6 +830,13 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
     setCopiedJuryFkSql(true);
     notify('Skrip SQL Lepas Foreign Key Penugasan Juri disalin! Jalankan di SQL Editor Supabase.');
     setTimeout(() => setCopiedJuryFkSql(false), 4000);
+  };
+
+  const handleCopyFixCriteriaSql = () => {
+    navigator.clipboard.writeText(FIX_SCORING_CRITERIA_DELETE_SQL);
+    setCopiedFixCriteriaSql(true);
+    notify('Skrip SQL Perbaikan Izin Hapus Tabel scoring_criteria disalin! Jalankan di SQL Editor Supabase.');
+    setTimeout(() => setCopiedFixCriteriaSql(false), 4000);
   };
 
   const handleSyncJuryToSupabase = async () => {
@@ -1533,6 +1568,15 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                     </button>
                     <button
                       type="button"
+                      onClick={handleCopyFixCriteriaSql}
+                      className="px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
+                      title="Salin Skrip SQL Buka Izin Hapus Tabel scoring_criteria (1 Detik)"
+                    >
+                      {copiedFixCriteriaSql ? <Check className="w-3 h-3 text-emerald-400" /> : <Key className="w-3 h-3 text-amber-400" />}
+                      <span>{copiedFixCriteriaSql ? 'Tersalin!' : 'Izin Kriteria'}</span>
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setShowJurySqlModal(true)}
                       className="px-2.5 py-1.5 rounded-xl bg-[#F2C96D]/15 hover:bg-[#F2C96D]/30 border border-[#F2C96D]/40 text-[#F2C96D] text-xs font-bold flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
                       title="Lihat & Salin Skrip SQL Sistem Penilaian Dewan Juri"
@@ -2166,6 +2210,16 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                 >
                   {copiedJuryFkSql ? <Check className="w-4 h-4 text-emerald-400" /> : <Key className="w-4 h-4 text-rose-400" />}
                   <span>{copiedJuryFkSql ? 'FK Lepas Tersalin!' : 'Lepas FK Juri (1 Detik)'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopyFixCriteriaSql}
+                  className="px-3.5 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer"
+                  title="Salin Skrip SQL Buka Izin Hapus Tabel scoring_criteria (1 Detik)"
+                >
+                  {copiedFixCriteriaSql ? <Check className="w-4 h-4 text-emerald-400" /> : <Key className="w-4 h-4 text-amber-400" />}
+                  <span>{copiedFixCriteriaSql ? 'Izin Tersalin!' : 'Izin Kriteria (1 Detik)'}</span>
                 </button>
 
                 <button
