@@ -516,6 +516,17 @@ ALTER TABLE IF EXISTS public.jury_assignments
 
 -- Pastikan tipe kolom fleksibel (mengizinkan TEXT dan UUID tanpa error "invalid input syntax for type uuid")
 DO $$ BEGIN
+  -- Lepas constraint foreign key jika ada agar ALTER COLUMN TYPE tidak terhalang
+  BEGIN
+    ALTER TABLE public.jury_assignments DROP CONSTRAINT IF EXISTS jury_assignments_competition_id_fkey;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN
+    ALTER TABLE public.jury_assignments DROP CONSTRAINT IF EXISTS jury_assignments_jury_id_fkey;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN
+    ALTER TABLE public.scoring_criteria DROP CONSTRAINT IF EXISTS scoring_criteria_competition_id_fkey;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
   BEGIN
     ALTER TABLE public.jury_assignments ALTER COLUMN id TYPE TEXT USING id::text;
   EXCEPTION WHEN OTHERS THEN NULL; END;
