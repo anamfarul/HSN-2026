@@ -80,6 +80,8 @@ import {
   ParticipantScoreRow,
   syncAllJuryDataToSupabase,
   fetchAllJuryDataFromSupabase,
+  purgeAllDummyDataAndSync,
+  PURGE_ALL_DUMMY_DATA_SQL,
   initJuryRealtimeSubscription,
   isAssignmentForJury,
   JURY_SYSTEM_SETUP_SQL,
@@ -380,6 +382,9 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
   const [copiedSql, setCopiedSql] = useState(false);
   const [isForeignKeyModalOpen, setIsForeignKeyModalOpen] = useState(false);
   const [copiedFkSql, setCopiedFkSql] = useState(false);
+  const [isPurgingDummy, setIsPurgingDummy] = useState(false);
+  const [isPurgeDummyModalOpen, setIsPurgeDummyModalOpen] = useState(false);
+  const [copiedPurgeDummySql, setCopiedPurgeDummySql] = useState(false);
 
   const supabaseSqlEditorUrl = useMemo(() => {
     try {
@@ -431,6 +436,29 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
       });
     } finally {
       setIsSyncingSupabase(false);
+    }
+  };
+
+  const handlePurgeAllDummyAndSync = async () => {
+    setIsPurgingDummy(true);
+    try {
+      const res = await purgeAllDummyDataAndSync(competitions);
+      setFeedbackToast({
+        message: res.message,
+        type: res.success ? 'success' : 'error',
+      });
+      if (res.hasForeignKeyError) {
+        setIsForeignKeyModalOpen(true);
+      }
+      await loadAllData();
+      await refreshJuryDbStatus();
+    } catch (err: any) {
+      setFeedbackToast({
+        message: `Gagal membersihkan data dummy & sinkronisasi: ${err?.message || err}`,
+        type: 'error',
+      });
+    } finally {
+      setIsPurgingDummy(false);
     }
   };
 
@@ -1106,11 +1134,24 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
               <span className="sm:hidden">SQL</span>
             </button>
 
+            {/* Bersihkan Dummy & Sinkronkan */}
+            <button
+              type="button"
+              onClick={() => setIsPurgeDummyModalOpen(true)}
+              disabled={isPurgingDummy || isSyncingSupabase}
+              className="px-3.5 py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 hover:text-white border border-rose-500/40 font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
+              title="Hapus Seluruh Data Dummy di CMS & Database Supabase, lalu Sinkronkan Data Resmi Festival"
+            >
+              <Trash2 className={`w-3.5 h-3.5 ${isPurgingDummy ? 'animate-bounce' : 'text-rose-400'}`} />
+              <span className="hidden sm:inline">{isPurgingDummy ? 'Membersihkan...' : 'Bersihkan Dummy & Sinkronkan'}</span>
+              <span className="sm:hidden">{isPurgingDummy ? 'Hapus...' : 'Hapus Dummy'}</span>
+            </button>
+
             {/* Sinkron ke Supabase */}
             <button
               type="button"
               onClick={handleSyncToSupabase}
-              disabled={isSyncingSupabase}
+              disabled={isSyncingSupabase || isPurgingDummy}
               className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:opacity-95 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
               title="Kirim dan Simpan Seluruh Data Juri dari CMS ke Database Supabase"
             >
@@ -4725,6 +4766,154 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                 <button
                   type="button"
                   onClick={() => setIsForeignKeyModalOpen(false)}
+                  className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Modal Pembersihan Total Data Dummy di CMS & Supabase */}
+      {isPurgeDummyModalOpen && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-2xl bg-[#031525] border-2 border-rose-500/60 rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col max-h-[92vh] overflow-hidden text-[#E4F0EC]">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3 pb-3 border-b border-rose-500/20 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/40">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                    <span>Bersihkan Data Dummy & Sinkronkan Supabase</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                      CMS & Database
+                    </span>
+                  </h3>
+                  <p className="text-xs text-[#DDE7E8]/80 mt-0.5">
+                    Hapus tuntas seluruh data dummy di CMS Penilaian Juri dan database Supabase, lalu sinkronkan data resmi festival.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPurgeDummyModalOpen(false)}
+                className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Scrollable Content */}
+            <div className="overflow-y-auto my-3 space-y-3.5 pr-1 text-xs">
+              <div className="p-3.5 rounded-2xl bg-rose-950/30 border border-rose-500/30 text-rose-200 text-xs space-y-2 leading-relaxed">
+                <p className="font-bold text-white flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>Cakupan Pembersihan Bersih & Sinkronisasi:</span>
+                </p>
+                <ul className="list-disc list-inside space-y-1 text-[#DDE7E8]/90 pl-1">
+                  <li><strong>Nilai & Draf Juri Dummy:</strong> Menghapus skor uji coba dari CMS dan tabel <code className="bg-white/10 px-1 rounded text-rose-200">jury_scores</code>.</li>
+                  <li><strong>Hasil Juara Dummy:</strong> Menghapus pemenang testing dari CMS dan tabel <code className="bg-white/10 px-1 rounded text-rose-200">competition_results</code>.</li>
+                  <li><strong>Penugasan Dummy:</strong> Menghapus penugasan uji coba dari CMS dan tabel <code className="bg-white/10 px-1 rounded text-rose-200">jury_assignments</code>.</li>
+                  <li><strong>Peserta Contoh Awal:</strong> Menghapus peserta mock dari CMS dan tabel <code className="bg-white/10 px-1 rounded text-rose-200">participants</code>.</li>
+                  <li><strong>Profil Akun Pengujian:</strong> Menghapus akun mock dari CMS dan tabel <code className="bg-white/10 px-1 rounded text-rose-200">profiles / jury_profiles</code>.</li>
+                  <li><strong>Sinkronisasi Bersih:</strong> Mengirimkan profil dewan juri resmi, penugasan resmi, dan kriteria bobot ke Supabase.</li>
+                </ul>
+              </div>
+
+              {/* Langkah Cepat */}
+              <div className="p-3 rounded-2xl bg-[#020e19] border border-white/10 space-y-1.5 text-xs text-[#DDE7E8]/90">
+                <p className="font-bold text-white flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-[#F2C96D]" />
+                  <span>Pilihan Eksekusi:</span>
+                </p>
+                <p className="text-[11px] leading-relaxed">
+                  Anda dapat langsung mengklik tombol <strong>"Hapus & Sinkronkan Sekarang"</strong> di bawah untuk proses otomatis 1-klik, atau salin skrip SQL di bawah untuk dijalankan langsung di Supabase SQL Editor.
+                </p>
+              </div>
+
+              {/* Code Box */}
+              <div className="relative rounded-2xl bg-[#010810] border border-rose-500/30 p-3 font-mono text-[11px] text-emerald-400/90 overflow-hidden">
+                <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10 text-white/60">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-rose-400">PURGE_ALL_DUMMY_DATA_SQL</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(PURGE_ALL_DUMMY_DATA_SQL).then(() => {
+                        setCopiedPurgeDummySql(true);
+                        setTimeout(() => setCopiedPurgeDummySql(false), 4000);
+                      });
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-sans text-xs font-bold flex items-center gap-1 cursor-pointer transition-all shadow-md active:scale-95"
+                  >
+                    {copiedPurgeDummySql ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Tersalin!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Salin Skrip SQL</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <pre className="max-h-52 overflow-y-auto whitespace-pre leading-relaxed select-all text-white/90 pr-2">
+                  {PURGE_ALL_DUMMY_DATA_SQL}
+                </pre>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5 pt-3 border-t border-white/10 shrink-0">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(PURGE_ALL_DUMMY_DATA_SQL).then(() => {
+                      setCopiedPurgeDummySql(true);
+                      setTimeout(() => setCopiedPurgeDummySql(false), 4000);
+                    });
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95 flex-1 sm:flex-none"
+                >
+                  {copiedPurgeDummySql ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-[#F2C96D]" />}
+                  <span>{copiedPurgeDummySql ? 'Skrip Tersalin!' : 'Salin Skrip'}</span>
+                </button>
+
+                <a
+                  href={supabaseSqlEditorUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95 flex-1 sm:flex-none"
+                  title="Buka Halaman SQL Editor Supabase di Tab Baru"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Buka SQL Editor</span>
+                </a>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await handlePurgeAllDummyAndSync();
+                    setIsPurgeDummyModalOpen(false);
+                  }}
+                  disabled={isPurgingDummy}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-rose-600 via-rose-700 to-red-800 hover:brightness-110 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition-all cursor-pointer disabled:opacity-50 flex-1 sm:flex-none"
+                >
+                  <Trash2 className={`w-3.5 h-3.5 ${isPurgingDummy ? 'animate-bounce' : ''}`} />
+                  <span>{isPurgingDummy ? 'Membersihkan...' : 'Hapus & Sinkronkan Sekarang'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsPurgeDummyModalOpen(false)}
                   className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-colors cursor-pointer"
                 >
                   Tutup

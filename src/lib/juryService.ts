@@ -1,4 +1,4 @@
-import { getSupabaseClient, isSupabaseConnected } from './supabaseClient';
+import { getSupabaseClient, isSupabaseConnected, purgeMockParticipantsFromSupabase } from './supabaseClient';
 import {
   UserProfile,
   AdminUser,
@@ -4613,4 +4613,265 @@ export async function fetchAllJuryDataFromSupabase(): Promise<{
       message: `Gagal memuat data dari Supabase: ${err?.message || err}`,
     };
   }
+}
+
+/**
+ * SKRIP SQL PEMBERSIHAN TOTAL DATA DUMMY / PENGUJIAN HSN 2026 DI SUPABASE
+ */
+export const PURGE_ALL_DUMMY_DATA_SQL = `-- ==============================================================================
+-- SKRIP PEMBERSIHAN TOTAL DATA DUMMY / PENGUJIAN HSN 2026 DI SUPABASE
+-- Salin dan jalankan di: Supabase Dashboard -> SQL Editor -> New Query -> Run
+-- ==============================================================================
+
+-- 1. Hapus nilai juri dummy / penugasan uji coba
+DELETE FROM public.jury_scores 
+WHERE participant_id LIKE 'reg-00%' 
+   OR participant_id LIKE 'HSN-2026-00%'
+   OR participant_id LIKE 'HSN26-%-000%'
+   OR id LIKE '%dummy%' OR id LIKE '%mock%' OR id LIKE '%test%';
+
+-- 2. Hapus hasil juara dummy
+DELETE FROM public.competition_results 
+WHERE participant_id LIKE 'reg-00%' 
+   OR participant_id LIKE 'HSN-2026-00%'
+   OR participant_id LIKE 'HSN26-%-000%'
+   OR id LIKE '%dummy%' OR id LIKE '%mock%' OR id LIKE '%test%';
+
+-- 3. Hapus penugasan juri dummy / testing
+DELETE FROM public.jury_assignments 
+WHERE id ~ '^assign-0[0-9]{2}$'
+   OR id LIKE '%dummy%' OR id LIKE '%mock%' OR id LIKE '%test%'
+   OR jury_id LIKE '%dummy%' OR jury_id LIKE '%mock%'
+   OR jury_id LIKE '00000000-0000-%';
+
+-- 4. Hapus data peserta contoh awal di database
+DELETE FROM public.participants 
+WHERE registration_number LIKE 'HSN-2026-00%' 
+   OR registration_number LIKE 'HSN26-%-000%' 
+   OR id LIKE 'reg-00%'
+   OR LOWER(full_name) IN (
+     'ahmad faiz al-hafidz',
+     'siti nur khadijah',
+     'rizki bayu pratama',
+     'umi kalsum',
+     'muhammad bilal ramadhan',
+     'ahmad fauzi rabbani',
+     'siti maryam azzahra',
+     'm. rizqi maulana'
+   );
+
+-- 5. Hapus akun profil pengujian / mock jika ada
+DELETE FROM public.profiles 
+WHERE id LIKE '00000000-0000-%' 
+   OR LOWER(email) LIKE '%test%jury%' 
+   OR LOWER(email) LIKE '%mock%' 
+   OR LOWER(email) LIKE '%dummy%';
+
+DELETE FROM public.jury_profiles 
+WHERE id LIKE '00000000-0000-%' 
+   OR LOWER(email) LIKE '%test%jury%' 
+   OR LOWER(email) LIKE '%mock%' 
+   OR LOWER(email) LIKE '%dummy%';
+
+-- 6. Hapus kriteria uji coba dummy
+DELETE FROM public.scoring_criteria
+WHERE id LIKE '10000000-0000-%'
+   OR criterion_name LIKE '%[DUMMY]%'
+   OR criterion_name LIKE '%[TEST]%';
+
+-- 7. Muat ulang skema PostgREST
+NOTIFY pgrst, 'reload schema';
+`;
+
+/**
+ * Hapus seluruh data dummy / pengujian di CMS Penilaian Juri dan Supabase,
+ * kemudian jalankan sinkronisasi penuh data resmi festival ke tabel Supabase.
+ */
+export async function purgeAllDummyDataAndSync(customCompetitions?: Competition[]): Promise<{
+  success: boolean;
+  message: string;
+  clearedLocal: {
+    scores: number;
+    results: number;
+    assignments: number;
+    profiles: number;
+  };
+  clearedSupabase: {
+    scores: number;
+    results: number;
+    assignments: number;
+    participants: number;
+    profiles: number;
+  };
+  syncDetails?: {
+    profiles: number;
+    assignments: number;
+    criteria: number;
+    scores: number;
+    results: number;
+  };
+  hasForeignKeyError?: boolean;
+}> {
+  // 1. Bersihkan Data Lokal CMS Penilaian Juri
+  const localScores = getLocal<JuryScore[]>(STORAGE_SCORES, []);
+  const cleanScores = localScores.filter((s) => !isMockScore(s));
+  const removedScoresCount = localScores.length - cleanScores.length;
+  setLocal(STORAGE_SCORES, cleanScores);
+
+  const localResults = getLocal<CompetitionResult[]>(STORAGE_RESULTS, []);
+  const cleanResults = localResults.filter((r) => {
+    if (!r) return false;
+    if (isInitialMockParticipant({ id: r.participantId })) return false;
+    const pId = String(r.participantId || '').toLowerCase();
+    const rId = String(r.id || '').toLowerCase();
+    if (pId.startsWith('reg-00') || pId.startsWith('hsn-2026-00') || pId.startsWith('hsn26-')) return false;
+    if (rId.includes('mock') || rId.includes('dummy') || rId.includes('test')) return false;
+    return true;
+  });
+  const removedResultsCount = localResults.length - cleanResults.length;
+  setLocal(STORAGE_RESULTS, cleanResults);
+
+  const localAssignments = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, []);
+  const cleanAssignments = localAssignments.filter((a) => !isMockAssignment(a));
+  const removedAssignmentsCount = localAssignments.length - cleanAssignments.length;
+  setLocal(STORAGE_ASSIGNMENTS, cleanAssignments);
+
+  const localProfiles = getLocal<UserProfile[]>(STORAGE_PROFILES, []);
+  const cleanProfiles = localProfiles.filter((p) => {
+    if (!p) return false;
+    const id = String(p.id || '').toLowerCase();
+    const email = String(p.email || '').toLowerCase();
+    const name = String(p.fullName || '').toLowerCase();
+    if (id.startsWith('00000000-0000-')) return false;
+    if (email.includes('test_jury') || email.includes('mock') || email.includes('dummy')) return false;
+    if (name.includes('[dummy]') || name.includes('[test]')) return false;
+    return true;
+  });
+  const removedProfilesCount = localProfiles.length - cleanProfiles.length;
+  setLocal(STORAGE_PROFILES, cleanProfiles);
+
+  // Bersihkan data peserta dummy di localStorage
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const pKeys = ['hsn2026_participants', 'hsn2026_clean_participants', 'hsn2026_registered_participants'];
+      for (const pk of pKeys) {
+        const raw = localStorage.getItem(pk);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const cleaned = parsed.filter((p: any) => !isInitialMockParticipant(p));
+            localStorage.setItem(pk, JSON.stringify(cleaned));
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // 2. Bersihkan Data Dummy di Supabase
+  const supabase = getSupabaseClient();
+  const connected = isSupabaseConnected() && Boolean(supabase);
+  let sbScoresCount = 0;
+  let sbResultsCount = 0;
+  let sbAssignmentsCount = 0;
+  let sbParticipantsCount = 0;
+  let sbProfilesCount = 0;
+
+  if (connected && supabase) {
+    try {
+      // Hapus nilai juri dummy
+      const { data: delScores } = await supabase
+        .from('jury_scores')
+        .delete()
+        .or('participant_id.ilike.reg-00%,participant_id.ilike.HSN-2026-00%,participant_id.ilike.HSN26-%-000%,id.ilike.%dummy%,id.ilike.%mock%')
+        .select('id');
+      sbScoresCount = delScores?.length || 0;
+    } catch (e) {
+      console.warn('Catatan hapus jury_scores Supabase:', e);
+    }
+
+    try {
+      // Hapus hasil juara dummy
+      const { data: delResults } = await supabase
+        .from('competition_results')
+        .delete()
+        .or('participant_id.ilike.reg-00%,participant_id.ilike.HSN-2026-00%,participant_id.ilike.HSN26-%-000%,id.ilike.%dummy%,id.ilike.%mock%')
+        .select('id');
+      sbResultsCount = delResults?.length || 0;
+    } catch (e) {
+      console.warn('Catatan hapus competition_results Supabase:', e);
+    }
+
+    try {
+      // Hapus penugasan dummy
+      const { data: delAssigns } = await supabase
+        .from('jury_assignments')
+        .delete()
+        .or('id.ilike.%dummy%,id.ilike.%mock%,id.ilike.assign-00%,id.ilike.assign-01%,id.ilike.assign-02%,jury_id.ilike.00000000-0000-%')
+        .select('id');
+      sbAssignmentsCount = delAssigns?.length || 0;
+    } catch (e) {
+      console.warn('Catatan hapus jury_assignments Supabase:', e);
+    }
+
+    try {
+      // Hapus peserta dummy
+      const pRes = await purgeMockParticipantsFromSupabase();
+      sbParticipantsCount = pRes.count || 0;
+    } catch (e) {
+      console.warn('Catatan hapus participants Supabase:', e);
+    }
+
+    try {
+      // Hapus profil pengujian dummy jika ada
+      const { data: delProfs } = await supabase
+        .from('profiles')
+        .delete()
+        .or('id.ilike.00000000-0000-%,email.ilike.%test%jury%,email.ilike.%mock%,email.ilike.%dummy%')
+        .select('id');
+      sbProfilesCount = delProfs?.length || 0;
+    } catch {}
+
+    try {
+      await supabase
+        .from('jury_profiles')
+        .delete()
+        .or('id.ilike.00000000-0000-%,email.ilike.%test%jury%,email.ilike.%mock%,email.ilike.%dummy%');
+    } catch {}
+  }
+
+  // 3. Sinkronisasikan Data Bersih CMS Penilaian Juri dengan Database Supabase
+  const syncRes = await syncAllJuryDataToSupabase(customCompetitions);
+
+  // 4. Siarkan notifikasi update ke seluruh tab aplikasi
+  notifyJuryDataChanged('all_dummy_purged_and_synced', {
+    timestamp: Date.now(),
+    clearedLocal: { scores: removedScoresCount, results: removedResultsCount, assignments: removedAssignmentsCount, profiles: removedProfilesCount },
+    clearedSupabase: { scores: sbScoresCount, results: sbResultsCount, assignments: sbAssignmentsCount, participants: sbParticipantsCount, profiles: sbProfilesCount },
+    syncDetails: syncRes.details,
+  });
+
+  const totalLocalCleared = removedScoresCount + removedResultsCount + removedAssignmentsCount + removedProfilesCount;
+  const totalSupabaseCleared = sbScoresCount + sbResultsCount + sbAssignmentsCount + sbParticipantsCount + sbProfilesCount;
+
+  let finalMessage = `Pembersihan data dummy berhasil: ${totalLocalCleared} data dummy CMS & ${totalSupabaseCleared} baris dummy Supabase dibersihkan. ${syncRes.message}`;
+
+  return {
+    success: syncRes.success,
+    message: finalMessage,
+    clearedLocal: {
+      scores: removedScoresCount,
+      results: removedResultsCount,
+      assignments: removedAssignmentsCount,
+      profiles: removedProfilesCount,
+    },
+    clearedSupabase: {
+      scores: sbScoresCount,
+      results: sbResultsCount,
+      assignments: sbAssignmentsCount,
+      participants: sbParticipantsCount,
+      profiles: sbProfilesCount,
+    },
+    syncDetails: syncRes.details,
+    hasForeignKeyError: syncRes.hasForeignKeyError,
+  };
 }

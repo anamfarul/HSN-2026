@@ -53,6 +53,8 @@ import {
 import {
   syncAllJuryDataToSupabase,
   fetchAllJuryDataFromSupabase,
+  purgeAllDummyDataAndSync,
+  PURGE_ALL_DUMMY_DATA_SQL,
   JURY_SYSTEM_SETUP_SQL,
   JURY_FIX_FOREIGN_KEY_SQL
 } from '../lib/juryService';
@@ -648,6 +650,7 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
   const [showCascadeSqlModal, setShowCascadeSqlModal] = useState(false);
   const [showCategorySqlModal, setShowCategorySqlModal] = useState(false);
   const [showPurgeSqlModal, setShowPurgeSqlModal] = useState(false);
+  const [purgeScope, setPurgeScope] = useState<'all' | 'participants'>('all');
   const [purgingMocks, setPurgingMocks] = useState(false);
   const [syncingJury, setSyncingJury] = useState(false);
   const [fetchingJury, setFetchingJury] = useState(false);
@@ -828,6 +831,22 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
       notify(`Gagal memuat data juri: ${err?.message || err}`);
     } finally {
       setFetchingJury(false);
+    }
+  };
+
+  const handlePurgeAllDummyAndSyncJury = async () => {
+    setPurgingMocks(true);
+    try {
+      const res = await purgeAllDummyDataAndSync(competitions);
+      notify(res.message);
+      setStatusMessage(res.message);
+      if (onRefreshParticipants) {
+        onRefreshParticipants();
+      }
+    } catch (err: any) {
+      notify(`Gagal membersihkan data dummy: ${err?.message || err}`);
+    } finally {
+      setPurgingMocks(false);
     }
   };
 
@@ -1495,6 +1514,16 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                   <div className="flex items-center gap-1.5 shrink-0 flex-wrap sm:flex-nowrap">
                     <button
                       type="button"
+                      onClick={handlePurgeAllDummyAndSyncJury}
+                      disabled={purgingMocks || syncingJury}
+                      className="px-2.5 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/35 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                      title="Hapus Seluruh Data Dummy di CMS & Supabase, lalu Sinkronkan Data Resmi Festival"
+                    >
+                      <Trash2 className={`w-3 h-3 ${purgingMocks ? 'animate-bounce text-rose-400' : 'text-rose-400'}`} />
+                      <span>{purgingMocks ? 'Membersihkan...' : 'Bersihkan Dummy'}</span>
+                    </button>
+                    <button
+                      type="button"
                       onClick={handleCopyJuryFkSql}
                       className="px-2.5 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
                       title="Salin Skrip Cepat Lepas Foreign Key Penugasan Juri (1 Detik)"
@@ -1934,23 +1963,49 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="font-heading font-bold text-white text-base">
-                      Hapus Permanen Data Awal / Dummy Peserta
+                      Hapus Permanen Data Dummy di Supabase & CMS
                     </h3>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
                       Permanen
                     </span>
                   </div>
                   <p className="text-xs text-[#DDE7E8]/80 mt-0.5">
-                    Membersihkan data contoh registrasi dari database Supabase dan penyimpanan lokal website.
+                    Membersihkan data contoh / pengujian dari tabel Supabase dan CMS kemudian menyinkronkan data resmi.
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowPurgeSqlModal(false)}
-                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm font-bold transition-colors"
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm font-bold transition-colors cursor-pointer"
               >
                 ✕
+              </button>
+            </div>
+
+            {/* Scope Selector Tabs */}
+            <div className="flex items-center gap-2 bg-black/40 p-1 rounded-xl border border-white/10">
+              <button
+                type="button"
+                onClick={() => setPurgeScope('all')}
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  purgeScope === 'all'
+                    ? 'bg-rose-600 text-white shadow-md'
+                    : 'text-white/70 hover:text-white'
+                }`}
+              >
+                Pembersihan Total (Peserta & Dewan Juri)
+              </button>
+              <button
+                type="button"
+                onClick={() => setPurgeScope('participants')}
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  purgeScope === 'participants'
+                    ? 'bg-rose-600 text-white shadow-md'
+                    : 'text-white/70 hover:text-white'
+                }`}
+              >
+                Hanya Dummy Peserta
               </button>
             </div>
 
@@ -1961,16 +2016,20 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                 <span>Konfirmasi Penghapusan Permanen:</span>
               </div>
               <p className="text-[11px] leading-relaxed text-rose-200/90">
-                Aksi ini akan menghapus semua baris data contoh awal (seperti Ahmad Fauzi, Siti Maryam, Ahmad Faiz, dll.) dari tabel <code className="text-white bg-black/40 px-1 py-0.5 rounded font-mono">participants</code> di database Supabase dan cache website. Data peserta baru yang didaftarkan secara riil setelah ini tidak akan terpengaruh.
+                {purgeScope === 'all'
+                  ? 'Aksi ini akan menghapus semua skor uji coba, pemenang testing, penugasan dummy, peserta mock, dan akun testing dari Supabase & CMS Penilaian Juri, lalu langsung menyinkronkan data festival yang bersih ke database.'
+                  : 'Aksi ini akan menghapus semua baris data peserta contoh awal dari tabel participants di database Supabase dan cache website. Data peserta riil tidak akan terpengaruh.'}
               </p>
             </div>
 
             {/* SQL Code Box */}
             <div className="space-y-1.5">
-              <span className="text-xs font-bold text-[#F2C96D]">Skrip SQL Supabase yang dijalankan:</span>
-              <div className="relative rounded-2xl bg-[#010b14] border border-white/15 p-3.5 max-h-36 overflow-y-auto">
-                <pre className="text-[11px] font-mono text-rose-300 whitespace-pre-wrap leading-relaxed">
-                  {DELETE_MOCK_PARTICIPANTS_SQL}
+              <span className="text-xs font-bold text-[#F2C96D]">
+                {purgeScope === 'all' ? 'Skrip SQL Total (Peserta & Juri):' : 'Skrip SQL Dummy Peserta:'}
+              </span>
+              <div className="relative rounded-2xl bg-[#010b14] border border-white/15 p-3.5 max-h-40 overflow-y-auto">
+                <pre className="text-[11px] font-mono text-rose-300 whitespace-pre-wrap leading-relaxed select-all">
+                  {purgeScope === 'all' ? PURGE_ALL_DUMMY_DATA_SQL : DELETE_MOCK_PARTICIPANTS_SQL}
                 </pre>
               </div>
             </div>
@@ -1981,14 +2040,18 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                 <button
                   type="button"
                   onClick={async () => {
-                    await handlePurgeMockParticipants();
+                    if (purgeScope === 'all') {
+                      await handlePurgeAllDummyAndSyncJury();
+                    } else {
+                      await handlePurgeMockParticipants();
+                    }
                     setShowPurgeSqlModal(false);
                   }}
                   disabled={purgingMocks}
-                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-red-700 hover:brightness-110 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md active:scale-95"
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-red-700 hover:brightness-110 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer disabled:opacity-50"
                 >
-                  <Trash2 className="w-4 h-4" />
-                  <span>{purgingMocks ? 'Menghapus...' : 'Hapus Sekarang (Otomatis)'}</span>
+                  <Trash2 className={`w-4 h-4 ${purgingMocks ? 'animate-bounce' : ''}`} />
+                  <span>{purgingMocks ? 'Menghapus...' : 'Hapus & Sinkronkan Sekarang'}</span>
                 </button>
               </div>
 
@@ -1996,12 +2059,13 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText(DELETE_MOCK_PARTICIPANTS_SQL);
+                    const activeSql = purgeScope === 'all' ? PURGE_ALL_DUMMY_DATA_SQL : DELETE_MOCK_PARTICIPANTS_SQL;
+                    navigator.clipboard.writeText(activeSql);
                     setCopiedPurgeSql(true);
                     notify('Skrip SQL hapus dummy berhasil disalin ke clipboard!');
                     setTimeout(() => setCopiedPurgeSql(false), 3000);
                   }}
-                  className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                  className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer"
                 >
                   {copiedPurgeSql ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
                   <span>{copiedPurgeSql ? 'SQL Tersalin!' : 'Salin Skrip SQL'}</span>
@@ -2010,7 +2074,7 @@ export const AdminSupabaseTab: React.FC<AdminSupabaseTabProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowPurgeSqlModal(false)}
-                  className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition-all"
+                  className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition-all cursor-pointer"
                 >
                   Tutup
                 </button>
