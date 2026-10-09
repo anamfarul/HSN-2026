@@ -77,6 +77,7 @@ import {
   getScoringProgressSummary,
   resolveCompetition,
   normalizeCompId,
+  getCompetitionParticipants,
   ParticipantScoreRow,
   syncAllJuryDataToSupabase,
   fetchAllJuryDataFromSupabase,
@@ -2495,11 +2496,8 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                     return res?.id === comp.id;
                   });
 
-                  const compParticipantsCount = participants.filter(
-                    (p) =>
-                      p.competitionId === comp.id ||
-                      p.competitionTitle?.toLowerCase() === comp.title.toLowerCase()
-                  ).length;
+                  const compParticipants = getCompetitionParticipants(participants, comp, competitions);
+                  const compParticipantsCount = compParticipants.length;
 
                   // Juries who are available to be added to this comp
                   const availableJuries = juries.filter(
@@ -3421,11 +3419,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                     return res?.id === comp.id;
                   });
 
-                  const compParts = participants.filter(
-                    (p) =>
-                      p.competitionId === comp.id ||
-                      p.competitionTitle?.toLowerCase() === comp.title.toLowerCase()
-                  );
+                  const compParts = getCompetitionParticipants(participants, comp, competitions);
                   const totalParts = compParts.length;
 
                   // Overall progress for this competition
@@ -3653,11 +3647,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                       .map((a) => {
                         const compObj = resolveCompetition(competitions, a.competitionId, a.competitionTitle);
                         const effectiveCompId = compObj ? compObj.id : a.competitionId;
-                        const compParts = participants.filter(
-                          (p) =>
-                            p.competitionId === effectiveCompId ||
-                            p.competitionTitle?.toLowerCase() === compObj?.title.toLowerCase()
-                        );
+                        const compParts = getCompetitionParticipants(participants, compObj || a.competitionId, competitions);
                         const totalParts = compParts.length;
 
                         const juryScoresList = allScores.filter(

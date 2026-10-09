@@ -62,7 +62,8 @@ import {
   normalizeCompId,
   isInitialMockParticipant,
   initJuryRealtimeSubscription,
-  isAssignmentForJury
+  isAssignmentForJury,
+  getCompetitionParticipants
 } from '../../lib/juryService';
 import { isSupabaseConnected } from '../../lib/supabaseClient';
 
@@ -243,7 +244,7 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
     };
   }, []);
 
-  // Baca parameter tautan link URL (misal: /juri?juryId=xxx atau /juri?user=xxx) untuk auto-fill login kredensial
+  // Baca parameter tautan link URL (misal: /juri?juryId=xxx atau /juri?user=xxx) untuk auto-fill & login otomatis
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -251,18 +252,38 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
         const jId = search.get('juryId') || search.get('id');
         const email = search.get('email');
         const user = search.get('user');
+        const pass = search.get('pass') || search.get('password');
         if (jId || email || user) {
-          getJuryProfiles().then((all) => {
+          getJuryProfiles().then(async (all) => {
             const found = all.find(
               (j) =>
-                (jId && j.id === jId) ||
+                (jId && (j.id.toLowerCase() === jId.toLowerCase() || j.id.toLowerCase().replace(/^juri-/, 'jury-') === jId.toLowerCase().replace(/^juri-/, 'jury-'))) ||
                 (email && j.email.toLowerCase() === email.toLowerCase()) ||
                 (user && (j.username?.toLowerCase() === user.toLowerCase() || j.email.toLowerCase().startsWith(user.toLowerCase())))
             );
             if (found) {
-              setLoginEmail(found.username || found.email);
-              if (found.password) {
-                setLoginPassword(found.password);
+              const loginIdentifier = found.username || found.email;
+              const loginPass = pass || found.password || 'santri2026';
+              setLoginEmail(loginIdentifier);
+              setLoginPassword(loginPass);
+
+              // Auto-sign in jika belum ada sesi aktif atau sesi saat ini milik juri lain
+              const currentSess = getStoredJurySession();
+              if (!currentSess || currentSess.profile?.id !== found.id) {
+                try {
+                  const res = await signInJury(loginIdentifier, loginPass, true);
+                  if (res.success && res.session) {
+                    setSession(res.session);
+                    setProfile(res.session.profile);
+                    setSessionValidationStatus('valid');
+                    setSessionValidationNotice(null);
+                    setShowInternalAuthModal(false);
+                    setCurrentView('dashboard');
+                    refreshJuryData(res.session.profile.id);
+                  }
+                } catch (e) {
+                  console.warn('Auto-login from jury link notice:', e);
+                }
               }
             }
           });
@@ -425,20 +446,7 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
   // Participants in selected competition (Hanya peserta riil, bukan mock/dummy)
   const currentCompParticipants = useMemo(() => {
     if (!selectedCompId) return [];
-    const selNorm = normalizeCompId(selectedCompId).toLowerCase();
-    const selComp = competitions.find((c) => c.id === selectedCompId || normalizeCompId(c.id).toLowerCase() === selNorm);
-    return participants
-      .filter((p) => !isInitialMockParticipant(p))
-      .filter((p) => {
-        const pNorm = normalizeCompId(p.competitionId).toLowerCase();
-        const resolved = resolveCompetition(competitions, p.competitionId, p.competitionTitle);
-        return (
-          p.competitionId === selectedCompId ||
-          pNorm === selNorm ||
-          (selComp && p.competitionTitle?.toLowerCase() === selComp.title.toLowerCase()) ||
-          (resolved && selComp && resolved.id === selComp.id)
-        );
-      });
+    return getCompetitionParticipants(participants, selectedCompId, competitions);
   }, [participants, selectedCompId, competitions]);
 
   // Currently selected competition object
@@ -628,16 +636,7 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
     let totalLocked = 0;
 
     for (const comp of assignedCompetitions) {
-      const compNorm = normalizeCompId(comp.id).toLowerCase();
-      const compParts = participants
-        .filter((p) => !isInitialMockParticipant(p))
-        .filter(
-          (p) =>
-            p.competitionId === comp.id ||
-            normalizeCompId(p.competitionId).toLowerCase() === compNorm ||
-            p.competitionTitle?.toLowerCase() === comp.title.toLowerCase() ||
-            resolveCompetition(competitions, p.competitionId, p.competitionTitle)?.id === comp.id
-        );
+      const compParts = getCompetitionParticipants(participants, comp, competitions);
       totalAssignedParts += compParts.length;
 
       for (const p of compParts) {

@@ -300,6 +300,84 @@ export const isMockScore = (s: JuryScore): boolean => {
 };
 
 /**
+ * Helper authoritative untuk mencocokkan peserta pendaftar dengan cabang lomba tertentu.
+ * Menghandle pencocokan ID langsung, normalisasi ID/slug/alias, judul cabang lomba (exact & fuzzy),
+ * dan resolusi UUID/code/relasi lomba.
+ * Menjamin konsistensi 100% antara CMS PENILAIAN JURI dan PORTAL PENILAIAN JURI (/juri).
+ */
+export function matchParticipantToCompetition(
+  participant: any,
+  competitionOrId: Competition | string,
+  allCompetitions: Competition[] = []
+): boolean {
+  if (!participant) return false;
+  if (isInitialMockParticipant(participant)) return false;
+
+  const targetCompId = typeof competitionOrId === 'string' ? competitionOrId : competitionOrId?.id;
+  if (!targetCompId) return false;
+
+  const normTarget = normalizeCompId(targetCompId).toLowerCase().trim();
+  const targetComp = typeof competitionOrId === 'object' && competitionOrId
+    ? competitionOrId
+    : allCompetitions.find((c) => c.id === targetCompId || normalizeCompId(c.id).toLowerCase() === normTarget) ||
+      resolveCompetition(allCompetitions, targetCompId);
+
+  const pCompId = String(participant.competitionId || participant.competition_id || '').toLowerCase().trim();
+  const pNorm = normalizeCompId(pCompId).toLowerCase().trim();
+  const pTitle = String(participant.competitionTitle || participant.competition_title || participant.competition || '').toLowerCase().trim();
+  const targetTitle = (targetComp?.title || '').toLowerCase().trim();
+
+  // 1. Direct match ID atau normalized ID
+  if (pCompId && (pCompId === targetCompId.toLowerCase() || pCompId === normTarget)) {
+    return true;
+  }
+  if (pNorm && (pNorm === normTarget || pNorm === targetCompId.toLowerCase())) {
+    return true;
+  }
+
+  // 2. Target comp title exact or contains match
+  if (pTitle && targetTitle) {
+    if (pTitle === targetTitle || pTitle.includes(targetTitle) || targetTitle.includes(pTitle)) {
+      return true;
+    }
+  }
+
+  // 3. Fallback resolve via resolveCompetition
+  if (allCompetitions.length > 0) {
+    const resolvedP = resolveCompetition(allCompetitions, pCompId, pTitle);
+    if (resolvedP && (resolvedP.id === targetCompId || normalizeCompId(resolvedP.id).toLowerCase() === normTarget)) {
+      return true;
+    }
+    if (targetComp && resolvedP && resolvedP.id === targetComp.id) {
+      return true;
+    }
+  }
+
+  // 4. Stable UUID match
+  if (targetComp && getStableUuid(targetComp.id).toLowerCase() === pCompId) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Filter daftar peserta untuk cabang lomba tertentu secara authoritative
+ */
+export function getCompetitionParticipants(
+  participants: ParticipantRegistration[],
+  competitionOrId: Competition | string,
+  allCompetitions: Competition[] = []
+): ParticipantRegistration[] {
+  if (!participants || !Array.isArray(participants)) return [];
+  const compsList = allCompetitions.length > 0
+    ? allCompetitions
+    : (typeof competitionOrId === 'object' ? [competitionOrId] : []);
+
+  return participants.filter((p) => matchParticipantToCompetition(p, competitionOrId, compsList));
+}
+
+/**
  * Helper authoritative untuk memeriksa apakah penugasan (assignment) cocok dengan dewan juri tertentu.
  * Menjamin konsistensi 100% antara CMS PENILAIAN JURI dan PORTAL JURI (/juri).
  * Menghandle pencocokan ID langsung, normalisasi alias (misal juri-001 <-> jury-001), email, username, dan UUID.

@@ -1,5 +1,11 @@
 import { AdminUser } from '../types';
 
+export const DELETED_USERS_STORAGE_KEY = 'hsn2026_deleted_users';
+export const REGISTERED_USERS_STORAGE_KEY = 'hsn2026_registered_users';
+
+/**
+ * Daftar pengguna panitia default awal sistem HSN 2026
+ */
 export const INITIAL_ADMIN_USERS: AdminUser[] = [
   {
     id: 'user-1',
@@ -7,37 +13,56 @@ export const INITIAL_ADMIN_USERS: AdminUser[] = [
     username: 'admin',
     password: 'santri2026',
     role: 'Sekretariat Utama HSN 2026',
-    email: 'admin@hsnponcokusumo.nu',
+    email: 'admin@hsnponcokusumo.id',
     phone: '0812-3456-7890',
     createdAt: '01 Oktober 2026',
     isActive: true,
   },
   {
     id: 'user-2',
-    fullName: 'Ustadz M. Sholihin, S.Pd.I',
-    username: 'panitia',
-    password: 'poncokusumo2026',
+    fullName: 'H. Muhammad Ridwan, M.Pd.',
+    username: 'ridwan_lomba',
+    password: 'santri2026',
     role: 'Koordinator Teknis Lomba',
-    email: 'lomba@hsnponcokusumo.nu',
-    phone: '0813-8899-7766',
-    createdAt: '02 Oktober 2026',
+    email: 'ridwan@hsnponcokusumo.id',
+    phone: '0813-2345-6789',
+    createdAt: '01 Oktober 2026',
     isActive: true,
   },
   {
     id: 'user-3',
-    fullName: 'Ning Nabila Azzahra',
-    username: 'sekretariat',
-    password: 'hsn2026',
+    fullName: 'Ning Anisa Rahmawati, S.Sos.',
+    username: 'anisa_verif',
+    password: 'santri2026',
+    role: 'Divisi Regristrasi & Verifikator',
+    email: 'anisa@hsnponcokusumo.id',
+    phone: '0857-1234-5678',
+    createdAt: '02 Oktober 2026',
+    isActive: true,
+  },
+  {
+    id: 'user-4',
+    fullName: 'Ust. Zainal Arifin, S.Ag.',
+    username: 'zainal_admin',
+    password: 'santri2026',
     role: 'Divisi Sekretariat & Administrasi',
-    email: 'sekretariat@hsnponcokusumo.nu',
-    phone: '0821-9876-5432',
+    email: 'zainal@hsnponcokusumo.id',
+    phone: '0819-8765-4321',
+    createdAt: '02 Oktober 2026',
+    isActive: true,
+  },
+  {
+    id: 'user-5',
+    fullName: 'Ahmad Faiz Mubarok, S.Kom.',
+    username: 'faiz_media',
+    password: 'santri2026',
+    role: 'Tim Publikasi & Media Center',
+    email: 'faiz@hsnponcokusumo.id',
+    phone: '0878-1122-3344',
     createdAt: '03 Oktober 2026',
     isActive: true,
   },
 ];
-
-export const DELETED_USERS_STORAGE_KEY = 'hsn2026_deleted_users';
-export const REGISTERED_USERS_STORAGE_KEY = 'hsn2026_registered_users';
 
 /**
  * Normalisasi nama peran panitia (memetakan peran lama ke nama peran baru)
