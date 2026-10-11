@@ -32,7 +32,7 @@ interface WorkSubmissionModalProps {
   isOpen: boolean;
   onClose: () => void;
   participants: ParticipantRegistration[];
-  onSaveWorkSubmission: (
+  onSaveWorkSubmission?: (
     registrationNumber: string,
     workData: {
       workSubmissionType: 'file' | 'drive';
@@ -41,7 +41,17 @@ interface WorkSubmissionModalProps {
       workDriveUrl?: string;
       workNotes?: string;
     }
-  ) => Promise<{ success: boolean; error?: string }>;
+  ) => Promise<{ success: boolean; error?: string }> | void;
+  onSaveWork?: (
+    registrationNumber: string,
+    workData: {
+      workSubmissionType: 'file' | 'drive';
+      workFileName?: string;
+      workFileUrl?: string;
+      workDriveUrl?: string;
+      workNotes?: string;
+    }
+  ) => Promise<{ success: boolean; error?: string }> | void;
   initialRegistrationNumber?: string;
 }
 
@@ -50,6 +60,7 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
   onClose,
   participants,
   onSaveWorkSubmission,
+  onSaveWork,
   initialRegistrationNumber = '',
 }) => {
   // Input form state
@@ -228,15 +239,22 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
       }
 
       // 2. Call handler to update in app state and Supabase database
-      const result = await onSaveWorkSubmission(matchedParticipant.registrationNumber, {
-        workSubmissionType: submissionType,
-        workFileName: submissionType === 'file' ? finalFileName : undefined,
-        workFileUrl: submissionType === 'file' ? finalFileUrl : undefined,
-        workDriveUrl: submissionType === 'drive' ? finalDriveUrl : undefined,
-        workNotes: workNotes.trim() || undefined,
-      });
+      const saveHandler = onSaveWorkSubmission || onSaveWork;
+      let result: any = { success: true };
+      if (typeof saveHandler === 'function') {
+        const handlerResult = await saveHandler(matchedParticipant.registrationNumber, {
+          workSubmissionType: submissionType,
+          workFileName: submissionType === 'file' ? finalFileName : undefined,
+          workFileUrl: submissionType === 'file' ? finalFileUrl : undefined,
+          workDriveUrl: submissionType === 'drive' ? finalDriveUrl : undefined,
+          workNotes: workNotes.trim() || undefined,
+        });
+        if (handlerResult && typeof handlerResult === 'object') {
+          result = handlerResult;
+        }
+      }
 
-      if (result.success) {
+      if (result?.success !== false) {
         setNotification({
           type: 'success',
           message: 'Alhamdulillah! Berkas karya Anda berhasil dikirim dan tersimpan di sistem panitia.',
@@ -245,7 +263,7 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
       } else {
         setNotification({
           type: 'error',
-          message: result.error || 'Gagal menyimpan karya. Silakan coba kembali.',
+          message: result?.error || 'Gagal menyimpan karya. Silakan coba kembali.',
         });
       }
     } catch (err: any) {

@@ -378,7 +378,7 @@ export default function App() {
     setIsWorkModalOpen(true);
   };
 
-  const handleUpdateParticipantWork = (
+  const handleUpdateParticipantWork = async (
     registrationNumber: string,
     workData: {
       workSubmissionType?: 'file' | 'drive';
@@ -388,25 +388,43 @@ export default function App() {
       workNotes?: string;
       workSubmittedAt?: string;
     }
-  ) => {
-    setParticipants((prev) => {
-      const updated = prev.map((p) => {
-        if (
-          p.registrationNumber?.toLowerCase() === registrationNumber.toLowerCase() ||
-          p.id === registrationNumber
-        ) {
-          return {
-            ...p,
-            ...workData,
-          };
-        }
-        return p;
-      });
-      saveCleanParticipantsToStorage(updated);
-      return updated;
-    });
+  ): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const nowIso = workData.workSubmittedAt || new Date().toISOString();
+      const payloadWithDate = {
+        ...workData,
+        workSubmittedAt: nowIso,
+      };
 
-    updateParticipantWorkInSupabase(registrationNumber, workData).catch(console.warn);
+      setParticipants((prev) => {
+        const updated = prev.map((p) => {
+          if (
+            p.registrationNumber?.toLowerCase() === registrationNumber.toLowerCase() ||
+            p.id === registrationNumber
+          ) {
+            return {
+              ...p,
+              ...payloadWithDate,
+            };
+          }
+          return p;
+        });
+        saveCleanParticipantsToStorage(updated);
+        return updated;
+      });
+
+      // Simpan juga ke Supabase jika terhubung (berjalan asynchronously tanpa memblokir kesuksesan lokal)
+      try {
+        await updateParticipantWorkInSupabase(registrationNumber, payloadWithDate);
+      } catch (err: any) {
+        console.warn('Catatan sinkronisasi karya ke Supabase:', err);
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      console.error('Error saat menyimpan karya peserta:', err);
+      return { success: false, error: err?.message || 'Gagal menyimpan karya' };
+    }
   };
 
   const handleAddCompetition = (newComp: Competition) => {
@@ -603,6 +621,7 @@ export default function App() {
         participants={participants}
         initialRegistrationNumber={selectedRegNumberForWork}
         onSaveWork={handleUpdateParticipantWork}
+        onSaveWorkSubmission={handleUpdateParticipantWork}
       />
 
       {/* Admin CMS Modal Dialog */}
