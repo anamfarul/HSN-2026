@@ -1830,6 +1830,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
               onUpdateParticipantWork={onUpdateParticipantWork}
               onOpenWorkModalForParticipant={onOpenWorkModalForParticipant}
               canVerifyParticipants={canVerifyParticipants}
+              onRefreshFromSupabase={handleRefreshSupabaseInParticipants}
             />
           )}
 

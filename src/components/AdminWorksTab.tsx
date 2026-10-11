@@ -41,6 +41,7 @@ interface AdminWorksTabProps {
   ) => void;
   onOpenWorkModalForParticipant?: (regNumber: string) => void;
   canVerifyParticipants?: boolean;
+  onRefreshFromSupabase?: () => Promise<void>;
 }
 
 export const AdminWorksTab: React.FC<AdminWorksTabProps> = ({
@@ -49,11 +50,23 @@ export const AdminWorksTab: React.FC<AdminWorksTabProps> = ({
   onUpdateParticipantWork,
   onOpenWorkModalForParticipant,
   canVerifyParticipants = true,
+  onRefreshFromSupabase,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'file' | 'drive'>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'Terverifikasi' | 'Menunggu' | 'Ditolak'>('ALL');
   const [selectedImagePreview, setSelectedImagePreview] = useState<{ url: string; title: string } | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    if (!onRefreshFromSupabase || isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await onRefreshFromSupabase();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // Filter participants who have submitted works, or show all with works status
   const worksList = useMemo(() => {
@@ -266,6 +279,19 @@ export const AdminWorksTab: React.FC<AdminWorksTabProps> = ({
             <option value="Menunggu">Menunggu</option>
             <option value="Ditolak">Ditolak</option>
           </select>
+
+          {/* Refresh Button */}
+          {onRefreshFromSupabase && (
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="px-3 py-2 rounded-xl bg-[#00D9F5]/10 hover:bg-[#00D9F5]/20 border border-[#00D9F5]/30 text-[#00D9F5] text-xs font-bold flex items-center gap-1.5 transition-all disabled:opacity-40"
+              title="Segarkan data karya langsung dari database Supabase"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+              <span>{isRefreshing ? 'Menyinkronkan...' : 'Segarkan Data'}</span>
+            </button>
+          )}
 
           {/* Export Button */}
           <button

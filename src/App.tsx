@@ -283,8 +283,34 @@ export default function App() {
       if (remoteParticipants) {
         // Filter ketat agar data dummy awal tidak pernah muncul kembali
         const cleanRemote = remoteParticipants.filter((p) => !isInitialMockParticipant(p));
-        setParticipants(cleanRemote);
-        saveCleanParticipantsToStorage(cleanRemote);
+        setParticipants((currentLocal) => {
+          const merged = cleanRemote.map((remP) => {
+            const locP = currentLocal.find(
+              (lp) =>
+                lp.registrationNumber?.toLowerCase() === remP.registrationNumber?.toLowerCase() ||
+                lp.id === remP.id
+            );
+            if (locP) {
+              const locHasWork = !!(locP.workFileUrl || locP.workDriveUrl || locP.workSubmittedAt);
+              const remHasWork = !!(remP.workFileUrl || remP.workDriveUrl || remP.workSubmittedAt);
+              // Jika data lokal memiliki karya yang belum ada di remote, pertahankan karya lokal
+              if (locHasWork && !remHasWork) {
+                return {
+                  ...remP,
+                  workSubmissionType: locP.workSubmissionType,
+                  workFileName: locP.workFileName,
+                  workFileUrl: locP.workFileUrl,
+                  workDriveUrl: locP.workDriveUrl,
+                  workNotes: locP.workNotes,
+                  workSubmittedAt: locP.workSubmittedAt,
+                };
+              }
+            }
+            return remP;
+          });
+          saveCleanParticipantsToStorage(merged);
+          return merged;
+        });
 
         // Jika Supabase masih menyimpan data dummy contoh, bersihkan otomatis di database
         const hasDummyInRemote = remoteParticipants.some((p) => isInitialMockParticipant(p));
@@ -396,6 +422,7 @@ export default function App() {
         workSubmittedAt: nowIso,
       };
 
+      // 1. Simpan segera ke local state & local storage
       setParticipants((prev) => {
         const updated = prev.map((p) => {
           if (
@@ -413,9 +440,29 @@ export default function App() {
         return updated;
       });
 
-      // Simpan juga ke Supabase jika terhubung (berjalan asynchronously tanpa memblokir kesuksesan lokal)
+      // 2. Simpan ke database Supabase
       try {
-        await updateParticipantWorkInSupabase(registrationNumber, payloadWithDate);
+        const supabaseRes = await updateParticipantWorkInSupabase(registrationNumber, payloadWithDate);
+        if (supabaseRes.success && supabaseRes.updatedRow) {
+          setParticipants((prev) => {
+            const next = prev.map((p) => {
+              if (
+                p.registrationNumber?.toLowerCase() === registrationNumber.toLowerCase() ||
+                p.id === registrationNumber
+              ) {
+                return {
+                  ...p,
+                  ...supabaseRes.updatedRow,
+                };
+              }
+              return p;
+            });
+            saveCleanParticipantsToStorage(next);
+            return next;
+          });
+        } else if (!supabaseRes.success) {
+          console.warn('Catatan sinkronisasi karya ke Supabase:', supabaseRes.error);
+        }
       } catch (err: any) {
         console.warn('Catatan sinkronisasi karya ke Supabase:', err);
       }

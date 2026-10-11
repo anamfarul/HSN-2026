@@ -26,7 +26,8 @@ import {
 } from 'lucide-react';
 import { ParticipantRegistration } from '../types';
 import { generateWorkSubmissionPDF } from '../lib/pdfGenerator';
-import { uploadFileToSupabaseStorage } from '../lib/supabaseClient';
+import { uploadFileToSupabaseStorage, searchParticipantByRegNumberInSupabase } from '../lib/supabaseClient';
+import { compressImageFile, formatFileSize } from '../lib/imageCompressor';
 
 interface WorkSubmissionModalProps {
   isOpen: boolean;
@@ -68,8 +69,12 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
   const [submissionType, setSubmissionType] = useState<'file' | 'drive'>('file');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>('');
+  const [fileCompressionInfo, setFileCompressionInfo] = useState<string>('');
+  const [isCompressing, setIsCompressing] = useState<boolean>(false);
   const [driveUrl, setDriveUrl] = useState<string>('');
   const [workNotes, setWorkNotes] = useState<string>('');
+  const [remoteParticipant, setRemoteParticipant] = useState<ParticipantRegistration | null>(null);
+  const [isSearchingRemote, setIsSearchingRemote] = useState<boolean>(false);
 
   // Mode Edit control
   const [isEditMode, setIsEditMode] = useState<boolean>(true);
@@ -91,11 +96,52 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
   const matchedParticipant = useMemo(() => {
     if (!regInput || !regInput.trim()) return null;
     const cleanQuery = regInput.trim().toLowerCase();
-    return participants.find((p) => {
+    const local = participants.find((p) => {
       const pReg = (p.registrationNumber || '').toLowerCase();
       const pId = (p.id || '').toLowerCase();
       return pReg === cleanQuery || pId === cleanQuery;
-    }) || null;
+    });
+    if (local) return local;
+    if (remoteParticipant) {
+      const rReg = (remoteParticipant.registrationNumber || '').toLowerCase();
+      const rId = (remoteParticipant.id || '').toLowerCase();
+      if (rReg === cleanQuery || rId === cleanQuery) return remoteParticipant;
+    }
+    return null;
+  }, [regInput, participants, remoteParticipant]);
+
+  // Pencarian otomatis ke Supabase jika nomor registrasi belum ada di memori lokal
+  useEffect(() => {
+    if (!regInput || !regInput.trim()) {
+      setRemoteParticipant(null);
+      return;
+    }
+    const cleanQuery = regInput.trim().toLowerCase();
+    const local = participants.find((p) => {
+      const pReg = (p.registrationNumber || '').toLowerCase();
+      const pId = (p.id || '').toLowerCase();
+      return pReg === cleanQuery || pId === cleanQuery;
+    });
+    if (local) return;
+
+    let isMounted = true;
+    const timer = setTimeout(async () => {
+      setIsSearchingRemote(true);
+      try {
+        const { data } = await searchParticipantByRegNumberInSupabase(regInput.trim());
+        if (isMounted && data) {
+          setRemoteParticipant(data);
+        }
+      } catch (_) {
+      } finally {
+        if (isMounted) setIsSearchingRemote(false);
+      }
+    }, 350);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
   }, [regInput, participants]);
 
   // Preload existing work data if participant already submitted work
@@ -130,6 +176,7 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
       // Clear fields if no participant matched
       setImageFile(null);
       setImagePreview('');
+      setFileCompressionInfo('');
       setDriveUrl('');
       setWorkNotes('');
       setIsEditMode(true);
@@ -143,14 +190,16 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
   const isVerified = statusStr.toLowerCase() === 'terverifikasi';
   const isRejected = statusStr.toLowerCase() === 'ditolak';
   const isWaiting = !isVerified && !isRejected;
+  // Peserta berhak mengunggah karya jika terdaftar dan berkas pendaftaran tidak ditolak
+  const canSubmitWork = !!matchedParticipant && !isRejected;
 
-  // Handle file select (JPG / PNG)
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle file select (JPG / PNG) dengan kompresi otomatis di sisi klien
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     // Validate type
-    const validTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+    const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
     if (!validTypes.includes(file.type)) {
       setNotification({
         type: 'error',
@@ -159,22 +208,35 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
       return;
     }
 
-    // Validate size (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
+    // Validate size (max 15MB)
+    if (file.size > 15 * 1024 * 1024) {
       setNotification({
         type: 'error',
-        message: 'Ukuran file terlalu besar. Maksimal ukuran file gambar adalah 10 MB.',
+        message: 'Ukuran file terlalu besar. Maksimal ukuran file gambar awal adalah 15 MB.',
       });
       return;
     }
 
-    setImageFile(file);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setImagePreview(event.target?.result as string);
-    };
-    reader.readAsDataURL(file);
+    setIsCompressing(true);
     setNotification(null);
+    try {
+      const compressed = await compressImageFile(file, 1600, 1600, 0.82);
+      setImageFile(compressed.file);
+      setImagePreview(compressed.dataUrl);
+      setFileCompressionInfo(
+        `${formatFileSize(compressed.compressedSize)} (Dioptimasi dari ${formatFileSize(compressed.originalSize)})`
+      );
+    } catch (compressErr) {
+      console.warn('Fallback kompresi gambar:', compressErr);
+      setImageFile(file);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setImagePreview(event.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setIsCompressing(false);
+    }
   };
 
   // Submit / Kirim Karya
@@ -188,10 +250,10 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
       return;
     }
 
-    if (!isVerified) {
+    if (!canSubmitWork) {
       setNotification({
         type: 'error',
-        message: 'Pengunggahan karya hanya dapat dilakukan oleh peserta dengan status TERVERIFIKASI.',
+        message: 'Pengunggahan karya tidak dapat dilakukan karena status pendaftaran dinyatakan ditolak. Silakan hubungi narahubung panitia.',
       });
       return;
     }
@@ -257,7 +319,7 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
       if (result?.success !== false) {
         setNotification({
           type: 'success',
-          message: 'Alhamdulillah! Berkas karya Anda berhasil dikirim dan tersimpan di sistem panitia.',
+          message: 'Alhamdulillah! Berkas karya Anda berhasil dikirim dan tersimpan di database sistem panitia.',
         });
         setIsEditMode(false);
       } else {
@@ -520,28 +582,36 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
           </div>
 
           {/* PERINGATAN / KETENTUAN STATUS KHUSUS UNGGAH KARYA */}
-          {matchedParticipant && !isVerified && (
+          {matchedParticipant && (
             <div className={`p-4 rounded-xl border flex items-start gap-3 ${
               isRejected 
                 ? 'bg-rose-950/40 border-rose-500/40 text-rose-200' 
-                : 'bg-amber-950/40 border-amber-500/40 text-amber-200'
+                : isWaiting
+                ? 'bg-amber-950/30 border-amber-500/40 text-amber-200'
+                : 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200'
             }`}>
               {isRejected ? (
                 <XCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+              ) : isWaiting ? (
+                <Clock className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
               ) : (
-                <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
               )}
               <div className="space-y-1">
                 <div className="font-bold text-xs">
                   {isRejected 
                     ? 'Pendaftaran Berstatus DITOLAK' 
-                    : 'Pendaftaran Masih MENUNGGU Verifikasi Panitia'}
+                    : isWaiting
+                    ? 'Pendaftaran Menunggu Verifikasi — Anda Dapat Langsung Mengunggah Karya'
+                    : 'Pendaftaran Telah TERVERIFIKASI'}
                 </div>
                 <div className="text-[11px] leading-relaxed text-white/80">
                   {isRejected ? (
-                    'Mohon maaf, Anda belum dapat mengunggah karya karena berkas pendaftaran dinyatakan ditolak. Silakan hubungi narahubung panitia untuk bantuan dan perbaikan berkas.'
+                    'Mohon maaf, Anda belum dapat mengunggah karya karena berkas pendaftaran dinyatakan ditolak. Silakan hubungi narahubung panitia untuk bantuan perbaikan berkas.'
+                  ) : isWaiting ? (
+                    'Status Anda saat ini sedang dalam proses verifikasi panitia. Anda dipersilakan mengunggah karya Anda sekarang agar panitia dan dewan juri dapat memverifikasi berkas sekaligus menilai karya Anda.'
                   ) : (
-                    'Sesuai ketentuan, peserta HANYA dapat mengunggah karya apabila status pendaftaran telah TERVERIFIKASI oleh Panitia. Mohon tunggu proses verifikasi berkas oleh admin/panitia.'
+                    'Alhamdulillah, berkas pendaftaran Anda telah disetujui panitia. Silakan kirimkan berkas karya terbaik Anda.'
                   )}
                 </div>
               </div>
@@ -567,13 +637,13 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                disabled={!isVerified || !isEditMode}
+                disabled={!canSubmitWork || !isEditMode}
                 onClick={() => setSubmissionType('file')}
                 className={`py-2.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all ${
                   submissionType === 'file'
                     ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-[#F2C96D] border-[#D9B45B]/60 shadow-md'
                     : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'
-                } ${(!isVerified || !isEditMode) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                } ${(!canSubmitWork || !isEditMode) ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 <ImageIcon className="w-3.5 h-3.5" />
                 <span>1. Kirim File JPG/PNG</span>
@@ -581,13 +651,13 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
 
               <button
                 type="button"
-                disabled={!isVerified || !isEditMode}
+                disabled={!canSubmitWork || !isEditMode}
                 onClick={() => setSubmissionType('drive')}
                 className={`py-2.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all ${
                   submissionType === 'drive'
                     ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-[#F2C96D] border-[#D9B45B]/60 shadow-md'
                     : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'
-                } ${(!isVerified || !isEditMode) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                } ${(!canSubmitWork || !isEditMode) ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 <LinkIcon className="w-3.5 h-3.5" />
                 <span>2. Tautan Link Google Drive</span>
@@ -599,7 +669,7 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
               <div className="space-y-2">
                 <div 
                   className={`p-4 rounded-xl border-2 border-dashed transition-all flex flex-col items-center justify-center text-center ${
-                    (!isVerified || !isEditMode) 
+                    (!canSubmitWork || !isEditMode) 
                       ? 'border-white/10 bg-white/[0.01] opacity-60 cursor-not-allowed' 
                       : 'border-[#00D9F5]/40 hover:border-[#00D9F5] bg-white/[0.02] cursor-pointer'
                   }`}
@@ -607,26 +677,34 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
                   <input
                     id="file-upload-karya-input"
                     type="file"
-                    accept=".jpg,.jpeg,.png,image/jpeg,image/png"
-                    disabled={!isVerified || !isEditMode}
+                    accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                    disabled={!canSubmitWork || !isEditMode || isCompressing}
                     onChange={handleFileChange}
                     className="hidden"
                   />
                   <label 
                     htmlFor="file-upload-karya-input" 
                     className={`w-full h-full flex flex-col items-center justify-center gap-2 ${
-                      (!isVerified || !isEditMode) ? 'cursor-not-allowed' : 'cursor-pointer'
+                      (!canSubmitWork || !isEditMode || isCompressing) ? 'cursor-not-allowed' : 'cursor-pointer'
                     }`}
                   >
                     <div className="w-12 h-12 rounded-full bg-[#00D9F5]/10 flex items-center justify-center text-[#00D9F5]">
-                      <ImageIcon className="w-6 h-6" />
+                      {isCompressing ? (
+                        <RefreshCw className="w-6 h-6 animate-spin text-[#00D9F5]" />
+                      ) : (
+                        <ImageIcon className="w-6 h-6" />
+                      )}
                     </div>
                     <div>
                       <span className="font-bold text-white text-xs block">
-                        {imageFile ? imageFile.name : (matchedParticipant?.workFileName || 'Klik untuk pilih berkas JPG/PNG')}
+                        {isCompressing 
+                          ? 'Mengoptimasi ukuran gambar karya...' 
+                          : imageFile 
+                          ? imageFile.name 
+                          : (matchedParticipant?.workFileName || 'Klik untuk pilih berkas gambar JPG/PNG')}
                       </span>
                       <span className="text-[11px] text-white/50 block">
-                        Format didukung: JPG, JPEG, PNG (Maks. 10 MB)
+                        Format didukung: JPG, JPEG, PNG, WEBP (Otomatis dioptimasi untuk upload cepat)
                       </span>
                     </div>
                   </label>
@@ -644,16 +722,22 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
                       <span className="font-bold text-xs text-white block truncate">
                         {imageFile ? imageFile.name : (matchedParticipant?.workFileName || 'Pratinjau Karya Peserta')}
                       </span>
-                      <span className="text-[11px] text-emerald-400 flex items-center gap-1">
+                      {fileCompressionInfo && (
+                        <span className="text-[10px] text-white/50 block">
+                          Ukuran: {fileCompressionInfo}
+                        </span>
+                      )}
+                      <span className="text-[11px] text-emerald-400 flex items-center gap-1 mt-0.5">
                         <Check className="w-3 h-3" /> Berkas gambar siap dikirimkan
                       </span>
                     </div>
-                    {isEditMode && isVerified && (
+                    {isEditMode && canSubmitWork && (
                       <button
                         type="button"
                         onClick={() => {
                           setImageFile(null);
                           setImagePreview('');
+                          setFileCompressionInfo('');
                         }}
                         className="text-rose-400 hover:text-rose-300 text-xs px-2 py-1 rounded bg-rose-500/10 border border-rose-500/20"
                       >
@@ -672,7 +756,7 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
                   <input
                     id="input-drive-link-karya"
                     type="url"
-                    disabled={!isVerified || !isEditMode}
+                    disabled={!canSubmitWork || !isEditMode}
                     value={driveUrl}
                     onChange={(e) => setDriveUrl(e.target.value)}
                     placeholder="https://drive.google.com/file/d/... atau https://drive.google.com/drive/folders/..."
@@ -706,7 +790,7 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
                 Catatan / Deskripsi Singkat Karya (Opsional):
               </label>
               <textarea
-                disabled={!isVerified || !isEditMode}
+                disabled={!canSubmitWork || !isEditMode}
                 rows={2}
                 value={workNotes}
                 onChange={(e) => setWorkNotes(e.target.value)}
@@ -737,7 +821,7 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
             <button
               type="button"
               id="btn-edit-karya"
-              disabled={!matchedParticipant || !isVerified}
+              disabled={!canSubmitWork}
               onClick={() => {
                 setIsEditMode(true);
                 setNotification({
@@ -749,7 +833,7 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
                 isEditMode
                   ? 'border-white/20 bg-white/10 text-white'
                   : 'border-[#F2C96D]/40 bg-[#F2C96D]/10 hover:bg-[#F2C96D]/20 text-[#F2C96D]'
-              } ${(!matchedParticipant || !isVerified) ? 'opacity-40 cursor-not-allowed' : ''}`}
+              } ${!canSubmitWork ? 'opacity-40 cursor-not-allowed' : ''}`}
             >
               <Edit3 className="w-4 h-4" />
               <span>Edit</span>
@@ -760,18 +844,23 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
               type="button"
               id="btn-kirim-karya"
               onClick={handleSubmit}
-              disabled={!matchedParticipant || !isVerified || !isEditMode || isSubmitting}
+              disabled={!canSubmitWork || !isEditMode || isSubmitting || isCompressing}
               className="flex-1 sm:flex-initial px-6 py-2.5 rounded-xl text-xs font-extrabold uppercase tracking-wider text-[#031525] bg-gradient-to-r from-[#D9B45B] via-[#F2C96D] to-[#00D9F5] hover:brightness-110 shadow-lg shadow-[#00D9F5]/25 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none"
             >
               {isSubmitting ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin text-[#031525]" />
-                  <span>Mengirim...</span>
+                  <span>Menyimpan ke Supabase...</span>
+                </>
+              ) : isCompressing ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin text-[#031525]" />
+                  <span>Mengoptimasi Berkas...</span>
                 </>
               ) : (
                 <>
                   <Send className="w-4 h-4 text-[#031525]" />
-                  <span>Kirim</span>
+                  <span>Kirim Berkas Karya</span>
                 </>
               )}
             </button>

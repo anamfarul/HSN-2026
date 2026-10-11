@@ -35,7 +35,31 @@ ALTER TABLE IF EXISTS public.participants
   ADD COLUMN IF NOT EXISTS document_name VARCHAR(255),
   ADD COLUMN IF NOT EXISTS payment_proof_url TEXT,
   ADD COLUMN IF NOT EXISTS payment_proof_name VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS work_submission_type VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS work_file_url TEXT,
+  ADD COLUMN IF NOT EXISTS work_file_name VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS work_drive_url TEXT,
+  ADD COLUMN IF NOT EXISTS work_drive_link TEXT,
+  ADD COLUMN IF NOT EXISTS work_notes TEXT,
+  ADD COLUMN IF NOT EXISTS work_submitted_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS notes TEXT;
+
+-- Pastikan tabel arsip karya peserta (participant_works) tersedia
+CREATE TABLE IF NOT EXISTS public.participant_works (
+    id BIGSERIAL PRIMARY KEY,
+    registration_number VARCHAR(100) NOT NULL,
+    submission_type VARCHAR(50) NOT NULL,
+    work_file_name VARCHAR(255),
+    work_file_url TEXT,
+    work_drive_link TEXT,
+    work_notes TEXT,
+    submitted_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.participant_works ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public all participant_works" ON public.participant_works;
+CREATE POLICY "Public all participant_works" ON public.participant_works FOR ALL USING (true) WITH CHECK (true);
 
 NOTIFY pgrst, 'reload schema';
 
