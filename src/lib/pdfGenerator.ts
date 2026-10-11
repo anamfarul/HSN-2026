@@ -54,14 +54,21 @@ export function printElementSafely(elementId: string): boolean {
       frame.style.position = 'fixed';
       frame.style.right = '0';
       frame.style.bottom = '0';
-      frame.style.width = '0';
-      frame.style.height = '0';
+      frame.style.width = '1px';
+      frame.style.height = '1px';
+      frame.style.opacity = '0.01';
+      frame.style.pointerEvents = 'none';
       frame.style.border = '0';
       document.body.appendChild(frame);
     }
 
     const doc = frame.contentWindow?.document || frame.contentDocument;
     if (doc) {
+      // Collect stylesheets and fonts from main document
+      const styleTags = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+        .map((node) => node.outerHTML)
+        .join('\n');
+
       doc.open();
       doc.write(`
         <!DOCTYPE html>
@@ -69,8 +76,9 @@ export function printElementSafely(elementId: string): boolean {
         <head>
           <meta charset="utf-8">
           <title>Cetak Dokumen Resmi Festival HSN 2026</title>
+          ${styleTags}
           <style>
-            @page { size: auto; margin: 10mm; }
+            @page { size: auto; margin: 8mm; }
             * { box-sizing: border-box; }
             body {
               font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -79,11 +87,6 @@ export function printElementSafely(elementId: string): boolean {
               margin: 0;
               padding: 10px;
             }
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }
-            th, td { border: 1px solid #222; padding: 6px 8px; text-align: left; }
-            th { background-color: #f2f2f2; font-weight: bold; }
-            .text-center { text-align: center; }
-            .text-right { text-align: right; }
             .no-print { display: none !important; }
           </style>
         </head>
@@ -786,16 +789,31 @@ export function generateWorkSubmissionPDF(
     const safeReg = (participant.registrationNumber || 'KARYA').replace(/[^a-zA-Z0-9_-]/g, '_');
     const filename = `BUKTI_APLOUD_KARYA_${safeReg}.pdf`;
 
-    if (triggerDownload) {
-      try {
-        doc.save(filename);
-      } catch (saveErr) {
-        console.warn('doc.save fallback trigger:', saveErr);
-      }
+    const blob = doc.output('blob');
+    let url = '';
+    let success = true;
+
+    try {
+      url = URL.createObjectURL(blob);
+    } catch {
+      url = '';
     }
 
-    const blob = doc.output('blob');
-    const { success, url } = downloadBlobSafely(blob, filename);
+    if (triggerDownload) {
+      try {
+        const dlRes = downloadBlobSafely(blob, filename);
+        success = dlRes.success;
+        if (dlRes.url) url = dlRes.url;
+      } catch (saveErr) {
+        try {
+          doc.save(filename);
+          success = true;
+        } catch (fallbackErr) {
+          console.warn('doc.save fallback error:', fallbackErr);
+          success = false;
+        }
+      }
+    }
 
     return {
       success,

@@ -1172,6 +1172,27 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                                   <span className="text-[10px] text-white/30 italic">Belum ada</span>
                                 )}
                               </div>
+
+                              {/* 3. KARYA PESERTA JIKA ADA */}
+                              {(p.workSubmissionType || p.workFileUrl || p.workDriveUrl || p.workSubmittedAt) && (
+                                <div className="flex items-center gap-1.5 pt-1 mt-1 border-t border-white/5">
+                                  <span className="text-[9px] font-bold uppercase tracking-wider text-[#00D9F5]/80 w-13 shrink-0">
+                                    Karya:
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveTab('works')}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#00D9F5]/15 hover:bg-[#00D9F5]/30 text-[#00D9F5] border border-[#00D9F5]/40 transition-all shadow-sm active:scale-95 group cursor-pointer"
+                                    title="Buka Tab Karya Peserta & Cetak Formulir"
+                                  >
+                                    <UploadCloud className="w-3 h-3 text-[#00D9F5] shrink-0" />
+                                    <span className="truncate max-w-[85px]">
+                                      {p.workSubmissionType === 'drive' ? 'Google Drive' : (p.workFileName || 'File Karya')}
+                                    </span>
+                                    <Printer className="w-2.5 h-2.5 text-[#00D9F5] opacity-70 group-hover:opacity-100 shrink-0" />
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           </td>
 
@@ -1191,6 +1212,15 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                           <td className="p-3 text-right whitespace-nowrap space-x-1">
                             {canVerifyParticipants ? (
                               <>
+                                {(p.workSubmissionType || p.workFileUrl || p.workDriveUrl || p.workSubmittedAt) && (
+                                  <button
+                                    onClick={() => setActiveTab('works')}
+                                    title="Lihat & Cetak Formulir Tanda Terima Karya Peserta"
+                                    className="p-1 rounded bg-[#00D9F5]/20 hover:bg-[#00D9F5]/40 text-[#00D9F5] transition-colors"
+                                  >
+                                    <Printer className="w-4 h-4" />
+                                  </button>
+                                )}
                                 <button
                                   onClick={() => onUpdateParticipantStatus(p.id, 'Terverifikasi')}
                                   title="Setujui Verifikasi"

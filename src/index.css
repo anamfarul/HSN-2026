@@ -139,33 +139,42 @@
   #printable-registration-ticket,
   #printable-registration-ticket *,
   #printable-address-report,
-  #printable-address-report * {
+  #printable-address-report *,
+  #printable-work-submission-form,
+  #printable-work-submission-form *,
+  #printable-work-submission-form-modal,
+  #printable-work-submission-form-modal *,
+  #printable-works-recap-report,
+  #printable-works-recap-report * {
     visibility: visible !important;
   }
 
   #printable-participant-report,
-  #printable-address-report {
+  #printable-address-report,
+  #printable-works-recap-report {
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
-    padding: 12mm !important;
+    padding: 10mm !important;
     background: #ffffff !important;
     color: #000000 !important;
     box-shadow: none !important;
     border: none !important;
   }
 
-  #printable-registration-ticket {
+  #printable-registration-ticket,
+  #printable-work-submission-form,
+  #printable-work-submission-form-modal {
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
-    padding: 12mm !important;
+    padding: 8mm !important;
     background: #ffffff !important;
     color: #000000 !important;
     box-shadow: none !important;
