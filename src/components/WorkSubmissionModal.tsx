@@ -116,6 +116,20 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
     return null;
   }, [regInput, participants, remoteParticipant]);
 
+  // Data peserta terkini untuk dokumen formulir cetak (didefinisikan di atas bersama hooks lainnya)
+  const participantForPrint: ParticipantRegistration | null = useMemo(() => {
+    if (!matchedParticipant) return null;
+    return {
+      ...matchedParticipant,
+      workSubmissionType: submissionType,
+      workFileName: imageFile ? imageFile.name : (matchedParticipant.workFileName || 'karya_peserta.jpg'),
+      workFileUrl: imagePreview || matchedParticipant.workFileUrl,
+      workDriveUrl: driveUrl.trim() || matchedParticipant.workDriveUrl,
+      workNotes: workNotes.trim() || matchedParticipant.workNotes,
+      workSubmittedAt: matchedParticipant.workSubmittedAt || new Date().toLocaleString('id-ID'),
+    };
+  }, [matchedParticipant, submissionType, imageFile, imagePreview, driveUrl, workNotes]);
+
   // Pencarian otomatis ke Supabase jika nomor registrasi belum ada di memori lokal
   useEffect(() => {
     if (!regInput || !regInput.trim()) {
@@ -343,20 +357,6 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
       setIsSubmitting(false);
     }
   };
-
-  // Data peserta terkini untuk dokumen formulir cetak
-  const participantForPrint: ParticipantRegistration | null = useMemo(() => {
-    if (!matchedParticipant) return null;
-    return {
-      ...matchedParticipant,
-      workSubmissionType: submissionType,
-      workFileName: imageFile ? imageFile.name : (matchedParticipant.workFileName || 'karya_peserta.jpg'),
-      workFileUrl: imagePreview || matchedParticipant.workFileUrl,
-      workDriveUrl: driveUrl.trim() || matchedParticipant.workDriveUrl,
-      workNotes: workNotes.trim() || matchedParticipant.workNotes,
-      workSubmittedAt: matchedParticipant.workSubmittedAt || new Date().toLocaleString('id-ID'),
-    };
-  }, [matchedParticipant, submissionType, imageFile, imagePreview, driveUrl, workNotes]);
 
   // Cetak Formulir PDF & Buka Pratinjau
   const handlePrintForm = () => {

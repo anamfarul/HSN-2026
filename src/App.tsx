@@ -155,12 +155,50 @@ export default function App() {
     );
   };
 
+  const isUploadKaryaUrl = () => {
+    if (typeof window === 'undefined') return false;
+    const path = window.location.pathname.toLowerCase();
+    const hash = window.location.hash.toLowerCase();
+    const search = window.location.search.toLowerCase();
+    return (
+      path.startsWith('/karya') ||
+      path.startsWith('/upload-karya') ||
+      path.startsWith('/aploud-karya') ||
+      path.startsWith('/aploud') ||
+      hash.includes('aploud') ||
+      hash.includes('karya') ||
+      hash.includes('upload-karya') ||
+      search.includes('modal=karya') ||
+      search.includes('modal=upload') ||
+      search.includes('modal=aploud') ||
+      search.includes('upload=karya') ||
+      search.includes('aploud=karya') ||
+      search.includes('karya=') ||
+      search.includes('reg=')
+    );
+  };
+
   const [isJuryPortalOpen, setIsJuryPortalOpen] = useState(isJuryUrl);
 
   useEffect(() => {
     const handleUrlChange = () => {
       setIsJuryPortalOpen(isJuryUrl());
+
+      if (isUploadKaryaUrl()) {
+        try {
+          const urlParams = new URLSearchParams(window.location.search);
+          const regFromParam = urlParams.get('reg') || urlParams.get('registration') || urlParams.get('no_reg');
+          if (regFromParam) {
+            setSelectedRegNumberForWork(regFromParam);
+          }
+        } catch (_) {}
+        setIsWorkModalOpen(true);
+      }
     };
+
+    // Panggil saat awal render untuk mendeteksi link langsung /karya atau /aploud
+    handleUrlChange();
+
     window.addEventListener('popstate', handleUrlChange);
     window.addEventListener('hashchange', handleUrlChange);
 
