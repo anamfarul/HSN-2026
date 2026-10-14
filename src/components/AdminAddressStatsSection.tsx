@@ -36,7 +36,7 @@ interface LocationItem {
 }
 
 // Helper normalisasi nama wilayah (Title Case & Trim)
-function normalizeName(str: string): string {
+export function normalizeName(str: string): string {
   if (!str) return '';
   const trimmed = str.trim();
   if (!trimmed) return '';

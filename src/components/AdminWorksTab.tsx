@@ -147,7 +147,10 @@ export const AdminWorksTab: React.FC<AdminWorksTabProps> = ({
         const matchInst = (p.institution || '').toLowerCase().includes(q);
         const matchComp = (p.competitionTitle || '').toLowerCase().includes(q);
         const matchNotes = (p.workNotes || '').toLowerCase().includes(q);
-        if (!matchName && !matchReg && !matchInst && !matchComp && !matchNotes) {
+        const matchAddr = (p.address || '').toLowerCase().includes(q);
+        const matchDist = (p.district || '').toLowerCase().includes(q);
+        const matchRegency = (p.regency || '').toLowerCase().includes(q);
+        if (!matchName && !matchReg && !matchInst && !matchComp && !matchNotes && !matchAddr && !matchDist && !matchRegency) {
           return false;
         }
       }

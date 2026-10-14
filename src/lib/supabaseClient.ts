@@ -695,6 +695,33 @@ export function mapSupabaseToParticipant(row: any): any {
     cleanNotes = row.notes.replace(/\[HSN_KARYA\]:\{.*?\}\n?/g, '').trim();
   }
 
+  // 3. Ekstrak wilayah (district/kecamatan, regency/kabupaten, province/provinsi)
+  let district = row.district || row.kecamatan || undefined;
+  let regency = row.regency || row.kabupaten || row.city || row.kota || undefined;
+  let province = row.province || row.provinsi || undefined;
+
+  // Jika kolom terpisah belum terisi dari Supabase, lakukan ekstraksi cerdas dari row.address
+  if ((!district || !regency || !province) && row.address) {
+    const raw = String(row.address).trim();
+    if (!district) {
+      const matchKec = raw.match(/Kec(?:amatan|\.)?\s*([^,]+)/i);
+      if (matchKec && matchKec[1]) district = matchKec[1].trim();
+    }
+    if (!regency) {
+      const matchKab = raw.match(/(?:Kabupaten|Kab\.|Kota)\s*([^,]+)/i);
+      if (matchKab && matchKab[0]) regency = matchKab[0].trim();
+    }
+    if (!province) {
+      if (/Jawa\s*Timur/i.test(raw)) province = 'Jawa Timur';
+      else if (/Jawa\s*Tengah/i.test(raw)) province = 'Jawa Tengah';
+      else if (/Jawa\s*Barat/i.test(raw)) province = 'Jawa Barat';
+      else if (/DKI|Jakarta/i.test(raw)) province = 'DKI Jakarta';
+      else if (/DIY|Yogyakarta/i.test(raw)) province = 'DI Yogyakarta';
+      else if (/Banten/i.test(raw)) province = 'Banten';
+      else if (/Bali/i.test(raw)) province = 'Bali';
+    }
+  }
+
   return {
     id: row.id || `reg-${Date.now()}`,
     registrationNumber: row.registration_number || 'HSN26-REG',
@@ -705,6 +732,9 @@ export function mapSupabaseToParticipant(row: any): any {
     whatsapp: row.whatsapp || '',
     email: row.email || '',
     address: row.address || '',
+    district,
+    regency,
+    province,
     competitionId: row.competition_id || '',
     competitionTitle: row.competition_title || '',
     documentName: row.document_name || undefined,
@@ -767,6 +797,9 @@ export function mapParticipantToSupabase(p: any): Record<string, any> {
   if (cleanBirthDate) row.birth_date = cleanBirthDate;
   if (p.email && p.email.trim()) row.email = p.email.trim();
   if (fullAddress) row.address = fullAddress;
+  if (p.district && p.district.trim()) row.district = p.district.trim();
+  if (p.regency && p.regency.trim()) row.regency = p.regency.trim();
+  if (p.province && p.province.trim()) row.province = p.province.trim();
   if (p.competitionId) row.competition_id = p.competitionId;
   if (p.competitionTitle) row.competition_title = p.competitionTitle;
   if (p.documentName) row.document_name = p.documentName;

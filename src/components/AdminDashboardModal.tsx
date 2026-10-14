@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { ParticipantRegistration, Competition, DownloadDoc, CategoryGeneration, JuryAssignment } from '../types';
@@ -7,7 +7,7 @@ import { AdminUsersTab } from './AdminUsersTab';
 import { AdminDeploymentTab } from './AdminDeploymentTab';
 import { AdminSupabaseTab } from './AdminSupabaseTab';
 import { AdminWorksTab } from './AdminWorksTab';
-import { AdminAddressStatsSection } from './AdminAddressStatsSection';
+import { AdminAddressStatsSection, extractParticipantLocation, normalizeName } from './AdminAddressStatsSection';
 import { AdminJurySection } from './admin/jury/AdminJurySection';
 import { generateParticipantReportPDF, printElementSafely } from '../lib/pdfGenerator';
 import { getJuryAssignments } from '../lib/juryService';
@@ -288,7 +288,32 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [regionFilter, setRegionFilter] = useState('ALL');
   const [showPrintModal, setShowPrintModal] = useState(false);
+
+  // Daftar daerah/wilayah (Kecamatan & Kabupaten) unik dari data peserta
+  const availableRegions = useMemo(() => {
+    const districtsSet = new Set<string>();
+    const regenciesSet = new Set<string>();
+
+    participants.forEach((p) => {
+      const loc = extractParticipantLocation(p);
+      if (loc.district && loc.district !== 'Poncokusumo (Default)') {
+        districtsSet.add(loc.district);
+      }
+      if (loc.regency) {
+        regenciesSet.add(loc.regency);
+      }
+    });
+
+    const sortedDistricts = Array.from(districtsSet).sort((a, b) => a.localeCompare(b));
+    const sortedRegencies = Array.from(regenciesSet).sort((a, b) => a.localeCompare(b));
+
+    return {
+      districts: sortedDistricts,
+      regencies: sortedRegencies,
+    };
+  }, [participants]);
 
   // Modal Preview Lampiran Berkas (Khusus Super Admin & Divisi Registrasi & Verifikasi)
   const [previewAttachment, setPreviewAttachment] = useState<{
@@ -600,14 +625,47 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
   // Filter participants
   const filteredParticipants = participants.filter((p) => {
+    const loc = extractParticipantLocation(p);
+    const q = searchQuery.toLowerCase().trim();
+
+    // 1. Pencarian komprehensif: Nama, No Reg, Lembaga, Cabang Lomba, Catatan, dan Daerah/Wilayah (Alamat, Kecamatan, Kabupaten/Kota, Provinsi)
     const matchSearch =
-      p.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.registrationNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.institution.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.competitionTitle.toLowerCase().includes(searchQuery.toLowerCase());
+      !q ||
+      p.fullName.toLowerCase().includes(q) ||
+      p.registrationNumber.toLowerCase().includes(q) ||
+      p.institution.toLowerCase().includes(q) ||
+      p.competitionTitle.toLowerCase().includes(q) ||
+      (p.address && p.address.toLowerCase().includes(q)) ||
+      (p.district && p.district.toLowerCase().includes(q)) ||
+      (p.regency && p.regency.toLowerCase().includes(q)) ||
+      (p.province && p.province.toLowerCase().includes(q)) ||
+      loc.district.toLowerCase().includes(q) ||
+      loc.regency.toLowerCase().includes(q) ||
+      loc.province.toLowerCase().includes(q);
+
+    // 2. Filter Kategori
     const matchCat = categoryFilter === 'ALL' || p.category === categoryFilter;
+
+    // 3. Filter Status Verifikasi
     const matchStatus = statusFilter === 'ALL' || p.status === statusFilter;
-    return matchSearch && matchCat && matchStatus;
+
+    // 4. Filter Daerah/Wilayah (Kecamatan atau Kabupaten)
+    let matchRegion = true;
+    if (regionFilter !== 'ALL') {
+      const regTarget = regionFilter.toLowerCase().trim();
+      const pDist = (p.district || loc.district || '').toLowerCase();
+      const pReg = (p.regency || loc.regency || '').toLowerCase();
+      const pAddr = (p.address || '').toLowerCase();
+
+      matchRegion = 
+        pDist === regTarget ||
+        pDist.includes(regTarget) ||
+        pReg === regTarget ||
+        pReg.includes(regTarget) ||
+        pAddr.includes(regTarget);
+    }
+
+    return matchSearch && matchCat && matchStatus && matchRegion;
   });
 
   // Export CSV function
@@ -969,6 +1027,61 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                     <option value="Menunggu">Menunggu</option>
                     <option value="Ditolak">Ditolak</option>
                   </select>
+
+                  {/* Filter Daerah / Wilayah (Kecamatan & Kabupaten) */}
+                  <div className="relative">
+                    <select
+                      value={regionFilter}
+                      onChange={(e) => setRegionFilter(e.target.value)}
+                      className={`px-3 py-1.5 pl-7 rounded-xl text-xs bg-[#020e19] border transition-all focus:outline-none ${
+                        regionFilter !== 'ALL'
+                          ? 'border-[#00D9F5] text-[#00D9F5] bg-[#00D9F5]/10 font-bold'
+                          : 'border-white/20 text-white'
+                      }`}
+                      title="Saring data peserta berdasarkan daerah / wilayah asal"
+                    >
+                      <option value="ALL">Semua Daerah / Wilayah</option>
+                      {availableRegions.districts.length > 0 && (
+                        <optgroup label="Tingkat Kecamatan">
+                          {availableRegions.districts.map((dist) => (
+                            <option key={`dist-${dist}`} value={dist}>
+                              Kec. {dist}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {availableRegions.regencies.length > 0 && (
+                        <optgroup label="Tingkat Kabupaten / Kota">
+                          {availableRegions.regencies.map((reg) => (
+                            <option key={`reg-${reg}`} value={reg}>
+                              {reg}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                    <MapPin className={`w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none ${
+                      regionFilter !== 'ALL' ? 'text-[#00D9F5]' : 'text-white/40'
+                    }`} />
+                  </div>
+
+                  {/* Tombol Reset Filter jika ada filter aktif */}
+                  {(searchQuery || categoryFilter !== 'ALL' || statusFilter !== 'ALL' || regionFilter !== 'ALL') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery('');
+                        setCategoryFilter('ALL');
+                        setStatusFilter('ALL');
+                        setRegionFilter('ALL');
+                      }}
+                      className="px-2.5 py-1.5 rounded-xl text-xs bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center gap-1 transition-all"
+                      title="Reset semua filter dan pencarian"
+                    >
+                      <X className="w-3 h-3" />
+                      <span>Reset Filter</span>
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -1062,8 +1175,27 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   <tbody className="divide-y divide-white/5">
                     {filteredParticipants.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="p-8 text-center text-white/50 italic">
-                          Tidak ada data peserta terdaftar yang sesuai dengan filter pencarian.
+                        <td colSpan={8} className="p-8 text-center text-white/50">
+                          <p className="italic">
+                            Tidak ada data peserta terdaftar yang sesuai dengan filter pencarian
+                            {searchQuery ? ` "${searchQuery}"` : ''}
+                            {regionFilter !== 'ALL' ? ` di daerah "${regionFilter}"` : ''}.
+                          </p>
+                          {(searchQuery || categoryFilter !== 'ALL' || statusFilter !== 'ALL' || regionFilter !== 'ALL') && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSearchQuery('');
+                                setCategoryFilter('ALL');
+                                setStatusFilter('ALL');
+                                setRegionFilter('ALL');
+                              }}
+                              className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#00D9F5]/10 hover:bg-[#00D9F5]/20 text-[#00D9F5] border border-[#00D9F5]/30 text-xs font-semibold transition-all"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                              <span>Bersihkan Filter & Tampilkan Semua Peserta ({participants.length})</span>
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ) : (
