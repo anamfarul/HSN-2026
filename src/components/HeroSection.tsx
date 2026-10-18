@@ -464,7 +464,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
               <ul className="space-y-2 text-xs text-white/95 leading-relaxed">
                 <li className="flex items-start gap-2">
                   <span className="font-bold text-[#00D9F5] mt-0.5">1.</span>
-                  <span><strong>Pengumpulan / Aploud Karya Peserta:</strong> Terakhir tanggal <strong className="text-amber-300 font-bold">18 Oktober 2026 pukul 24.00 WIB</strong> melalui portal menu Aploud Karya.</span>
+                  <span><strong>Pengumpulan / Aploud Karya Peserta:</strong> Terakhir tanggal <strong className="text-amber-300 font-bold">18 Oktober 2026 pukul 24.00 WIB</strong>.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="font-bold text-[#00D9F5] mt-0.5">2.</span>

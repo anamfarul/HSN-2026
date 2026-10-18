@@ -128,34 +128,11 @@ export const OfficialAnnouncementBanner: React.FC<OfficialAnnouncementBannerProp
               </div>
             </div>
 
-            {/* Right: Action Buttons */}
-            <div className="flex items-center gap-2 w-full lg:w-auto justify-end shrink-0 pt-1 lg:pt-0 border-t lg:border-t-0 border-white/10">
-              {onOpenUploadWork && (
-                <button
-                  id="announcement-btn-upload-karya"
-                  onClick={onOpenUploadWork}
-                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#D9B45B] to-[#F2C96D] text-[#031525] font-bold text-xs flex items-center gap-1.5 shadow-md hover:brightness-110 active:scale-95 transition-all"
-                >
-                  <UploadCloud className="w-3.5 h-3.5" />
-                  <span>Aploud Karya</span>
-                </button>
-              )}
-
-              <a
-                href="https://www.youtube.com/@mwcnuponcokusumo"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-3 py-1.5 rounded-xl bg-red-600/30 hover:bg-red-600/40 border border-red-500/50 text-red-200 font-bold text-xs flex items-center gap-1.5 transition-all"
-                title="Buka Kanal YouTube Resmi HSN untuk Siaran Langsung Malam Puncak"
-              >
-                <Tv className="w-3.5 h-3.5 text-red-400" />
-                <span className="hidden sm:inline">Kanal YouTube HSN</span>
-                <span className="sm:hidden">YouTube</span>
-              </a>
-
+            {/* Right: Close / Minimize Button */}
+            <div className="flex items-center justify-end shrink-0 pt-1 lg:pt-0 border-t lg:border-t-0 border-white/10">
               <button
                 onClick={() => setIsMinimized(true)}
-                className="text-white/50 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors ml-1"
+                className="text-white/50 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors"
                 title="Kecilkan Pengumuman"
                 aria-label="Kecilkan Pengumuman"
               >

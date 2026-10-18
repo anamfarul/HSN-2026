@@ -599,10 +599,7 @@ export default function App() {
 
       {/* Official Announcement Banner (Batas Pengumpulan Karya 18 Okt & Puncak Juara 23 Okt) */}
       <div className="pt-20 sm:pt-24">
-        <OfficialAnnouncementBanner
-          onOpenUploadWork={() => handleOpenUploadWork()}
-          onOpenRegister={handleOpenRegister}
-        />
+        <OfficialAnnouncementBanner />
       </div>
 
       {/* Main Content Layout */}
