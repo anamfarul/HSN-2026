@@ -21,6 +21,7 @@ import { RegistrationModal } from './components/RegistrationModal';
 import { AdminDashboardModal } from './components/AdminDashboardModal';
 import { WorkSubmissionModal } from './components/WorkSubmissionModal';
 import { JuryPortalView } from './components/jury/JuryPortalView';
+import { OfficialAnnouncementBanner } from './components/OfficialAnnouncementBanner';
 
 import { COMPETITIONS, DOWNLOAD_DOCUMENTS, INITIAL_STATS } from './data/initialData';
 import { Competition, CategoryGeneration, ParticipantRegistration } from './types';
@@ -595,6 +596,14 @@ export default function App() {
           setIsAdminModalOpen(true);
         }}
       />
+
+      {/* Official Announcement Banner (Batas Pengumpulan Karya 18 Okt & Puncak Juara 23 Okt) */}
+      <div className="pt-20 sm:pt-24">
+        <OfficialAnnouncementBanner
+          onOpenUploadWork={() => handleOpenUploadWork()}
+          onOpenRegister={handleOpenRegister}
+        />
+      </div>
 
       {/* Main Content Layout */}
       <main id="beranda" className="relative">

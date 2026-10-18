@@ -23,7 +23,10 @@ import {
   Tag, 
   HelpCircle,
   Check,
-  RefreshCw
+  RefreshCw,
+  Bell,
+  Calendar,
+  Tv
 } from 'lucide-react';
 import { ParticipantRegistration } from '../types';
 import { generateWorkSubmissionPDF, printElementSafely } from '../lib/pdfGenerator';
@@ -451,6 +454,37 @@ export const WorkSubmissionModal: React.FC<WorkSubmissionModalProps> = ({
 
         {/* Modal Body / Scrollable Content */}
         <div className="px-5 sm:px-7 py-5 overflow-y-auto space-y-5 text-xs sm:text-sm">
+          {/* PENGUMUMAN RESMI PANITIA */}
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-[#D9B45B]/20 via-[#006B4F]/30 to-[#031525] border border-[#D9B45B]/40 text-white space-y-2 shadow-lg">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#00D9F5] animate-ping" />
+              <span className="text-[11px] font-black uppercase tracking-wider text-[#F2C96D] flex items-center gap-1.5">
+                <Bell className="w-4 h-4 text-[#F2C96D]" /> PENGUMUMAN RESMI PANITIA HSN 2026
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
+              <div className="p-2.5 rounded-xl bg-black/30 border border-white/10">
+                <div className="font-bold text-[#00D9F5] flex items-center gap-1.5 mb-1">
+                  <Calendar className="w-3.5 h-3.5 text-[#00D9F5]" />
+                  <span>1. Pengumpulan / Aploud Karya:</span>
+                </div>
+                <div className="text-white/90 text-[11px] leading-relaxed">
+                  Batas akhir tanggal <strong className="text-amber-300">18 Oktober 2026</strong> pukul <strong className="text-amber-300">24.00 WIB</strong>.
+                </div>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-black/30 border border-white/10">
+                <div className="font-bold text-[#F2C96D] flex items-center gap-1.5 mb-1">
+                  <Tv className="w-3.5 h-3.5 text-[#F2C96D]" />
+                  <span>2. Pengumuman Pemenang Juara:</span>
+                </div>
+                <div className="text-white/90 text-[11px] leading-relaxed">
+                  Tanggal <strong className="text-[#00D9F5]">23 Oktober 2026</strong> pada Malam Puncak HSN pukul <strong className="text-[#00D9F5]">18.00 WIB</strong> (Offline & Online via YouTube Resmi HSN).
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Notification Alert Banner */}
           {notification && (
             <div 

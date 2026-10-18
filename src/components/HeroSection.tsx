@@ -10,7 +10,9 @@ import {
   Laptop,
   Flame,
   Globe2,
-  UploadCloud
+  UploadCloud,
+  Bell,
+  Tv
 } from 'lucide-react';
 import { HeroParticlesCanvas } from './HeroParticlesCanvas';
 import heroArtworkImg from '../assets/images/hero_hsn_artwork_1788617565328.jpg';
@@ -305,6 +307,26 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
             </div>
           </div>
 
+          {/* Mobile Announcement Card */}
+          <div className="w-full my-3 p-3.5 rounded-2xl bg-gradient-to-r from-[#D9B45B]/20 via-[#006B4F]/40 to-[#031525] border border-[#D9B45B]/50 shadow-xl backdrop-blur-md text-left">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="w-2 h-2 rounded-full bg-[#00D9F5] animate-ping" />
+              <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-[#F2C96D] flex items-center gap-1.5">
+                <Bell className="w-3.5 h-3.5 text-[#F2C96D]" /> PENGUMUMAN PENTING PANITIA HSN 2026
+              </span>
+            </div>
+            <ul className="space-y-1.5 text-xs text-white/95">
+              <li className="flex items-start gap-1.5">
+                <span className="font-bold text-[#00D9F5] shrink-0 mt-0.5">1.</span>
+                <span><strong>Pengumpulan/Aploud Karya Peserta:</strong> Terakhir tanggal <strong className="text-amber-300">18 Oktober 2026</strong> pukul <strong className="text-amber-300">24.00 WIB</strong>.</span>
+              </li>
+              <li className="flex items-start gap-1.5">
+                <span className="font-bold text-[#00D9F5] shrink-0 mt-0.5">2.</span>
+                <span><strong>Pengumuman Pemenang Juara:</strong> Tanggal <strong className="text-[#00D9F5]">23 Oktober 2026</strong> pada Malam Puncak HSN pukul <strong className="text-[#00D9F5]">18.00 WIB</strong> secara <strong>Offline</strong> & <strong>Online via Kanal YouTube Resmi HSN</strong>.</span>
+              </li>
+            </ul>
+          </div>
+
           {/* Mobile CTAs: Immediately visible! */}
           <div className="w-full flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 mt-4">
             <button
@@ -424,6 +446,31 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                 <MapPin className="w-4 h-4 text-[#00D9F5]" />
                 <span>PONCOKUSUMO • KAB. MALANG</span>
               </div>
+            </div>
+
+            {/* Desktop Announcement Card */}
+            <div className="w-full max-w-2xl my-3 p-4 rounded-2xl bg-gradient-to-r from-[#D9B45B]/20 via-[#006B4F]/40 to-[#031525] border border-[#D9B45B]/50 shadow-xl backdrop-blur-md text-left">
+              <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-white/10">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#00D9F5] animate-ping" />
+                  <span className="text-xs font-black uppercase tracking-wider text-[#F2C96D] flex items-center gap-1.5">
+                    <Bell className="w-4 h-4 text-[#F2C96D]" /> PENGUMUMAN PENTING PANITIA HSN 2026
+                  </span>
+                </div>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#00D9F5]/20 text-[#00D9F5] border border-[#00D9F5]/40">
+                  AGENDA KARYA & JUARA
+                </span>
+              </div>
+              <ul className="space-y-2 text-xs text-white/95 leading-relaxed">
+                <li className="flex items-start gap-2">
+                  <span className="font-bold text-[#00D9F5] mt-0.5">1.</span>
+                  <span><strong>Pengumpulan / Aploud Karya Peserta:</strong> Terakhir tanggal <strong className="text-amber-300 font-bold">18 Oktober 2026 pukul 24.00 WIB</strong> melalui portal menu Aploud Karya.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="font-bold text-[#00D9F5] mt-0.5">2.</span>
+                  <span><strong>Pengumuman Pemenang Juara:</strong> Pada tanggal <strong className="text-[#00D9F5] font-bold">23 Oktober 2026</strong> pada Malam Puncak HSN pukul <strong className="text-[#00D9F5] font-bold">18.00 WIB</strong> secara <strong className="text-white font-bold">Offline</strong> di panggung utama & <strong className="text-white font-bold">Online melalui Kanal YouTube Resmi HSN</strong>.</span>
+                </li>
+              </ul>
             </div>
 
             {/* Action Call to Actions (CTA 1, 2, 3) */}

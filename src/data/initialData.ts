@@ -579,29 +579,29 @@ export const TIMELINE_ITEMS: TimelineItem[] = [
   },
   {
     id: 'time-4',
-    period: '16–21 OKTOBER 2026',
-    title: 'Final Preparation & Napak Tilas Mu\'assis',
+    period: '18 OKTOBER 2026',
+    title: 'Batas Pengumpulan / Aploud Karya & Ziarah Mu\'assis',
     status: 'upcoming',
-    description: 'Puncak ziarah napak tilas, gladi bersih upacara akbar, pendirian tenda expo santri, dan persiapan panggung megah malam puncak.',
+    description: 'Batas akhir pengumpulan dan aploud karya seluruh cabang lomba peserta Festival HSN 2026 ditutup tepat pukul 24.00 WIB.',
     activities: [
-      '18 Oktober: Ziarah Akbar Mu\'assis & Ulama Poncokusumo',
-      'Pemasangan instalasi pameran Santri Digital Expo',
-      'Gladi bersih petugas upacara dan paduan suara',
-      'Khataman Al-Quran Bil Ghoib 30 Juz di Pesantren se-Poncokusumo',
+      '18 Oktober 2026 (Pukul 24.00 WIB): Batas Akhir Pengumpulan / Aploud Karya Peserta',
+      'Penutupan portal pengunggahan berkas gambar JPG/PNG dan tautan Google Drive',
+      'Ziarah Akbar Mu\'assis & Ulama Pejuang Poncokusumo',
+      'Finalisasi rekapan karya peserta untuk penilaian Dewan Juri',
     ],
   },
   {
     id: 'time-5',
-    period: '22 OKTOBER 2026',
-    title: 'GRAND EVENT HARI SANTRI NASIONAL',
+    period: '22–23 OKTOBER 2026',
+    title: 'APEL AKBAR & MALAM PUNCAK HSN 2026',
     status: 'upcoming',
     isHighlight: true,
-    description: 'Hari puncak perayaan HSN 2026. Apel Akbar kolosal ribuan santri, bazar rakyat, pameran inovasi santri, hingga Tasyakuran & Sholawat Bersama.',
+    description: 'Hari puncak perayaan HSN 2026: Apel Akbar santri kolosal, expo produk santri, dan Malam Puncak Penganugerahan Juara HSN 2026.',
     activities: [
-      '07.00 WIB: Apel Akbar Hari Santri Nasional 2026 (Lapangan Utama)',
-      '09.30 WIB: Pembukaan Santri Digital Expo & Gelar UMKM Nahdliyin',
-      '13.00 WIB: Final Pertandingan Sepak Bola Santri Cup 2026',
-      '19.30 WIB: Tasyakuran, Sholawat Kebangsaan & Santri Award 2026',
+      '22 Oktober (07.00 WIB): Apel Akbar Hari Santri Nasional 2026 (Lapangan Utama)',
+      '22 Oktober (09.30 WIB): Pembukaan Santri Digital Expo & Gelar UMKM Nahdliyin',
+      '23 Oktober (Pukul 18.00 WIB): Pengumuman Pemenang Juara pada Malam Puncak HSN 2026',
+      'Siaran langsung secara Offline di Panggung Utama dan Online melalui Kanal YouTube Resmi HSN',
     ],
   },
   {
@@ -683,6 +683,24 @@ export const DOWNLOAD_DOCUMENTS: DownloadDoc[] = [
 ];
 
 export const NEWS_ARTICLES: NewsArticle[] = [
+  {
+    id: 'news-announcement-karya-puncak',
+    slug: 'pengumuman-batas-aploud-karya-dan-malam-puncak-hsn-2026',
+    title: 'Pengumuman Resmi: Batas Akhir Aploud Karya 18 Oktober & Malam Puncak Juara 23 Oktober 2026',
+    category: 'Pengumuman Resmi',
+    date: '14 Oktober 2026',
+    author: 'Panitia Pelaksana HSN 2026',
+    readTime: '2 Menit Baca',
+    thumbnail: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=800&q=80',
+    excerpt: 'Panitia menetapkan batas akhir pengumpulan/aploud karya peserta pada 18 Oktober 2026 pukul 24.00 WIB, dan pengumuman pemenang juara pada 23 Oktober 2026 pukul 18.00 WIB secara offline dan online via YouTube.',
+    content: [
+      'Pemberitahuan resmi bagi seluruh peserta perlombaan Festival Hari Santri Nasional 2026 MWC NU Poncokusumo.',
+      '1. Pengumpulan dan Aploud Karya Peserta: Batas akhir pengumpulan karya digital (berkas gambar/foto JPG/PNG dan tautan link Google Drive) ditutup pada hari Minggu, 18 Oktober 2026 tepat pukul 24.00 WIB.',
+      '2. Pengumuman Pemenang Juara: Pengumuman juara seluruh cabang lomba akan diselenggarakan pada tanggal 23 Oktober 2026 pada Malam Puncak HSN mulai pukul 18.00 WIB secara Offline di Panggung Akbar Poncokusumo dan disiarkan secara Online Live Streaming melalui Kanal YouTube Resmi HSN.',
+      'Peserta yang telah mendaftar diimbau untuk segera mengunggah karya melalui portal menu Aploud Karya di website resmi ini sebelum batas waktu berakhir.',
+    ],
+    tags: ['Pengumuman', 'Aploud Karya', 'Malam Puncak', 'YouTube HSN', 'Pemenang Juara'],
+  },
   {
     id: 'news-1',
     slug: 'mwc-nu-poncokusumo-siap-gelar-festival-hsn-2026',

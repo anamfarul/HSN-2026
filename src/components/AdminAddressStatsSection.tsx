@@ -35,6 +35,19 @@ interface LocationItem {
   participantIds: string[];
 }
 
+// Daftar resmi kecamatan di Malang Raya & sekitarnya untuk pencocokan cerdas
+export const MALANG_RAYA_DISTRICTS: string[] = [
+  'Ampelgading', 'Bantur', 'Bululawang', 'Dampit', 'Dau', 'Donomulyo',
+  'Gedangan', 'Gondanglegi', 'Jabung', 'Kalipare', 'Karangploso', 'Kasembon',
+  'Kepanjen', 'Kromengan', 'Lawang', 'Ngajum', 'Ngantang', 'Pagak',
+  'Pagelaran', 'Pakis', 'Pakisaji', 'Poncokusumo', 'Pujon', 'Singosari',
+  'Sumbermanjing Wetan', 'Sumberpucung', 'Tajinan', 'Tirtoyudo', 'Tumpang',
+  'Turen', 'Wagir', 'Wajak', 'Wonosari',
+  // Kota Malang & Kota Batu
+  'Blimbing', 'Kedungkandang', 'Klojen', 'Lowokwaru', 'Sukun',
+  'Batu', 'Bumiaji', 'Junrejo'
+];
+
 // Helper normalisasi nama wilayah (Title Case & Trim)
 export function normalizeName(str: string): string {
   if (!str) return '';
@@ -58,38 +71,65 @@ export function extractParticipantLocation(p: ParticipantRegistration): {
   let regency = normalizeName(p.regency || '');
   let province = normalizeName(p.province || '');
 
+  const raw = (p.address || '').trim();
+
   // Jika kolom terpisah belum terisi, coba lakukan parsing cerdas dari string p.address
-  if (!district || !regency || !province) {
-    const raw = (p.address || '').trim();
+  if (!district && raw) {
+    // 1. Cek format standar: Kec. [Nama] atau Kecamatan [Nama]
+    const matchKec = raw.match(/Kec(?:amatan|\.)?\s*([a-zA-Z\s]+?)(?:,|$|\.|\b)/i);
+    if (matchKec && matchKec[1]) {
+      const parsed = normalizeName(matchKec[1].trim());
+      if (parsed.length >= 3) {
+        district = parsed;
+      }
+    }
 
+    // 2. Jika belum ditemukan, cocokkan kata perkata dengan daftar kecamatan Malang Raya
     if (!district) {
-      const matchKec = raw.match(/Kec(?:amatan|\.)?\s*([^,]+)/i);
-      if (matchKec) {
-        district = normalizeName(matchKec[1]);
+      for (const dist of MALANG_RAYA_DISTRICTS) {
+        const regex = new RegExp(`\\b${dist}\\b`, 'i');
+        if (regex.test(raw)) {
+          district = dist;
+          break;
+        }
       }
-    }
-
-    if (!regency) {
-      const matchKab = raw.match(/(?:Kabupaten|Kab\.|Kota)\s*([^,]+)/i);
-      if (matchKab) {
-        regency = normalizeName(matchKab[0]);
-      }
-    }
-
-    if (!province) {
-      if (/Jawa\s*Timur/i.test(raw)) province = 'Jawa Timur';
-      else if (/Jawa\s*Tengah/i.test(raw)) province = 'Jawa Tengah';
-      else if (/Jawa\s*Barat/i.test(raw)) province = 'Jawa Barat';
-      else if (/DKI|Jakarta/i.test(raw)) province = 'DKI Jakarta';
-      else if (/DIY|Yogyakarta/i.test(raw)) province = 'DI Yogyakarta';
-      else if (/Banten/i.test(raw)) province = 'Banten';
-      else if (/Bali/i.test(raw)) province = 'Bali';
     }
   }
 
-  // Default fallback jika data lama sama sekali tidak menyebutkan
+  if (!regency && raw) {
+    const matchKab = raw.match(/(?:Kabupaten|Kab\.|Kota)\s*([^,]+)/i);
+    if (matchKab) {
+      regency = normalizeName(matchKab[0]);
+    } else if (/Malang/i.test(raw)) {
+      regency = 'Kabupaten Malang';
+    } else if (/Batu/i.test(raw)) {
+      regency = 'Kota Batu';
+    } else if (/Pasuruan/i.test(raw)) {
+      regency = 'Kabupaten Pasuruan';
+    } else if (/Blitar/i.test(raw)) {
+      regency = 'Kabupaten Blitar';
+    } else if (/Kediri/i.test(raw)) {
+      regency = 'Kabupaten Kediri';
+    } else if (/Lumajang/i.test(raw)) {
+      regency = 'Kabupaten Lumajang';
+    } else if (/Surabaya/i.test(raw)) {
+      regency = 'Kota Surabaya';
+    }
+  }
+
+  if (!province && raw) {
+    if (/Jawa\s*Timur/i.test(raw)) province = 'Jawa Timur';
+    else if (/Jawa\s*Tengah/i.test(raw)) province = 'Jawa Tengah';
+    else if (/Jawa\s*Barat/i.test(raw)) province = 'Jawa Barat';
+    else if (/DKI|Jakarta/i.test(raw)) province = 'DKI Jakarta';
+    else if (/DIY|Yogyakarta/i.test(raw)) province = 'DI Yogyakarta';
+    else if (/Banten/i.test(raw)) province = 'Banten';
+    else if (/Bali/i.test(raw)) province = 'Bali';
+    else province = 'Jawa Timur';
+  }
+
   return {
-    district: district || 'Poncokusumo (Default)',
+    district: district || (raw.length > 0 ? 'Poncokusumo' : ''),
     regency: regency || 'Kabupaten Malang',
     province: province || 'Jawa Timur',
   };

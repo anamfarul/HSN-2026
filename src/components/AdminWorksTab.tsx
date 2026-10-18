@@ -20,9 +20,11 @@ import {
   Building2,
   Trophy,
   X,
-  FileSpreadsheet
+  FileSpreadsheet,
+  MapPin
 } from 'lucide-react';
 import { ParticipantRegistration } from '../types';
+import { MALANG_RAYA_DISTRICTS, extractParticipantLocation } from './AdminAddressStatsSection';
 import { generateWorkSubmissionPDF, printElementSafely } from '../lib/pdfGenerator';
 import { FileDown, Check } from 'lucide-react';
 
@@ -56,6 +58,7 @@ export const AdminWorksTab: React.FC<AdminWorksTabProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'file' | 'drive'>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'Terverifikasi' | 'Menunggu' | 'Ditolak'>('ALL');
+  const [regionFilter, setRegionFilter] = useState<string>('ALL');
   const [selectedImagePreview, setSelectedImagePreview] = useState<{ url: string; title: string } | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -139,17 +142,36 @@ export const AdminWorksTab: React.FC<AdminWorksTabProps> = ({
         if (statusFilter === 'Ditolak' && !pStatus.toLowerCase().includes('ditolak')) return false;
       }
 
+      // Region/Wilayah filter
+      if (regionFilter !== 'ALL') {
+        const loc = extractParticipantLocation(p);
+        const target = regionFilter.toLowerCase().trim();
+        const pDist = (p.district || loc.district || '').toLowerCase();
+        const pReg = (p.regency || loc.regency || '').toLowerCase();
+        const pAddr = (p.address || '').toLowerCase();
+        const match =
+          pDist === target ||
+          pDist.includes(target) ||
+          (pDist.length > 3 && target.includes(pDist)) ||
+          pReg === target ||
+          pReg.includes(target) ||
+          (pReg.length > 3 && target.includes(pReg)) ||
+          pAddr.includes(target);
+        if (!match) return false;
+      }
+
       // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
+        const loc = extractParticipantLocation(p);
         const matchName = (p.fullName || '').toLowerCase().includes(q);
         const matchReg = (p.registrationNumber || '').toLowerCase().includes(q);
         const matchInst = (p.institution || '').toLowerCase().includes(q);
         const matchComp = (p.competitionTitle || '').toLowerCase().includes(q);
         const matchNotes = (p.workNotes || '').toLowerCase().includes(q);
         const matchAddr = (p.address || '').toLowerCase().includes(q);
-        const matchDist = (p.district || '').toLowerCase().includes(q);
-        const matchRegency = (p.regency || '').toLowerCase().includes(q);
+        const matchDist = (p.district || loc.district || '').toLowerCase().includes(q);
+        const matchRegency = (p.regency || loc.regency || '').toLowerCase().includes(q);
         if (!matchName && !matchReg && !matchInst && !matchComp && !matchNotes && !matchAddr && !matchDist && !matchRegency) {
           return false;
         }
@@ -157,7 +179,7 @@ export const AdminWorksTab: React.FC<AdminWorksTabProps> = ({
 
       return true;
     });
-  }, [participants, typeFilter, statusFilter, searchQuery]);
+  }, [participants, typeFilter, statusFilter, regionFilter, searchQuery]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -332,6 +354,55 @@ export const AdminWorksTab: React.FC<AdminWorksTabProps> = ({
             <option value="Menunggu">Menunggu</option>
             <option value="Ditolak">Ditolak</option>
           </select>
+
+          {/* Filter Daerah / Wilayah */}
+          <div className="relative">
+            <select
+              value={regionFilter}
+              onChange={(e) => setRegionFilter(e.target.value)}
+              className={`px-3 py-2 pl-7 rounded-xl bg-[#031525] border text-xs focus:outline-none transition-all ${
+                regionFilter !== 'ALL'
+                  ? 'border-[#00D9F5] text-[#00D9F5] bg-[#00D9F5]/10 font-bold'
+                  : 'border-white/15 text-white'
+              }`}
+              title="Saring karya peserta berdasarkan daerah/wilayah"
+            >
+              <option value="ALL">Semua Daerah / Wilayah</option>
+              <optgroup label="Tingkat Kecamatan">
+                {MALANG_RAYA_DISTRICTS.map((dist) => (
+                  <option key={`work-dist-${dist}`} value={dist}>
+                    Kec. {dist}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Tingkat Kabupaten/Kota">
+                <option value="Kabupaten Malang">Kabupaten Malang</option>
+                <option value="Kota Malang">Kota Malang</option>
+                <option value="Kota Batu">Kota Batu</option>
+                <option value="Kabupaten Pasuruan">Kabupaten Pasuruan</option>
+              </optgroup>
+            </select>
+            <MapPin className={`w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none ${
+              regionFilter !== 'ALL' ? 'text-[#00D9F5]' : 'text-white/40'
+            }`} />
+          </div>
+
+          {/* Tombol Reset Filter */}
+          {(searchQuery || typeFilter !== 'ALL' || statusFilter !== 'ALL' || regionFilter !== 'ALL') && (
+            <button
+              onClick={() => {
+                setSearchQuery('');
+                setTypeFilter('ALL');
+                setStatusFilter('ALL');
+                setRegionFilter('ALL');
+              }}
+              className="px-2.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-xs font-semibold flex items-center gap-1 transition-all"
+              title="Reset semua filter pencarian karya"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Reset</span>
+            </button>
+          )}
 
           {/* Refresh Button */}
           {onRefreshFromSupabase && (

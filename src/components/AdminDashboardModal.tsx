@@ -7,7 +7,7 @@ import { AdminUsersTab } from './AdminUsersTab';
 import { AdminDeploymentTab } from './AdminDeploymentTab';
 import { AdminSupabaseTab } from './AdminSupabaseTab';
 import { AdminWorksTab } from './AdminWorksTab';
-import { AdminAddressStatsSection, extractParticipantLocation, normalizeName } from './AdminAddressStatsSection';
+import { AdminAddressStatsSection, extractParticipantLocation, normalizeName, MALANG_RAYA_DISTRICTS } from './AdminAddressStatsSection';
 import { AdminJurySection } from './admin/jury/AdminJurySection';
 import { generateParticipantReportPDF, printElementSafely } from '../lib/pdfGenerator';
 import { getJuryAssignments } from '../lib/juryService';
@@ -251,7 +251,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   // 2. Selain Super Admin dan Divisi Regristasi & Verifikator, menu AKSI & KELOLA peserta dinonaktifkan.
   const canVerifyParticipants = isSuperAdmin || isRegistrasiVerifikator;
 
-  const [activeTab, setActiveTab] = useState<'participants' | 'competitions' | 'works' | 'jury_scoring' | 'documents' | 'stats' | 'users' | 'deployment' | 'supabase'>('participants');
+  const [activeTab, setActiveTab] = useState<'participants' | 'competitions' | 'works' | 'jury_scoring' | 'address_stats' | 'documents' | 'stats' | 'users' | 'deployment' | 'supabase'>('participants');
   const [pdfReportBlobUrl, setPdfReportBlobUrl] = useState<string | null>(null);
   const [juryInitialSubTab, setJuryInitialSubTab] = useState<'dashboard' | 'judges' | 'assignments' | 'criteria'>('dashboard');
   const [juryAutoOpenAdd, setJuryAutoOpenAdd] = useState(false);
@@ -291,20 +291,36 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [regionFilter, setRegionFilter] = useState('ALL');
   const [showPrintModal, setShowPrintModal] = useState(false);
 
-  // Daftar daerah/wilayah (Kecamatan & Kabupaten) unik dari data peserta
+  // Daftar daerah/wilayah (Kecamatan & Kabupaten) unik dari data peserta + master wilayah Malang Raya
   const availableRegions = useMemo(() => {
     const districtsSet = new Set<string>();
     const regenciesSet = new Set<string>();
 
+    // 1. Ekstrak dari seluruh data peserta yang terdaftar
     participants.forEach((p) => {
+      if (p.district && p.district.trim()) {
+        districtsSet.add(normalizeName(p.district));
+      }
+      if (p.regency && p.regency.trim()) {
+        regenciesSet.add(normalizeName(p.regency));
+      }
       const loc = extractParticipantLocation(p);
-      if (loc.district && loc.district !== 'Poncokusumo (Default)') {
+      if (loc.district && loc.district.trim()) {
         districtsSet.add(loc.district);
       }
-      if (loc.regency) {
+      if (loc.regency && loc.regency.trim()) {
         regenciesSet.add(loc.regency);
       }
     });
+
+    // 2. Selalu sediakan daftar kecamatan resmi Malang Raya (Pakis, Poncokusumo, Tumpang, dll.)
+    MALANG_RAYA_DISTRICTS.forEach((d) => districtsSet.add(d));
+
+    // 3. Selalu sediakan kabupaten/kota sekitar
+    regenciesSet.add('Kabupaten Malang');
+    regenciesSet.add('Kota Malang');
+    regenciesSet.add('Kota Batu');
+    regenciesSet.add('Kabupaten Pasuruan');
 
     const sortedDistricts = Array.from(districtsSet).sort((a, b) => a.localeCompare(b));
     const sortedRegencies = Array.from(regenciesSet).sort((a, b) => a.localeCompare(b));
@@ -660,8 +676,10 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       matchRegion = 
         pDist === regTarget ||
         pDist.includes(regTarget) ||
+        (pDist.length > 3 && regTarget.includes(pDist)) ||
         pReg === regTarget ||
         pReg.includes(regTarget) ||
+        (pReg.length > 3 && regTarget.includes(pReg)) ||
         pAddr.includes(regTarget);
     }
 
@@ -908,6 +926,20 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black uppercase bg-[#00D9F5]/20 text-[#00D9F5] border border-[#00D9F5]/40">
               CMS
             </span>
+          </button>
+
+          {/* TAB KHUSUS: SEBARAN WILAYAH PESERTA */}
+          <button
+            id="admin-tab-btn-wilayah"
+            onClick={() => setActiveTab('address_stats')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all relative ${
+              activeTab === 'address_stats'
+                ? 'bg-gradient-to-r from-[#006B4F] to-[#008F72] text-[#00D9F5] border border-[#00D9F5]/50 shadow'
+                : 'text-[#DDE7E8] hover:bg-white/5'
+            }`}
+          >
+            <MapPin className="w-3.5 h-3.5 text-[#00D9F5]" />
+            <span>Sebaran Wilayah</span>
           </button>
 
           <button
@@ -2256,6 +2288,20 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   })}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* TAB KHUSUS: SEBARAN WILAYAH PESERTA */}
+          {activeTab === 'address_stats' && (
+            <div className="space-y-4">
+              <AdminAddressStatsSection
+                participants={participants}
+                onViewParticipantsLocation={(locationName) => {
+                  setRegionFilter(locationName);
+                  setSearchQuery('');
+                  setActiveTab('participants');
+                }}
+              />
             </div>
           )}
 

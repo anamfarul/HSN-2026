@@ -93,15 +93,17 @@ export const CountdownSection: React.FC = () => {
             ))}
           </div>
 
-          {/* Bottom Reminder Banner */}
-          <div className="mt-6 pt-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-3 text-xs text-[#DDE7E8]/80">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-[#10B981] animate-ping" />
-              <span>Registrasi dan Pengumpulan Karya Terbuka Hingga Pertengahan Oktober 2026</span>
+          {/* Bottom Announcement Card */}
+          <div className="mt-6 pt-4 border-t border-white/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-[#DDE7E8]/90">
+            <div className="flex items-start sm:items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#00D9F5] animate-ping shrink-0 mt-1 sm:mt-0" />
+              <span>
+                <strong>Pengumpulan/Aploud Karya:</strong> 18 Okt 2026 (24.00 WIB) • <strong>Pengumuman Juara:</strong> 23 Okt 2026 (18.00 WIB) Malam Puncak HSN (Offline & Live YouTube)
+              </span>
             </div>
-            <div className="flex items-center gap-1.5 text-[#F2C96D] font-semibold">
+            <div className="flex items-center gap-1.5 text-[#F2C96D] font-bold shrink-0">
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Persiapkan Santri Lembaga Anda!</span>
+              <span>Puncak Penganugerahan</span>
             </div>
           </div>
         </div>
