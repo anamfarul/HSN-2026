@@ -297,52 +297,288 @@ export function getStableUuid(rawId?: string): string {
   return deterministicUuid;
 }
 
+export function normalizeCategoryCode(raw?: string): string {
+  if (!raw) return '';
+  const s = String(raw).toUpperCase().trim();
+
+  // 1. Fatayat (FATAYAT, FTY, FAT)
+  if (
+    s.includes('FATAYAT') ||
+    s.includes('FTY') ||
+    s === 'FAT' ||
+    s.includes('-FAT-') ||
+    s.includes('-FTY-') ||
+    s.startsWith('FAT-') ||
+    s.startsWith('FTY-') ||
+    s.endsWith('-FAT') ||
+    s.endsWith('-FTY')
+  ) {
+    return 'FATAYAT';
+  }
+
+  // 2. IPNU / IPPNU
+  if (s.includes('IPNU') || s.includes('IPPNU')) {
+    return 'IPNU/IPPNU';
+  }
+
+  // 3. Muslimat
+  if (
+    s.includes('MUSLIMAT') ||
+    s === 'MUS' ||
+    s.includes('-MUS-') ||
+    s.startsWith('MUS-') ||
+    s.endsWith('-MUS')
+  ) {
+    return 'MUSLIMAT';
+  }
+
+  // 4. Pagar Nusa
+  if (
+    s.includes('PAGAR') ||
+    s.includes('NUSA') ||
+    s.includes('PENCAK') ||
+    s.includes('SILAT') ||
+    s === 'PN' ||
+    s.includes('-PN-') ||
+    s.startsWith('PN-') ||
+    s.endsWith('-PN')
+  ) {
+    return 'PAGAR NUSA';
+  }
+
+  // 5. Ansor / Banser
+  if (
+    s.includes('ANSOR') ||
+    s.includes('BANSER') ||
+    s === 'ANS' ||
+    s.includes('-ANS-') ||
+    s.startsWith('ANS-') ||
+    s.endsWith('-ANS')
+  ) {
+    return 'ANSOR';
+  }
+
+  // 6. Guru / Asatidz
+  if (
+    s.includes('GURU') ||
+    s.includes('ASATIDZ') ||
+    s.includes('USTADZ') ||
+    s.includes('USTAD') ||
+    s === 'GRU' ||
+    s.includes('-GRU-') ||
+    s.startsWith('GRU-') ||
+    s.endsWith('-GRU')
+  ) {
+    return 'GURU';
+  }
+
+  // 7. PAUD / RA / TK
+  if (
+    s.includes('PAUD') ||
+    s.includes('RA/TK') ||
+    s.includes('TK') ||
+    s.includes('RA') ||
+    s.includes('-PAUD-') ||
+    s.startsWith('PAUD-')
+  ) {
+    return 'PAUD/RA/TK';
+  }
+
+  // 8. SD / MI
+  if (
+    s.includes('SD/MI') ||
+    s.includes('SD / MI') ||
+    s.includes('-SD-') ||
+    s.startsWith('SD-') ||
+    s.endsWith('-SD') ||
+    s === 'SD' ||
+    s.includes('-MI-') ||
+    s.startsWith('MI-') ||
+    s.endsWith('-MI') ||
+    s === 'MI' ||
+    s.includes('MADRASAH IBTIDAIYAH') ||
+    s.includes('SEKOLAH DASAR')
+  ) {
+    return 'SD/MI';
+  }
+
+  // 9. SMP / MTs
+  if (
+    s.includes('SMP/MTS') ||
+    s.includes('SMP / MTS') ||
+    s.includes('-SMP-') ||
+    s.startsWith('SMP-') ||
+    s.endsWith('-SMP') ||
+    s === 'SMP' ||
+    s.includes('-MTS-') ||
+    s.startsWith('MTS-') ||
+    s.endsWith('-MTS') ||
+    s === 'MTS' ||
+    s.includes('TSANAWIYAH')
+  ) {
+    return 'SMP/MTs';
+  }
+
+  // 10. SMA / MA / SMK
+  if (
+    s.includes('SMA/MA') ||
+    s.includes('SMA / MA') ||
+    s.includes('-SMA-') ||
+    s.startsWith('SMA-') ||
+    s.endsWith('-SMA') ||
+    s === 'SMA' ||
+    s.includes('-SMK-') ||
+    s.startsWith('SMK-') ||
+    s.endsWith('-SMK') ||
+    s === 'SMK' ||
+    s.includes('-MA-') ||
+    s.startsWith('MA-') ||
+    s.endsWith('-MA') ||
+    s === 'MA' ||
+    s.includes('ALIYAH')
+  ) {
+    return 'SMA/MA/SMK';
+  }
+
+  // 11. Umum
+  if (s.includes('UMUM') || s === 'ALL') {
+    return 'UMUM';
+  }
+
+  return s;
+}
+
+export function getParticipantCategory(p: any): string {
+  if (!p) return '';
+
+  // 1. Ekstrak langsung dari registrationNumber (format baku festival: HSN26-{CAT}-{NUM})
+  const regNo = String(p.registrationNumber || p.registration_number || '').toUpperCase().trim();
+  if (regNo) {
+    const regMatch = regNo.match(/^HSN(?:26)?-([A-Z0-9/]+)-\d+/);
+    if (regMatch && regMatch[1]) {
+      const codeNorm = normalizeCategoryCode(regMatch[1]);
+      if (codeNorm) return codeNorm;
+    }
+  }
+
+  // 2. Field category langsung
+  const rawCat = p.category || p.category_generation || p.competitionCategory || p.competition_category;
+  if (rawCat) {
+    const catNorm = normalizeCategoryCode(rawCat);
+    if (catNorm) return catNorm;
+  }
+
+  // 3. Field competitionId jika mengandung kode kategori (misal LMB-FTY-01 atau LMB-SD-01)
+  const cId = String(p.competitionId || p.competition_id || '').toUpperCase();
+  if (cId) {
+    const idNorm = normalizeCategoryCode(cId);
+    if (idNorm && idNorm !== 'UMUM') return idNorm;
+  }
+
+  return '';
+}
+
+export function getCompetitionCategory(c: any): string {
+  if (!c) return '';
+  if (typeof c === 'string') {
+    return normalizeCategoryCode(c);
+  }
+
+  if (c.category) {
+    const norm = normalizeCategoryCode(c.category);
+    if (norm) return norm;
+  }
+
+  if (c.code) {
+    const norm = normalizeCategoryCode(c.code);
+    if (norm) return norm;
+  }
+
+  if (c.id) {
+    const norm = normalizeCategoryCode(c.id);
+    if (norm && norm !== 'UMUM') return norm;
+  }
+
+  if (c.targetAudience) {
+    const norm = normalizeCategoryCode(c.targetAudience);
+    if (norm && norm !== 'UMUM') return norm;
+  }
+
+  return '';
+}
+
 export function resolveCompetition(
   competitionsList: Competition[],
   competitionId?: string,
-  competitionTitle?: string
+  competitionTitle?: string,
+  categoryHint?: string
 ): Competition | undefined {
   if (!competitionsList || competitionsList.length === 0) return undefined;
-  if (!competitionId && !competitionTitle) return undefined;
+  if (!competitionId && !competitionTitle && !categoryHint) return undefined;
   
   const normId = competitionId ? normalizeCompId(competitionId) : undefined;
   const cleanCompId = competitionId ? competitionId.trim().toLowerCase() : '';
+  const targetCat = categoryHint ? normalizeCategoryCode(categoryHint) : '';
 
-  // 1. Direct ID match
+  const matchesCat = (c: Competition) => {
+    if (!targetCat || targetCat === 'UMUM') return true;
+    const cCat = getCompetitionCategory(c);
+    return !cCat || cCat === 'UMUM' || cCat === targetCat;
+  };
+
+  // 1. Direct ID match dengan kategori cocok
   if (normId) {
-    const matched = competitionsList.find((c) => c.id.toLowerCase() === normId.toLowerCase());
+    const matched = competitionsList.find((c) => c.id.toLowerCase() === normId.toLowerCase() && matchesCat(c));
     if (matched) return matched;
   }
 
-  // 2. Stable UUID match (jika competition_id di database disimpan dalam format UUID)
+  // 2. Stable UUID match dengan kategori cocok
   if (cleanCompId) {
     const matchedByUuid = competitionsList.find(
-      (c) => getStableUuid(c.id).toLowerCase() === cleanCompId || (c.code && getStableUuid(c.code).toLowerCase() === cleanCompId)
+      (c) => (getStableUuid(c.id).toLowerCase() === cleanCompId || (c.code && getStableUuid(c.code).toLowerCase() === cleanCompId)) && matchesCat(c)
     );
     if (matchedByUuid) return matchedByUuid;
   }
 
-  // 3. Direct code match (misal LMB-SMP-01)
+  // 3. Direct code match (misal LMB-FTY-01) dengan kategori cocok
   if (competitionId) {
-    const matched = competitionsList.find((c) => c.code?.toLowerCase() === cleanCompId);
+    const matched = competitionsList.find((c) => c.code?.toLowerCase() === cleanCompId && matchesCat(c));
     if (matched) return matched;
   }
 
-  // 4. Exact title match
+  // 4. Exact title match dengan kategori cocok
   if (competitionTitle) {
     const cleanTitle = competitionTitle.toLowerCase().trim();
-    const matched = competitionsList.find((c) => c.title.toLowerCase().trim() === cleanTitle);
+    const matched = competitionsList.find((c) => c.title.toLowerCase().trim() === cleanTitle && matchesCat(c));
     if (matched) return matched;
   }
 
-  // 5. Fuzzy / Contains title match
+  // 5. Fuzzy / Contains title match dengan kategori cocok
   if (competitionTitle) {
     const cleanTitle = competitionTitle.toLowerCase().trim();
     const matched = competitionsList.find((c) => {
       const cTitle = c.title.toLowerCase().trim();
-      return cTitle.includes(cleanTitle) || cleanTitle.includes(cTitle);
+      return (cTitle.includes(cleanTitle) || cleanTitle.includes(cTitle)) && matchesCat(c);
     });
     if (matched) return matched;
+  }
+
+  // Fallback tanpa filter kategori (hanya jika targetCat tidak diberikan)
+  if (!targetCat) {
+    if (normId) {
+      const m = competitionsList.find((c) => c.id.toLowerCase() === normId.toLowerCase());
+      if (m) return m;
+    }
+    if (competitionTitle) {
+      const cleanTitle = competitionTitle.toLowerCase().trim();
+      const m = competitionsList.find((c) => c.title.toLowerCase().trim() === cleanTitle);
+      if (m) return m;
+      const mFuzzy = competitionsList.find((c) => {
+        const cTitle = c.title.toLowerCase().trim();
+        return cTitle.includes(cleanTitle) || cleanTitle.includes(cTitle);
+      });
+      if (mFuzzy) return mFuzzy;
+    }
   }
 
   return undefined;
@@ -418,10 +654,46 @@ export function matchParticipantToCompetition(
     : allCompetitions.find((c) => c.id === targetCompId || normalizeCompId(c.id).toLowerCase() === normTarget) ||
       resolveCompetition(allCompetitions, targetCompId);
 
+  // Kategori Kompetisi Target & Kategori Peserta
+  const targetCat = getCompetitionCategory(targetComp || targetCompId);
+  const partCat = getParticipantCategory(participant);
+
+  // ==============================================================================
+  // ATURAN INTEGRITAS KATEGORI #1 (MUTLAK / DISKRIMINASI KATEGORI RESMI)
+  // Peserta DILARANG KERAS masuk ke cabang lomba kategori lain yang berbeda!
+  // Contoh: Peserta IPNU (#IPNU-4741) atau SD (#SD-8566) TIDAK BOLEH tampil di lomba Fatayat (#FATAYAT-6735),
+  // meskipun kedua cabang lomba sama-sama memiliki judul "Lomba Video Kreatif".
+  // ==============================================================================
+  if (targetCat && targetCat !== 'UMUM') {
+    // 1a. Cek kategori peserta jika terdefinisi
+    if (partCat && partCat !== 'UMUM' && partCat !== targetCat) {
+      return false;
+    }
+
+    // 1b. Cek dari nomor registrasi peserta (misal HSN26-IPNU-xxx, HSN26-SD-xxx)
+    const regNo = String(participant.registrationNumber || participant.registration_number || '').toUpperCase().trim();
+    const regMatch = regNo.match(/^HSN(?:26)?-([A-Z0-9/]+)-\d+/);
+    if (regMatch && regMatch[1]) {
+      const regCat = normalizeCategoryCode(regMatch[1]);
+      if (regCat && regCat !== 'UMUM' && regCat !== targetCat) {
+        return false;
+      }
+    }
+  }
+
+  // 1c. Kebalikannya: jika peserta memiliki kategori tertentu (misal FATAYAT), tapi target kompetisi kategori lain (misal SD/MI)
+  if (partCat && partCat !== 'UMUM' && targetCat && targetCat !== 'UMUM') {
+    if (partCat !== targetCat) {
+      return false;
+    }
+  }
+
+  // Field ID dan Judul
   const pCompId = String(participant.competitionId || participant.competition_id || '').toLowerCase().trim();
   const pNorm = normalizeCompId(pCompId).toLowerCase().trim();
   const pTitle = String(participant.competitionTitle || participant.competition_title || participant.competition || '').toLowerCase().trim();
   const targetTitle = (targetComp?.title || '').toLowerCase().trim();
+  const targetCode = (targetComp?.code || '').toLowerCase().trim();
 
   // 1. Direct match ID atau normalized ID
   if (pCompId && (pCompId === targetCompId.toLowerCase() || pCompId === normTarget)) {
@@ -431,27 +703,62 @@ export function matchParticipantToCompetition(
     return true;
   }
 
-  // 2. Target comp title exact or contains match
-  if (pTitle && targetTitle) {
-    if (pTitle === targetTitle || pTitle.includes(targetTitle) || targetTitle.includes(pTitle)) {
-      return true;
-    }
+  // 2. Direct code match (misal LMB-FTY-01 atau LMB-FAT-01)
+  if (targetCode && (pCompId === targetCode || pNorm === targetCode)) {
+    return true;
   }
 
-  // 3. Fallback resolve via resolveCompetition
+  // 3. Stable UUID match
+  if (targetComp && getStableUuid(targetComp.id).toLowerCase() === pCompId) {
+    return true;
+  }
+
+  // 4. Fallback resolve via resolveCompetition dengan category-awareness
   if (allCompetitions.length > 0) {
-    const resolvedP = resolveCompetition(allCompetitions, pCompId, pTitle);
+    const resolvedP = resolveCompetition(allCompetitions, pCompId, pTitle, partCat);
     if (resolvedP && (resolvedP.id === targetCompId || normalizeCompId(resolvedP.id).toLowerCase() === normTarget)) {
       return true;
     }
-    if (targetComp && resolvedP && resolvedP.id === targetComp.id) {
+    if (targetComp && resolvedP && (resolvedP.id === targetComp.id || normalizeCompId(resolvedP.id).toLowerCase() === normTarget)) {
       return true;
     }
   }
 
-  // 4. Stable UUID match
-  if (targetComp && getStableUuid(targetComp.id).toLowerCase() === pCompId) {
-    return true;
+  // 5. Target comp title exact or contains match
+  // Catatan: Kategori sudah divalidasi tidak saling bertentangan di ATURAN #1
+  if (pTitle && targetTitle) {
+    if (pTitle === targetTitle) {
+      return true;
+    }
+    if (pTitle.includes(targetTitle) || targetTitle.includes(pTitle)) {
+      // Jika kedua kategori ada dan sama
+      if (targetCat && partCat && targetCat === partCat) {
+        return true;
+      }
+      // Jika salah satu tidak punya kategori
+      if (!targetCat || !partCat) {
+        return true;
+      }
+    }
+  }
+
+  // 6. Pencocokan khusus cabang lomba video / karya kreatif dalam kategori yang sama
+  // (misal peserta mendaftar "Women Creativepreneur Content Creation" di Fatayat dan juri membuka "Lomba Video Kreatif" di Fatayat)
+  if (targetCat && partCat && targetCat === partCat) {
+    const isVideoCreativeComp =
+      targetTitle.includes('video') ||
+      targetTitle.includes('kreatif') ||
+      targetTitle.includes('creative') ||
+      targetTitle.includes('konten');
+    const isVideoCreativePart =
+      pTitle.includes('video') ||
+      pTitle.includes('kreatif') ||
+      pTitle.includes('creative') ||
+      pTitle.includes('konten');
+
+    if (isVideoCreativeComp && isVideoCreativePart) {
+      return true;
+    }
   }
 
   return false;
@@ -468,7 +775,7 @@ export function getCompetitionParticipants(
   if (!participants || !Array.isArray(participants)) return [];
   const compsList = allCompetitions.length > 0
     ? allCompetitions
-    : (typeof competitionOrId === 'object' ? [competitionOrId] : []);
+    : (typeof competitionOrId === 'object' && competitionOrId ? [competitionOrId] : COMPETITIONS);
 
   return participants.filter((p) => matchParticipantToCompetition(p, competitionOrId, compsList));
 }
@@ -4056,7 +4363,8 @@ export async function getCompetitionScoreRecap(
   competitionId: string,
   participants: ParticipantRegistration[],
   juries: UserProfile[],
-  criteria: ScoringCriterion[]
+  criteria: ScoringCriterion[],
+  allCompetitions: Competition[] = []
 ): Promise<{
   rows: ParticipantScoreRow[];
   totalExpectedJuries: number;
@@ -4065,16 +4373,8 @@ export async function getCompetitionScoreRecap(
   divergentParticipantsCount: number;
 }> {
   const normTarget = normalizeCompId(competitionId).toLowerCase();
-  const compParticipants = participants
-    .filter((p) => !isInitialMockParticipant(p))
-    .filter((p) => {
-      const pNorm = normalizeCompId(p.competitionId).toLowerCase();
-      return (
-        p.competitionId === competitionId ||
-        pNorm === normTarget ||
-        p.competitionTitle?.toLowerCase() === competitionId.toLowerCase()
-      );
-    });
+  const compsList = allCompetitions.length > 0 ? allCompetitions : COMPETITIONS;
+  const compParticipants = getCompetitionParticipants(participants, competitionId, compsList);
 
   const assignments = await getJuryAssignments();
   const assignedJuries = assignments.filter((a) => {

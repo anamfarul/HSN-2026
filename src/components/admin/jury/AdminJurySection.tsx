@@ -553,7 +553,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
             .map((a) => a.juryId);
           const compJuries = juries.filter((j) => assignedJuryIds.includes(j.id));
 
-          getCompetitionScoreRecap(selectedCompId, participants, compJuries, crit).then((res) => {
+          getCompetitionScoreRecap(selectedCompId, participants, compJuries, crit, competitions).then((res) => {
             setRecapData(res);
             // Pre-populate winner selections if available
             const initialWinners: Record<string, WinnerTitle | ''> = {};

@@ -251,7 +251,10 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
     if (typeof window !== 'undefined') {
       try {
         const search = new URLSearchParams(window.location.search);
-        const jId = search.get('juryId') || search.get('id');
+        let jId = search.get('juryId') || search.get('id');
+        if (jId && (jId === '[object Object]' || jId.includes('object Object'))) {
+          jId = null;
+        }
         const email = search.get('email');
         const user = search.get('user');
         const pass = search.get('pass') || search.get('password');
@@ -445,16 +448,30 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
     }
   }, [assignedCompetitions, selectedCompId, currentView]);
 
-  // Participants in selected competition (Hanya peserta riil, bukan mock/dummy)
-  const currentCompParticipants = useMemo(() => {
-    if (!selectedCompId) return [];
-    return getCompetitionParticipants(participants, selectedCompId, competitions);
-  }, [participants, selectedCompId, competitions]);
-
   // Currently selected competition object
   const selectedCompetition = useMemo(() => {
-    return competitions.find((c) => c.id === selectedCompId);
-  }, [competitions, selectedCompId]);
+    if (!selectedCompId) return null;
+    return (
+      competitions.find(
+        (c) =>
+          c.id === selectedCompId ||
+          normalizeCompId(c.id).toLowerCase() === normalizeCompId(selectedCompId).toLowerCase()
+      ) ||
+      assignedCompetitions.find(
+        (c) =>
+          c.id === selectedCompId ||
+          normalizeCompId(c.id).toLowerCase() === normalizeCompId(selectedCompId).toLowerCase()
+      ) ||
+      resolveCompetition(competitions, selectedCompId) ||
+      null
+    );
+  }, [competitions, selectedCompId, assignedCompetitions]);
+
+  // Participants in selected competition (Hanya peserta riil, bukan mock/dummy, sesuai kategori)
+  const currentCompParticipants = useMemo(() => {
+    if (!selectedCompId) return [];
+    return getCompetitionParticipants(participants, selectedCompetition || selectedCompId, competitions);
+  }, [participants, selectedCompId, selectedCompetition, competitions]);
 
   // Currently selected participant object
   const selectedParticipant = useMemo(() => {

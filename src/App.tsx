@@ -224,16 +224,22 @@ export default function App() {
     };
   }, []);
 
-  const handleOpenJury = (juryId?: string) => {
+  const handleOpenJury = (juryId?: string | any) => {
     setIsJuryPortalOpen(true);
     if (typeof window !== 'undefined') {
       try {
-        const targetPath = juryId ? `/juri?juryId=${encodeURIComponent(juryId)}` : '/juri';
+        const cleanJuryId = typeof juryId === 'string' && juryId !== '[object Object]' && !juryId.includes('object Object')
+          ? juryId
+          : (juryId && typeof juryId === 'object' ? (juryId as any).id || (juryId as any).juryId || '' : '');
+        const targetPath = cleanJuryId ? `/juri?juryId=${encodeURIComponent(cleanJuryId)}` : '/juri';
         if (window.location.pathname !== '/juri') {
           window.history.pushState({}, '', targetPath);
         }
       } catch {
-        window.location.hash = juryId ? `#juri?juryId=${encodeURIComponent(juryId)}` : '#juri';
+        const cleanJuryId = typeof juryId === 'string' && juryId !== '[object Object]' && !juryId.includes('object Object')
+          ? juryId
+          : (juryId && typeof juryId === 'object' ? (juryId as any).id || (juryId as any).juryId || '' : '');
+        window.location.hash = cleanJuryId ? `#juri?juryId=${encodeURIComponent(cleanJuryId)}` : '#juri';
       }
     }
   };
