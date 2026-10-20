@@ -475,6 +475,18 @@ export function getParticipantCategory(p: any): string {
     if (idNorm && idNorm !== 'UMUM') return idNorm;
   }
 
+  // 4. Periksa judul perlombaan yang terdaftar pada peserta
+  const cTitle = String(p.competitionTitle || p.competition_title || p.competition || '').toUpperCase();
+  if (cTitle) {
+    if (cTitle.includes('FATAYAT')) return 'FATAYAT';
+    if (cTitle.includes('GURU') || cTitle.includes('PEMBELAJARAN')) return 'GURU';
+    if (cTitle.includes('IPNU') || cTitle.includes('IPPNU')) return 'IPNU/IPPNU';
+    if (cTitle.includes('SANTRI') || cTitle.includes('PESANTREN')) return 'SANTRI';
+    if (cTitle.includes('SD') || cTitle.includes('MI')) return 'SD/MI';
+    if (cTitle.includes('SMP') || cTitle.includes('MTS')) return 'SMP/MTS';
+    if (cTitle.includes('SMA') || cTitle.includes('SMK') || cTitle.includes('MA') || cTitle.includes('ALIYAH')) return 'SMA/MA/SMK';
+  }
+
   return '';
 }
 
@@ -502,6 +514,17 @@ export function getCompetitionCategory(c: any): string {
   if (c.targetAudience) {
     const norm = normalizeCategoryCode(c.targetAudience);
     if (norm && norm !== 'UMUM') return norm;
+  }
+
+  if (c.title) {
+    const upperTitle = String(c.title).toUpperCase();
+    if (upperTitle.includes('FATAYAT')) return 'FATAYAT';
+    if (upperTitle.includes('GURU') || upperTitle.includes('PEMBELAJARAN')) return 'GURU';
+    if (upperTitle.includes('IPNU') || upperTitle.includes('IPPNU')) return 'IPNU/IPPNU';
+    if (upperTitle.includes('SANTRI') || upperTitle.includes('PESANTREN')) return 'SANTRI';
+    if (upperTitle.includes('SD') || upperTitle.includes('MI')) return 'SD/MI';
+    if (upperTitle.includes('SMP') || upperTitle.includes('MTS')) return 'SMP/MTS';
+    if (upperTitle.includes('SMA') || upperTitle.includes('SMK') || upperTitle.includes('MA') || upperTitle.includes('ALIYAH')) return 'SMA/MA/SMK';
   }
 
   return '';
@@ -728,15 +751,17 @@ export function matchParticipantToCompetition(
   // Catatan: Kategori sudah divalidasi tidak saling bertentangan di ATURAN #1
   if (pTitle && targetTitle) {
     if (pTitle === targetTitle) {
+      if (targetCat && partCat && targetCat !== partCat) {
+        return false;
+      }
       return true;
     }
+    // Jika hanya substring, WAJIB memiliki kategori yang sama persis
     if (pTitle.includes(targetTitle) || targetTitle.includes(pTitle)) {
-      // Jika kedua kategori ada dan sama
       if (targetCat && partCat && targetCat === partCat) {
         return true;
       }
-      // Jika salah satu tidak punya kategori
-      if (!targetCat || !partCat) {
+      if (!targetCat && !partCat) {
         return true;
       }
     }
@@ -790,15 +815,19 @@ export function isAssignmentForJury(
   jury: { id?: string; email?: string; username?: string; role?: string; fullName?: string } | null
 ): boolean {
   if (!assignment || !jury) return false;
-  if (!assignment.isActive) return false;
+  if (assignment.isActive === false) return false;
 
   const aJuryId = (assignment.juryId || '').toLowerCase().trim();
   const jId = (jury.id || '').toLowerCase().trim();
-  const jName = ((jury as any).fullName || '').toLowerCase().trim();
-  const aName = (assignment.juryName || '').toLowerCase().trim();
+  const rawJName = ((jury as any).fullName || '').toLowerCase().trim();
+  const rawAName = (assignment.juryName || '').toLowerCase().trim();
   const jEmail = (jury.email || '').toLowerCase().trim();
   const aEmail = (assignment.juryEmail || '').toLowerCase().trim();
   const jUser = (jury.username || '').toLowerCase().trim();
+
+  // Bersihkan catatan kurung seperti "(Panitia CMS)" atau "(Sekretariat)"
+  const jName = rawJName.replace(/\s*\(.*?\)\s*/g, '').trim();
+  const aName = rawAName.replace(/\s*\(.*?\)\s*/g, '').trim();
 
   // 1. Direct ID match
   if (aJuryId && jId && aJuryId === jId) return true;
@@ -814,21 +843,35 @@ export function isAssignmentForJury(
 
   // 4. Email match (case-insensitive)
   if (jEmail && aEmail && jEmail === aEmail) return true;
+  if (jEmail && aJuryId && jEmail === aJuryId) return true;
 
   // 5. Username match
   if (jUser) {
     if (aJuryId === jUser || normA === jUser) return true;
-    if (aName === jUser) return true;
+    if (aName === jUser || rawAName === jUser) return true;
   }
 
-  // 6. Full Name exact or inclusion match
+  // 6. Alphanumeric stripped match (misal: "dewan2" vs "dewan 2" atau "DEWAN2")
+  const alphaJName = jName.replace(/[^a-z0-9]/g, '');
+  const alphaAName = aName.replace(/[^a-z0-9]/g, '');
+  const alphaAJuryId = aJuryId.replace(/[^a-z0-9]/g, '');
+  const alphaJId = jId.replace(/[^a-z0-9]/g, '');
+  const alphaJUser = jUser.replace(/[^a-z0-9]/g, '');
+
+  if (alphaJName && alphaAName && alphaJName === alphaAName) return true;
+  if (alphaJName && alphaAJuryId && alphaJName === alphaAJuryId) return true;
+  if (alphaJUser && alphaAName && alphaJUser === alphaAName) return true;
+  if (alphaJUser && alphaAJuryId && alphaJUser === alphaAJuryId) return true;
+  if (alphaJId && alphaAName && alphaJId === alphaAName) return true;
+
+  // 7. Full Name exact or inclusion match
   if (jName && aName) {
     if (jName === aName) return true;
     if (jName.length >= 4 && aName.includes(jName)) return true;
     if (aName.length >= 4 && jName.includes(aName)) return true;
   }
 
-  // 7. If jury fullName or username equals assignment.juryId
+  // 8. If jury fullName or username equals assignment.juryId
   if (jName && aJuryId === jName) return true;
   if (jId && aName === jId) return true;
 
@@ -1109,24 +1152,23 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
       try {
         const { data: jpRows, error: jpErr } = await supabase
           .from('jury_profiles')
-          .select('*')
-          .order('created_at', { ascending: true });
+          .select('*');
 
         juryProfilesErr = jpErr;
         if (!jpErr && jpRows && Array.isArray(jpRows) && jpRows.length > 0) {
           for (const p of jpRows) {
             const email = (p.email || '').trim().toLowerCase();
-            const username = (p.username || '').trim().toLowerCase() || (email.includes('@') ? email.split('@')[0] : email) || p.id;
+            const username = (p.username || p.user || '').trim().toLowerCase() || (email.includes('@') ? email.split('@')[0] : email) || String(p.id);
             remoteList.push({
-              id: p.id,
-              fullName: p.full_name || p.fullName || 'Dewan Juri',
+              id: String(p.id),
+              fullName: p.full_name || p.fullName || p.name || p.nama || 'Dewan Juri',
               email: email,
               role: 'jury' as const,
-              institution: p.institution || 'MWC NU Poncokusumo',
-              phone: p.phone || '',
-              isActive: p.is_active !== undefined ? Boolean(p.is_active) : (p.isActive ?? true),
+              institution: p.institution || p.lembaga || 'MWC NU Poncokusumo',
+              phone: p.phone || p.telepon || p.no_hp || '',
+              isActive: p.is_active !== undefined ? Boolean(p.is_active) : (p.status ? p.status === 'aktif' || p.status === 'active' : (p.isActive ?? true)),
               username: username,
-              password: p.password || 'santri2026',
+              password: p.password || p.sandi || 'santri2026',
               createdAt: p.created_at || p.createdAt || new Date().toISOString(),
               updatedAt: p.updated_at || p.updatedAt || new Date().toISOString(),
             });
@@ -1134,29 +1176,28 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
         }
       } catch {}
 
-      // 1b. Coba ambil dari tabel public.profile_juri atau public.jury_profile jika pengguna menggunakan nama tersebut
+      // 1b. Coba ambil dari tabel public.profile_juri (tabel profil juri Supabase buatan pengguna)
       try {
         const { data: pjRows, error: pjErr } = await supabase
           .from('profile_juri')
-          .select('*')
-          .order('created_at', { ascending: true });
+          .select('*');
 
         if (!pjErr && pjRows && Array.isArray(pjRows) && pjRows.length > 0) {
           for (const p of pjRows) {
             const email = (p.email || '').trim().toLowerCase();
-            const username = (p.username || '').trim().toLowerCase() || (email.includes('@') ? email.split('@')[0] : email) || p.id;
-            const exists = remoteList.some((r) => r.id === p.id || (r.username && r.username === username) || (r.email && r.email === email));
+            const username = (p.username || p.user || p.nama_user || '').trim().toLowerCase() || (email.includes('@') ? email.split('@')[0] : email) || String(p.id);
+            const exists = remoteList.some((r) => r.id === String(p.id) || (r.username && r.username === username) || (r.email && email && r.email === email));
             if (!exists) {
               remoteList.push({
-                id: p.id,
-                fullName: p.full_name || p.fullName || p.name || 'Dewan Juri',
+                id: String(p.id),
+                fullName: p.full_name || p.fullName || p.name || p.nama || p.nama_juri || p.nama_lengkap || 'Dewan Juri',
                 email: email,
                 role: 'jury' as const,
-                institution: p.institution || 'MWC NU Poncokusumo',
-                phone: p.phone || '',
-                isActive: p.is_active !== undefined ? Boolean(p.is_active) : (p.isActive ?? true),
+                institution: p.institution || p.lembaga || p.instansi || 'MWC NU Poncokusumo',
+                phone: p.phone || p.telepon || p.no_hp || '',
+                isActive: p.is_active !== undefined ? Boolean(p.is_active) : (p.status ? p.status === 'aktif' || p.status === 'active' : (p.isActive ?? true)),
                 username: username,
-                password: p.password || 'santri2026',
+                password: p.password || p.sandi || 'santri2026',
                 createdAt: p.created_at || p.createdAt || new Date().toISOString(),
                 updatedAt: p.updated_at || p.updatedAt || new Date().toISOString(),
               });
@@ -1168,20 +1209,19 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
       // 1c. Coba ambil seluruh data dari tabel public.profiles di Supabase
       const { data: profileRows, error: profileErr } = await supabase
         .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: true });
+        .select('*');
 
       if (!profileErr && profileRows && Array.isArray(profileRows) && profileRows.length > 0) {
         for (const p of profileRows) {
           const email = (p.email || '').trim().toLowerCase();
-          const username = (p.username || '').trim().toLowerCase() || (email.includes('@') ? email.split('@')[0] : email) || p.id;
+          const username = (p.username || '').trim().toLowerCase() || (email.includes('@') ? email.split('@')[0] : email) || String(p.id);
           const password = p.password || 'santri2026';
 
-          const exists = remoteList.some((r) => r.id === p.id || (r.username && r.username === username) || (r.email && r.email === email));
+          const exists = remoteList.some((r) => r.id === String(p.id) || (r.username && r.username === username) || (r.email && email && r.email === email));
           if (!exists) {
             remoteList.push({
-              id: p.id,
-              fullName: p.full_name || p.fullName || 'Dewan Juri',
+              id: String(p.id),
+              fullName: p.full_name || p.fullName || p.name || 'Dewan Juri',
               email: email,
               role: 'jury' as const,
               institution: p.institution || 'MWC NU Poncokusumo',
@@ -2027,6 +2067,21 @@ export function getAvailableCompetitions(): Competition[] {
   }
 }
 
+export function getLocalAssignments(): JuryAssignment[] {
+  return getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, []).filter((a) => a && a.isActive);
+}
+
+export function getLocalScores(juryId?: string, competitionId?: string): JuryScore[] {
+  const normComp = competitionId ? normalizeCompId(competitionId).toLowerCase() : undefined;
+  const scores = getLocal<JuryScore[]>(STORAGE_SCORES, []).filter((s) => !isMockScore(s) && !isScoreDeleted(s));
+  if (!juryId && !competitionId) return scores;
+  return scores.filter((s) => {
+    if (juryId && s.juryId !== juryId) return false;
+    if (competitionId && s.competitionId !== competitionId && normalizeCompId(s.competitionId).toLowerCase() !== normComp) return false;
+    return true;
+  });
+}
+
 // ==============================================================================
 // 5. JURY ASSIGNMENTS SERVICE
 // ==============================================================================
@@ -2068,31 +2123,41 @@ export async function getJuryAssignments(
       }
 
       // 2. Jika join error (foreign key belum terbentuk di Supabase), fallback ke query langsung tanpa join
-      if (error || !data) {
+      if (error || !data || data.length === 0) {
         const plainRes = await supabase
           .from('jury_assignments')
-          .select('*')
-          .eq('is_active', true);
-        if (!plainRes.error && plainRes.data) {
+          .select('*');
+        if (!plainRes.error && plainRes.data && plainRes.data.length > 0) {
           data = plainRes.data;
           error = null;
         }
       }
 
-      if (!error && data !== null) {
+      // 3. Coba juga tabel penugasan_juri (format tabel bahasa Indonesia)
+      if (!data || data.length === 0) {
+        try {
+          const pjRes = await supabase.from('penugasan_juri').select('*');
+          if (!pjRes.error && pjRes.data && pjRes.data.length > 0) {
+            data = pjRes.data;
+            error = null;
+          }
+        } catch {}
+      }
+
+      if (!error && data !== null && Array.isArray(data)) {
         fetchedFromRemote = true;
         rawList = data.map((d: any) => ({
-          id: d.id,
-          juryId: d.jury_id || d.juryId,
-          competitionId: normalizeCompId(d.competition_id || d.competitionId),
+          id: String(d.id || `assign-${d.jury_id || d.juri_id || d.juryId}-${d.competition_id || d.lomba_id || d.competitionId}`),
+          juryId: String(d.jury_id || d.juryId || d.juri_id || d.id_juri || ''),
+          competitionId: normalizeCompId(d.competition_id || d.competitionId || d.lomba_id || d.id_lomba || d.cabang_id || d.cabang),
           assignedBy: d.assigned_by || d.assignedBy || 'Admin CMS',
-          isActive: d.is_active !== undefined ? d.is_active : (d.isActive ?? true),
-          createdAt: d.created_at || d.createdAt,
-          juryName: d.jury_name || d.juryName || d.profiles?.full_name,
-          juryEmail: d.jury_email || d.juryEmail || d.profiles?.email,
-          juryInstitution: d.jury_institution || d.juryInstitution || d.profiles?.institution,
-          competitionTitle: d.competition_title || d.competitionTitle || d.competitions?.title,
-          competitionCategory: d.competition_category || d.competitionCategory || d.competitions?.category,
+          isActive: d.is_active !== undefined ? Boolean(d.is_active) : (d.status ? d.status === 'aktif' || d.status === 'active' : (d.isActive ?? true)),
+          createdAt: d.created_at || d.createdAt || new Date().toISOString(),
+          juryName: d.jury_name || d.juryName || d.nama_juri || d.nama || d.profiles?.full_name,
+          juryEmail: d.jury_email || d.juryEmail || d.email || d.profiles?.email,
+          juryInstitution: d.jury_institution || d.juryInstitution || d.lembaga || d.profiles?.institution,
+          competitionTitle: d.competition_title || d.competitionTitle || d.judul_lomba || d.nama_lomba || d.competitions?.title,
+          competitionCategory: d.competition_category || d.competitionCategory || d.kategori || d.competitions?.category,
         }));
       }
     } catch (err) {
@@ -2151,10 +2216,9 @@ export async function getJuryAssignments(
   // Active competitions authoritative list from CMS Panitia
   const allComps = customCompetitions && customCompetitions.length > 0 ? customCompetitions : getAvailableCompetitions();
   const validCompMap = new Map(allComps.map((c) => [c.id, c]));
-  const localJuries = getLocal<UserProfile[]>(STORAGE_PROFILES, []);
   const juries = (knownJuries && knownJuries.length > 0)
     ? knownJuries
-    : (localJuries.length > 0 ? localJuries : await getJuryProfiles());
+    : await getJuryProfiles();
 
   // Self-heal and strictly sanitize assignments: ONLY keep assignments that belong to valid competitions AND registered active juries!
   let normalizedList: JuryAssignment[] = rawList

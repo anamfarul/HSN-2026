@@ -314,12 +314,16 @@ export default function App() {
     const connected = isSupabaseConnected();
     setIsSupabaseLive(connected);
 
+    let updatedComps: Competition[] | undefined;
+    let updatedParticipants: ParticipantRegistration[] | undefined;
+
     try {
       // 1. Cabang Lomba
       const { data: remoteComps } = await fetchCompetitionsFromSupabase();
       if (remoteComps && remoteComps.length > 0) {
         const deleted = getDeletedCompIds();
-        setCompetitions(remoteComps.filter((c) => !deleted.includes(c.id)));
+        updatedComps = remoteComps.filter((c) => !deleted.includes(c.id));
+        setCompetitions(updatedComps);
         setIsSupabaseLive(true);
       }
 
@@ -353,6 +357,7 @@ export default function App() {
             }
             return remP;
           });
+          updatedParticipants = merged;
           saveCleanParticipantsToStorage(merged);
           return merged;
         });
@@ -377,6 +382,8 @@ export default function App() {
     } finally {
       setSupabaseLoading(false);
     }
+
+    return { competitions: updatedComps, participants: updatedParticipants };
   };
 
   useEffect(() => {

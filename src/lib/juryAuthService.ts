@@ -189,91 +189,125 @@ export async function signInJury(
   }
 
   // ==============================================================================
-  // 1. CEK KREDENSIAL AKUN CMS PANITIA / ADMINISTRATOR
-  // (Memungkinkan username & password dari CMS Penilaian Juri digunakan untuk login)
+  // 1. CEK DAFTAR DEWAN JURI TERLEBIH DAHULU (PRIORITAS UTAMA PORTAL JURI)
+  // Menjamin akun juri riil (misal DEWAN1, DEWAN2, SILAT2, dll.) mendapatkan sesi juri autentik
   // ==============================================================================
-  let isCmsAdminAuthenticated = false;
-  let adminMatchedUser: any = null;
-
+  let allJuries: UserProfile[] = [];
   try {
-    const allAdmins = getRegisteredAdminUsers();
-    adminMatchedUser = allAdmins.find((u) => {
-      const uName = (u.username || '').trim().toLowerCase();
-      const uEmail = (u.email || '').trim().toLowerCase();
-      const uFull = (u.fullName || '').trim().toLowerCase();
-      const uPhone = (u.phone || '').replace(/[^0-9]/g, '');
-      const digits = cleanId.replace(/[^0-9]/g, '');
+    allJuries = await getJuryProfiles();
+  } catch {
+    allJuries = INITIAL_JURY_PROFILES;
+  }
 
-      return (
-        uName === cleanId ||
-        uEmail === cleanId ||
-        uFull === cleanId ||
-        (uEmail.includes('@') && uEmail.split('@')[0] === cleanId) ||
-        (cleanId.length >= 3 && uFull.includes(cleanId)) ||
-        (digits.length >= 7 && uPhone && uPhone === digits)
-      );
-    });
+  // Ambil juga dari seluruh kunci penyimpanan localStorage
+  const storageKeysToCheck = [
+    STORAGE_PROFILES,
+    'hsn2026_jury_profiles_v4',
+    'hsn2026_jury_profiles_v3',
+    'hsn2026_jury_profiles_v2',
+    'hsn2026_jury_profiles',
+  ];
 
-    const isMasterAdminMatch =
-      !isUserDeleted(undefined, 'admin') &&
-      (cleanId === 'admin' ||
-        cleanId === 'panitia' ||
-        cleanId === 'sekretariat' ||
-        cleanId === 'admin@hsnponcokusumo.nu' ||
-        cleanId === 'admin@hsnponcokusumo.id' ||
-        cleanId === 'lomba@hsnponcokusumo.nu' ||
-        cleanId === 'sekretariat@hsnponcokusumo.nu');
-
-    const isCurrentlyLoggedInCMS =
-      typeof window !== 'undefined' &&
-      (localStorage.getItem('hsn2026_admin_auth') === 'true' || sessionStorage.getItem('hsn2026_admin_auth') === 'true');
-
-    if (adminMatchedUser || isMasterAdminMatch) {
-      if (adminMatchedUser && adminMatchedUser.isActive === false) {
-        return {
-          success: false,
-          message: 'Akun administrator/panitia CMS Anda berstatus non-aktif.',
-        };
+  for (const sKey of storageKeysToCheck) {
+    try {
+      const rawLocal = localStorage.getItem(sKey);
+      if (rawLocal) {
+        const parsedLocal = JSON.parse(rawLocal);
+        if (Array.isArray(parsedLocal)) {
+          for (const item of parsedLocal) {
+            if (item && item.id) {
+              const existingIdx = allJuries.findIndex((j) => j.id === item.id || j.email.toLowerCase() === (item.email || '').toLowerCase());
+              if (existingIdx >= 0) {
+                allJuries[existingIdx] = {
+                  ...allJuries[existingIdx],
+                  ...item,
+                  username: item.username || allJuries[existingIdx].username || (item.email?.includes('@') ? item.email.split('@')[0] : item.email),
+                  password: item.password || allJuries[existingIdx].password || 'santri2026',
+                };
+              } else {
+                allJuries.push({
+                  ...item,
+                  username: item.username || (item.email?.includes('@') ? item.email.split('@')[0] : item.email) || item.id,
+                  password: item.password || 'santri2026',
+                });
+              }
+            }
+          }
+        }
       }
+    } catch (_) {}
+  }
 
-      const expectedAdminPass = (adminMatchedUser?.password || 'santri2026').trim();
-      const isPassValid =
-        cleanPass === expectedAdminPass ||
-        cleanPass.toLowerCase() === expectedAdminPass.toLowerCase() ||
-        cleanPass === 'santri2026' ||
-        cleanPass === 'admin123' ||
-        cleanPass === 'poncokusumo2026' ||
-        cleanPass === 'hsn2026' ||
-        (isCurrentlyLoggedInCMS && cleanPass.length >= 4);
+  // Pencarian profil juri yang fleksibel (email, username, id, nama lengkap, atau no HP)
+  const cleanDigits = cleanId.replace(/[^0-9]/g, '');
+  const alphaClean = cleanId.replace(/[^a-z0-9]/g, '');
 
-      if (isPassValid) {
-        isCmsAdminAuthenticated = true;
-        const currentActiveName = typeof window !== 'undefined' ? (localStorage.getItem('hsn2026_admin_user') || '') : '';
-        const adminProfile: UserProfile = {
-          id: adminMatchedUser ? adminMatchedUser.id : 'user-admin-root',
-          fullName: adminMatchedUser ? adminMatchedUser.fullName : (currentActiveName || 'Gus Ahmad Al-Fatih (Sekretariat Utama)'),
-          email: adminMatchedUser?.email || 'admin@hsnponcokusumo.nu',
-          username: adminMatchedUser?.username || cleanId || 'admin',
-          role: 'super_admin',
-          institution: 'Panitia Pelaksana CMS HSN 2026',
-          phone: adminMatchedUser?.phone || '0812-3456-7890',
-          isActive: true,
-        };
+  const matchedJury = allJuries.find((j) => {
+    const jEmail = (j.email || '').trim().toLowerCase();
+    const jUsername = (j.username || '').trim().toLowerCase();
+    const jFullName = (j.fullName || '').trim().toLowerCase();
+    const jId = (j.id || '').trim().toLowerCase();
+    const jPhone = (j.phone || '').replace(/[^0-9]/g, '');
+    const jEmailPrefix = jEmail.includes('@') ? jEmail.split('@')[0] : jEmail;
 
-        const session: JuryAuthSession = {
-          user: {
-            id: adminProfile.id,
-            email: adminProfile.email,
-          },
-          profile: adminProfile,
-        };
+    const alphaJName = jFullName.replace(/[^a-z0-9]/g, '');
+    const alphaJUser = jUsername.replace(/[^a-z0-9]/g, '');
+    const alphaJId = jId.replace(/[^a-z0-9]/g, '');
 
-        saveJurySession(session, rememberMe);
-        return { success: true, session };
-      }
+    return (
+      jEmail === cleanId ||
+      jUsername === cleanId ||
+      jEmailPrefix === cleanId ||
+      jFullName === cleanId ||
+      jId === cleanId ||
+      (alphaClean.length >= 3 && (alphaJName === alphaClean || alphaJUser === alphaClean || alphaJId === alphaClean)) ||
+      (cleanId.length >= 3 && (jFullName.includes(cleanId) || cleanId.includes(jFullName))) ||
+      (cleanDigits.length >= 7 && jPhone && jPhone === cleanDigits)
+    );
+  });
+
+  if (matchedJury) {
+    if (matchedJury.isActive === false) {
+      return {
+        success: false,
+        message: 'Akun juri Anda berstatus non-aktif. Silakan hubungi Sekretariat Utama HSN 2026.',
+      };
     }
-  } catch (err) {
-    console.warn('Gagal memverifikasi akun panitia CMS:', err);
+
+    // Verifikasi kata sandi juri (mencocokkan kata sandi yang diset di CMS atau default)
+    const expectedPassword = (matchedJury.password || 'santri2026').trim();
+    const isPassValid =
+      cleanPass === expectedPassword ||
+      cleanPass.toLowerCase() === expectedPassword.toLowerCase() ||
+      cleanPass === 'santri2026' ||
+      cleanPass === 'juri123' ||
+      cleanPass === 'juri2026' ||
+      cleanPass === 'poncokusumo2026' ||
+      cleanPass === 'admin123' ||
+      cleanPass.length >= 6;
+
+    if (isPassValid) {
+      const session: JuryAuthSession = {
+        user: {
+          id: matchedJury.id,
+          email: matchedJury.email,
+        },
+        profile: {
+          ...matchedJury,
+          role: 'jury',
+          username: matchedJury.username || (matchedJury.email.includes('@') ? matchedJury.email.split('@')[0] : matchedJury.email),
+          password: matchedJury.password || 'santri2026',
+        },
+      };
+
+      saveJurySession(session, rememberMe);
+      return { success: true, session };
+    } else {
+      return {
+        success: false,
+        message: `Kata sandi tidak sesuai. Masukkan sandi akun dewan juri "${matchedJury.fullName}".`,
+      };
+    }
   }
 
   // ==============================================================================
@@ -329,141 +363,84 @@ export async function signInJury(
   }
 
   // ==============================================================================
-  // 3. CEK DAFTAR DEWAN JURI (TERMASUK JURI BARU YANG BARU DITAMBAHKAN DI CMS)
+  // 3. CEK KREDENSIAL AKUN CMS PANITIA / ADMINISTRATOR KHUSUS
   // ==============================================================================
-  let allJuries: UserProfile[] = [];
   try {
-    allJuries = await getJuryProfiles();
-  } catch {
-    allJuries = INITIAL_JURY_PROFILES;
-  }
+    const allAdmins = getRegisteredAdminUsers();
+    const adminMatchedUser = allAdmins.find((u) => {
+      const uName = (u.username || '').trim().toLowerCase();
+      const uEmail = (u.email || '').trim().toLowerCase();
+      const uFull = (u.fullName || '').trim().toLowerCase();
+      const uPhone = (u.phone || '').replace(/[^0-9]/g, '');
 
-  // Failsafe komprehensif: ambil juga langsung dari seluruh kunci penyimpanan localStorage
-  // agar juri baru yang baru saja disimpan di CMS DIJAMIN 100% langsung terbaca seketika!
-  const storageKeysToCheck = [
-    STORAGE_PROFILES,
-    'hsn2026_jury_profiles_v4',
-    'hsn2026_jury_profiles_v3',
-    'hsn2026_jury_profiles_v2',
-    'hsn2026_jury_profiles',
-  ];
+      return (
+        uName === cleanId ||
+        uEmail === cleanId ||
+        uFull === cleanId ||
+        (uEmail.includes('@') && uEmail.split('@')[0] === cleanId) ||
+        (cleanDigits.length >= 7 && uPhone && uPhone === cleanDigits)
+      );
+    });
 
-  for (const sKey of storageKeysToCheck) {
-    try {
-      const rawLocal = localStorage.getItem(sKey);
-      if (rawLocal) {
-        const parsedLocal = JSON.parse(rawLocal);
-        if (Array.isArray(parsedLocal)) {
-          for (const item of parsedLocal) {
-            if (item && item.id) {
-              const existingIdx = allJuries.findIndex((j) => j.id === item.id || j.email.toLowerCase() === (item.email || '').toLowerCase());
-              if (existingIdx >= 0) {
-                allJuries[existingIdx] = {
-                  ...allJuries[existingIdx],
-                  ...item,
-                  username: item.username || allJuries[existingIdx].username || (item.email?.includes('@') ? item.email.split('@')[0] : item.email),
-                  password: item.password || allJuries[existingIdx].password || 'santri2026',
-                };
-              } else {
-                allJuries.push({
-                  ...item,
-                  username: item.username || (item.email?.includes('@') ? item.email.split('@')[0] : item.email) || item.id,
-                  password: item.password || 'santri2026',
-                });
-              }
-            }
-          }
-        }
+    const isMasterAdminMatch =
+      !isUserDeleted(undefined, 'admin') &&
+      (cleanId === 'admin' ||
+        cleanId === 'panitia' ||
+        cleanId === 'sekretariat' ||
+        cleanId === 'admin@hsnponcokusumo.nu' ||
+        cleanId === 'admin@hsnponcokusumo.id' ||
+        cleanId === 'lomba@hsnponcokusumo.nu' ||
+        cleanId === 'sekretariat@hsnponcokusumo.nu');
+
+    if (adminMatchedUser || isMasterAdminMatch) {
+      if (adminMatchedUser && adminMatchedUser.isActive === false) {
+        return {
+          success: false,
+          message: 'Akun administrator/panitia CMS Anda berstatus non-aktif.',
+        };
       }
-    } catch (_) {}
-  }
 
-  // Pencarian profil juri yang fleksibel (bisa email, username, nama lengkap, atau no HP)
-  const cleanDigits = cleanId.replace(/[^0-9]/g, '');
-  const matchedJury = allJuries.find((j) => {
-    const jEmail = (j.email || '').trim().toLowerCase();
-    const jUsername = (j.username || '').trim().toLowerCase();
-    const jFullName = (j.fullName || '').trim().toLowerCase();
-    const jPhone = (j.phone || '').replace(/[^0-9]/g, '');
-    const jEmailPrefix = jEmail.includes('@') ? jEmail.split('@')[0] : jEmail;
+      const expectedAdminPass = (adminMatchedUser?.password || 'santri2026').trim();
+      const isPassValid =
+        cleanPass === expectedAdminPass ||
+        cleanPass.toLowerCase() === expectedAdminPass.toLowerCase() ||
+        cleanPass === 'santri2026' ||
+        cleanPass === 'admin123' ||
+        cleanPass === 'poncokusumo2026' ||
+        cleanPass === 'hsn2026';
 
-    return (
-      jEmail === cleanId ||
-      jUsername === cleanId ||
-      jEmailPrefix === cleanId ||
-      jFullName === cleanId ||
-      j.id.toLowerCase() === cleanId ||
-      (cleanId.length >= 3 && jFullName.includes(cleanId)) ||
-      (cleanDigits.length >= 7 && jPhone && jPhone === cleanDigits)
-    );
-  });
+      if (isPassValid) {
+        const currentActiveName = typeof window !== 'undefined' ? (localStorage.getItem('hsn2026_admin_user') || '') : '';
+        const adminProfile: UserProfile = {
+          id: adminMatchedUser ? adminMatchedUser.id : 'user-admin-root',
+          fullName: adminMatchedUser ? adminMatchedUser.fullName : (currentActiveName || 'Gus Ahmad Al-Fatih (Sekretariat Utama)'),
+          email: adminMatchedUser?.email || 'admin@hsnponcokusumo.nu',
+          username: adminMatchedUser?.username || cleanId || 'admin',
+          role: 'super_admin',
+          institution: 'Panitia Pelaksana CMS HSN 2026',
+          phone: adminMatchedUser?.phone || '0812-3456-7890',
+          isActive: true,
+        };
 
-  if (matchedJury) {
-    if (matchedJury.isActive === false) {
-      return {
-        success: false,
-        message: 'Akun juri Anda berstatus non-aktif. Silakan hubungi Sekretariat Utama HSN 2026.',
-      };
+        const session: JuryAuthSession = {
+          user: {
+            id: adminProfile.id,
+            email: adminProfile.email,
+          },
+          profile: adminProfile,
+        };
+
+        saveJurySession(session, rememberMe);
+        return { success: true, session };
+      }
     }
-
-    // Verifikasi kata sandi juri (mencocokkan kata sandi yang diset di CMS atau default)
-    const expectedPassword = (matchedJury.password || 'santri2026').trim();
-    const isPassValid =
-      cleanPass === expectedPassword ||
-      cleanPass.toLowerCase() === expectedPassword.toLowerCase() ||
-      cleanPass === 'santri2026' ||
-      cleanPass === 'juri123' ||
-      cleanPass === 'juri2026' ||
-      cleanPass === 'poncokusumo2026' ||
-      cleanPass === 'admin123' ||
-      cleanPass.length >= 6;
-
-    if (isPassValid) {
-      const session: JuryAuthSession = {
-        user: {
-          id: matchedJury.id,
-          email: matchedJury.email,
-        },
-        profile: {
-          ...matchedJury,
-          username: matchedJury.username || (matchedJury.email.includes('@') ? matchedJury.email.split('@')[0] : matchedJury.email),
-          password: matchedJury.password || 'santri2026',
-        },
-      };
-
-      saveJurySession(session, rememberMe);
-      return { success: true, session };
-    } else {
-      return {
-        success: false,
-        message: `Kata sandi tidak sesuai. Masukkan sandi akun dewan juri "${matchedJury.fullName}".`,
-      };
-    }
-  }
-
-  // Failsafe jika pengguna adalah Admin CMS yang sedang aktif di browser
-  if (typeof window !== 'undefined' && (localStorage.getItem('hsn2026_admin_auth') === 'true' || sessionStorage.getItem('hsn2026_admin_auth') === 'true')) {
-    const adminUser = localStorage.getItem('hsn2026_admin_user') || 'Admin CMS';
-    const adminProfile: UserProfile = {
-      id: 'user-admin-root',
-      fullName: `${adminUser} (Panitia CMS)`,
-      email: 'admin@hsnponcokusumo.nu',
-      username: 'admin',
-      role: 'super_admin',
-      institution: 'Panitia Pelaksana CMS HSN 2026',
-      isActive: true,
-    };
-    const session: JuryAuthSession = {
-      user: { id: adminProfile.id, email: adminProfile.email },
-      profile: adminProfile,
-    };
-    saveJurySession(session, rememberMe);
-    return { success: true, session };
+  } catch (err) {
+    console.warn('Gagal memverifikasi akun panitia CMS:', err);
   }
 
   return {
     success: false,
-    message: 'Username, email, atau kredensial akun dewan juri / panitia tidak terdaftar. Periksa kembali atau gunakan akun pengujian di bawah.',
+    message: 'Username, email, atau kredensial akun dewan juri tidak terdaftar. Periksa kembali nama akun dan kata sandi Anda.',
   };
 }
 

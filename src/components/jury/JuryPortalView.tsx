@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
   ShieldCheck, 
   Lock, 
@@ -47,6 +47,7 @@ import {
   signOutJury, 
   getStoredJuryProfile, 
   getStoredJurySession, 
+  saveJurySession,
   validateCurrentJurySession,
   JuryAuthSession 
 } from '../../lib/juryAuthService';
@@ -65,7 +66,9 @@ import {
   isInitialMockParticipant,
   initJuryRealtimeSubscription,
   isAssignmentForJury,
-  getCompetitionParticipants
+  getCompetitionParticipants,
+  getLocalAssignments,
+  getLocalScores
 } from '../../lib/juryService';
 import { isSupabaseConnected } from '../../lib/supabaseClient';
 
@@ -74,7 +77,7 @@ interface JuryPortalViewProps {
   onOpenCMS?: () => void;
   competitions: Competition[];
   participants: ParticipantRegistration[];
-  onRefreshAllFromSupabase?: () => Promise<void> | void;
+  onRefreshAllFromSupabase?: () => Promise<{ competitions?: Competition[]; participants?: ParticipantRegistration[] } | void> | void;
 }
 
 export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
@@ -108,10 +111,10 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
   const [sessionValidationNotice, setSessionValidationNotice] = useState<string | null>(null);
   const [showInternalAuthModal, setShowInternalAuthModal] = useState<boolean>(false);
 
-  // Data State
-  const [assignments, setAssignments] = useState<JuryAssignment[]>([]);
+  // Data State (Diinisialisasi langsung dari cache lokal agar tidak flicker/kosong)
+  const [assignments, setAssignments] = useState<JuryAssignment[]>(() => getLocalAssignments());
   const [criteria, setCriteria] = useState<ScoringCriterion[]>([]);
-  const [juryScores, setJuryScores] = useState<JuryScore[]>([]);
+  const [juryScores, setJuryScores] = useState<JuryScore[]>(() => getLocalScores());
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [copyToast, setCopyToast] = useState<string | null>(null);
 
@@ -127,34 +130,126 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
   const [participantFilter, setParticipantFilter] = useState<'ALL' | 'UNSCORED' | 'DRAFT' | 'SUBMITTED' | 'LOCKED'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Load assignments and scores when logged in
-  const refreshJuryData = async (juryId?: string) => {
+  // Refs untuk stabilisasi siklus dan proteksi concurrency
+  const isRefreshingRef = useRef(false);
+  const lastRefreshTimeRef = useRef(0);
+  const selectedCompIdRef = useRef(selectedCompId);
+  selectedCompIdRef.current = selectedCompId;
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
+  const competitionsRef = useRef(competitions);
+  competitionsRef.current = competitions;
+
+  // Load assignments and scores when logged in (Stabil, debounced, dan non-reentrant)
+  const refreshJuryData = useCallback(async (targetJuryId?: string, force = false) => {
+    const now = Date.now();
+    if (!force && now - lastRefreshTimeRef.current < 1500) {
+      return;
+    }
+    if (isRefreshingRef.current) {
+      return;
+    }
+    isRefreshingRef.current = true;
+    lastRefreshTimeRef.current = now;
     setIsLoadingData(true);
+
     try {
+      let freshRemoteComps: Competition[] | undefined;
       if (onRefreshAllFromSupabase) {
-        await onRefreshAllFromSupabase();
+        try {
+          const res = await onRefreshAllFromSupabase();
+          if (res && res.competitions && res.competitions.length > 0) {
+            freshRemoteComps = res.competitions;
+          }
+        } catch (e) {
+          console.warn('Sync Supabase note:', e);
+        }
       }
-      const allAssigns = await getJuryAssignments(competitions);
-      const activeProf = session?.profile || profile;
-      const targetId = juryId || activeProf?.id;
+
+      // Ambil daftar dewan juri terkini dari Supabase (termasuk profile_juri)
+      const freshJuries = await getJuryProfiles();
+
+      // Sinkronkan profil sesi saat ini jika terdeteksi data baru atau login admin
+      const activeProf = sessionRef.current?.profile || profileRef.current;
+      let matchedProf: UserProfile | undefined;
+      if (activeProf) {
+        const cleanActiveName = (activeProf.fullName || '').replace(/\s*\(.*?\)\s*/g, '').trim().toLowerCase();
+        const cleanActiveUser = (activeProf.username || '').trim().toLowerCase();
+        const cleanActiveId = (activeProf.id || '').trim().toLowerCase();
+        const alphaActiveName = cleanActiveName.replace(/[^a-z0-9]/g, '');
+        const alphaActiveUser = cleanActiveUser.replace(/[^a-z0-9]/g, '');
+        const alphaActiveId = cleanActiveId.replace(/[^a-z0-9]/g, '');
+
+        matchedProf = freshJuries.find((j) => {
+          const jId = (j.id || '').toLowerCase();
+          const jUser = (j.username || '').toLowerCase();
+          const jName = (j.fullName || '').toLowerCase();
+          const alphaJName = jName.replace(/[^a-z0-9]/g, '');
+          const alphaJUser = jUser.replace(/[^a-z0-9]/g, '');
+          const alphaJId = jId.replace(/[^a-z0-9]/g, '');
+
+          return (
+            (cleanActiveId !== 'user-admin-root' && jId === cleanActiveId) ||
+            (cleanActiveUser && (jUser === cleanActiveUser || alphaJUser === alphaActiveUser)) ||
+            (cleanActiveName && (
+              jName === cleanActiveName ||
+              alphaJName === alphaActiveName ||
+              alphaJUser === alphaActiveName ||
+              alphaJId === alphaActiveName
+            ))
+          );
+        });
+
+        if (matchedProf) {
+          const hasChanged =
+            matchedProf.id !== activeProf.id ||
+            matchedProf.fullName !== activeProf.fullName ||
+            matchedProf.role !== activeProf.role ||
+            matchedProf.username !== activeProf.username ||
+            matchedProf.institution !== activeProf.institution;
+
+          if (hasChanged) {
+            setProfile(matchedProf);
+            if (sessionRef.current) {
+              const nextSession = { ...sessionRef.current, profile: matchedProf };
+              setSession(nextSession);
+              saveJurySession(nextSession, true);
+            }
+          }
+        }
+      }
+
+      const compsList = freshRemoteComps || (competitionsRef.current && competitionsRef.current.length > 0 ? competitionsRef.current : competitions);
+      const allAssigns = await getJuryAssignments(compsList, freshJuries);
+      const targetId = targetJuryId || matchedProf?.id || activeProf?.id;
 
       // Simpan seluruh penugasan aktif dari CMS (Supabase/local)
       setAssignments(allAssigns.filter((a) => a.isActive));
 
       const allScores = await getJuryScores(undefined, targetId);
       setJuryScores(allScores);
+
+      const compId = selectedCompIdRef.current;
+      if (compId) {
+        getScoringCriteria(compId).then(setCriteria).catch(() => {});
+      }
     } catch (err) {
       console.warn('Refresh jury error:', err);
     } finally {
+      isRefreshingRef.current = false;
       setIsLoadingData(false);
     }
-  };
+  }, [competitions, onRefreshAllFromSupabase]);
 
+  // Trigger sinkronisasi data saat profil juri aktif tersedia atau berganti
+  const currentProfileId = session?.profile?.id || profile?.id;
   useEffect(() => {
-    if (session?.profile?.id) {
-      refreshJuryData(session.profile.id);
+    if (currentProfileId) {
+      refreshJuryData(currentProfileId);
     }
-  }, [session, profile]);
+  }, [currentProfileId, refreshJuryData]);
 
   // Load criteria when competition is selected
   useEffect(() => {
@@ -175,20 +270,23 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
 
       if (updateTimer) clearTimeout(updateTimer);
       updateTimer = setTimeout(() => {
-        const activeProfId = session?.profile?.id || profile?.id;
+        const activeProfId = sessionRef.current?.profile?.id || profileRef.current?.id;
         if (activeProfId) {
-          refreshJuryData(activeProfId);
+          refreshJuryData(activeProfId, true);
         }
-        if (selectedCompId) {
-          getScoringCriteria(selectedCompId).then(setCriteria).catch(() => {});
+        const compId = selectedCompIdRef.current;
+        if (compId) {
+          getScoringCriteria(compId).then(setCriteria).catch(() => {});
         }
-      }, 300);
+      }, 400);
     };
+
     const handleStorage = (e: StorageEvent) => {
-      if (!e.key || e.key.includes('hsn2026_jury')) {
+      if (!e.key || e.key.includes('hsn2026_jury') || e.key.includes('hsn2026_custom_competitions')) {
         handleJuryUpdated();
       }
     };
+
     window.addEventListener('hsn2026_jury_data_updated', handleJuryUpdated as any);
     window.addEventListener('storage', handleStorage);
 
@@ -203,7 +301,7 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
       window.removeEventListener('storage', handleStorage);
       unsubscribeRealtime();
     };
-  }, [session?.profile?.id, profile?.id, selectedCompId, competitions]);
+  }, [refreshJuryData]);
 
   // Validasi status juri langsung (cek apakah belum login atau sesi kadaluwarsa)
   useEffect(() => {
@@ -358,7 +456,7 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
     }
 
     // HANYA tampilkan cabang lomba yang secara eksplisit ditugaskan kepada akun juri yang sedang login ini di CMS!
-    const myComps = competitions.filter((c) => {
+    return competitions.filter((c) => {
       const cNorm = normalizeCompId(c.id).toLowerCase();
       return assignments.some((a) => {
         if (!a.isActive) return false;
@@ -373,39 +471,11 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
         );
       });
     });
-
-    if (myComps.length > 0) {
-      return myComps;
-    }
-
-    // Failsafe khusus akun Administrator Panitia Pusat jika membuka portal juri tanpa penugasan spesifik
-    const isRootAdmin =
-      profile.role === 'super_admin' ||
-      profile.id === 'user-admin-root' ||
-      profile.username === 'admin';
-
-    if (isRootAdmin) {
-      return competitions.filter((c) => {
-        const cNorm = normalizeCompId(c.id).toLowerCase();
-        return assignments.some((a) => {
-          if (!a.isActive) return false;
-          const aNorm = normalizeCompId(a.competitionId).toLowerCase();
-          return (
-            a.competitionId === c.id ||
-            aNorm === cNorm ||
-            (a.competitionTitle && a.competitionTitle.toLowerCase() === c.title.toLowerCase()) ||
-            resolveCompetition(competitions, a.competitionId, a.competitionTitle)?.id === c.id
-          );
-        });
-      });
-    }
-
-    return [];
   }, [competitions, assignments, profile]);
 
   // Jika cabang lomba yang dipilih dihapus penugasannya di CMS / Supabase secara realtime, kembalikan ke dashboard
   useEffect(() => {
-    if (selectedCompId) {
+    if (selectedCompId && !isLoadingData && assignments.length > 0) {
       const exists = assignedCompetitions.some((c) => c.id === selectedCompId);
       if (!exists) {
         setSelectedCompId(null);
@@ -415,7 +485,7 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
         }
       }
     }
-  }, [assignedCompetitions, selectedCompId, currentView]);
+  }, [assignedCompetitions, selectedCompId, currentView, isLoadingData, assignments.length]);
 
   // Currently selected competition object
   const selectedCompetition = useMemo(() => {
@@ -896,17 +966,19 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
             {/* Tombol Sinkronisasi Data CMS */}
             <button
               type="button"
+              disabled={isLoadingData}
               onClick={async () => {
                 const activeProfId = session?.profile?.id || profile?.id;
-                await refreshJuryData(activeProfId);
-                setCopyToast('Data CMS Penilaian Juri berhasil disinkronkan langsung.');
-                setTimeout(() => setCopyToast(null), 3000);
+                await refreshJuryData(activeProfId, true);
+                const count = assignedCompetitions.length;
+                setCopyToast(`Sinkronisasi Berhasil: ${count} cabang lomba & data nilai tersinkronkan.`);
+                setTimeout(() => setCopyToast(null), 3500);
               }}
-              className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
               title="Sinkronkan Seluruh Data Penugasan & Nilai dari CMS"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoadingData ? 'animate-spin text-[#00D9F5]' : 'text-emerald-400'}`} />
-              <span className="hidden sm:inline">Sinkronkan CMS</span>
+              <span className="hidden sm:inline">{isLoadingData ? 'Menyinkronkan...' : 'Sinkronkan CMS'}</span>
             </button>
 
             {isSupabaseConnected() && (
