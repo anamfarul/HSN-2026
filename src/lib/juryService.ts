@@ -787,13 +787,18 @@ export function getCompetitionParticipants(
  */
 export function isAssignmentForJury(
   assignment: JuryAssignment,
-  jury: { id?: string; email?: string; username?: string; role?: string } | null
+  jury: { id?: string; email?: string; username?: string; role?: string; fullName?: string } | null
 ): boolean {
   if (!assignment || !jury) return false;
   if (!assignment.isActive) return false;
 
   const aJuryId = (assignment.juryId || '').toLowerCase().trim();
   const jId = (jury.id || '').toLowerCase().trim();
+  const jName = ((jury as any).fullName || '').toLowerCase().trim();
+  const aName = (assignment.juryName || '').toLowerCase().trim();
+  const jEmail = (jury.email || '').toLowerCase().trim();
+  const aEmail = (assignment.juryEmail || '').toLowerCase().trim();
+  const jUser = (jury.username || '').toLowerCase().trim();
 
   // 1. Direct ID match
   if (aJuryId && jId && aJuryId === jId) return true;
@@ -808,15 +813,24 @@ export function isAssignmentForJury(
   if (aJuryId && getStableUuid(aJuryId).toLowerCase() === jId) return true;
 
   // 4. Email match (case-insensitive)
-  if (jury.email && assignment.juryEmail) {
-    if (jury.email.toLowerCase().trim() === assignment.juryEmail.toLowerCase().trim()) return true;
-  }
+  if (jEmail && aEmail && jEmail === aEmail) return true;
 
   // 5. Username match
-  if (jury.username) {
-    const cleanUser = jury.username.toLowerCase().trim();
-    if (aJuryId === cleanUser || normA === cleanUser) return true;
+  if (jUser) {
+    if (aJuryId === jUser || normA === jUser) return true;
+    if (aName === jUser) return true;
   }
+
+  // 6. Full Name exact or inclusion match
+  if (jName && aName) {
+    if (jName === aName) return true;
+    if (jName.length >= 4 && aName.includes(jName)) return true;
+    if (aName.length >= 4 && jName.includes(aName)) return true;
+  }
+
+  // 7. If jury fullName or username equals assignment.juryId
+  if (jName && aJuryId === jName) return true;
+  if (jId && aName === jId) return true;
 
   return false;
 }

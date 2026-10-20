@@ -581,6 +581,7 @@ export default function App() {
         }}
         competitions={competitions}
         participants={participants}
+        onRefreshAllFromSupabase={loadDataFromSupabase}
       />
     );
   }
