@@ -21,6 +21,7 @@ import {
 import {
   getRegisteredAdminUsers,
   saveRegisteredAdminUsers,
+  recordDeletedUser,
 } from '../data/initialUsers';
 import { COMPETITIONS } from '../data/initialData';
 
@@ -34,6 +35,7 @@ const STORAGE_AUDIT = 'hsn2026_jury_audit_logs_v4';
 export const STORAGE_DELETED_PROFILES = 'hsn2026_deleted_jury_profiles_v1';
 export const STORAGE_DELETED_ASSIGNMENTS = 'hsn2026_deleted_jury_assignments_v1';
 export const STORAGE_DELETED_CRITERIA = 'hsn2026_deleted_scoring_criteria_v1';
+export const STORAGE_DELETED_SCORES = 'hsn2026_deleted_jury_scores_v1';
 
 export function getDeletedProfileIds(): string[] {
   return getLocal<string[]>(STORAGE_DELETED_PROFILES, []);
@@ -47,6 +49,99 @@ export function getDeletedCriteriaIds(): string[] {
   return getLocal<string[]>(STORAGE_DELETED_CRITERIA, []);
 }
 
+export function getDeletedScoreKeys(): string[] {
+  return getLocal<string[]>(STORAGE_DELETED_SCORES, []);
+}
+
+export const INITIAL_MOCK_JURY_IDS = new Set([
+  'jury-001',
+  'jury-002',
+  'jury-003',
+  'jury-004',
+  'jury-005',
+]);
+
+export const INITIAL_MOCK_JURY_EMAILS = new Set([
+  'juri.sholeh@hsnponcokusumo.id',
+  'juri.huda@hsnponcokusumo.id',
+  'juri.fatimah@hsnponcokusumo.id',
+  'juri.salim@hsnponcokusumo.id',
+  'juri.wildan@hsnponcokusumo.id',
+]);
+
+export const INITIAL_MOCK_JURY_USERNAMES = new Set([
+  'juri_sholeh',
+  'juri_huda',
+  'juri_fatimah',
+  'juri_salim',
+  'juri_wildan',
+]);
+
+export function isMockJuryProfile(p: any): boolean {
+  if (!p) return false;
+  const id = String(p.id || '').toLowerCase().trim();
+  const email = String(p.email || '').toLowerCase().trim();
+  const username = String(p.username || '').toLowerCase().trim();
+  const name = String(p.fullName || p.full_name || '').toLowerCase().trim();
+
+  return (
+    INITIAL_MOCK_JURY_IDS.has(id) ||
+    INITIAL_MOCK_JURY_EMAILS.has(email) ||
+    INITIAL_MOCK_JURY_USERNAMES.has(username) ||
+    id.startsWith('00000000-0000-') ||
+    id.startsWith('jury-00') ||
+    id.includes('dummy') ||
+    id.includes('mock') ||
+    id.includes('test') ||
+    email.includes('test_jury') ||
+    email.includes('mock') ||
+    email.includes('dummy') ||
+    email.includes('sholeh') ||
+    email.includes('huda') ||
+    email.includes('fatimah') ||
+    email.includes('salim') ||
+    email.includes('wildan') ||
+    username.includes('dummy') ||
+    username.includes('mock') ||
+    username.includes('sholeh') ||
+    username.includes('huda') ||
+    username.includes('fatimah') ||
+    username.includes('salim') ||
+    username.includes('wildan') ||
+    name.includes('[dummy]') ||
+    name.includes('[test]') ||
+    name.includes('pengujian') ||
+    name.includes('sholeh badruddin') ||
+    name.includes('nurul huda') ||
+    name.includes('siti fatimah') ||
+    name.includes('agus salim') ||
+    name.includes('wildan pratama')
+  );
+}
+
+export function isScoreDeleted(s: { id?: string; juryId?: string; participantId?: string; competitionId?: string }): boolean {
+  if (!s) return false;
+  const deleted = new Set(getDeletedScoreKeys().map((k) => k.toLowerCase().trim()));
+  const sId = (s.id || '').toLowerCase().trim();
+  if (sId && deleted.has(sId)) return true;
+
+  if (s.participantId) {
+    const pId = s.participantId.toLowerCase().trim();
+    if (deleted.has(`p:${pId}`)) return true;
+    if (s.competitionId) {
+      const cId = normalizeCompId(s.competitionId).toLowerCase().trim();
+      if (deleted.has(`c:${cId}`)) return true;
+      if (deleted.has(`${pId}:${cId}`)) return true;
+      if (s.juryId) {
+        const jId = s.juryId.toLowerCase().trim();
+        if (deleted.has(`j:${jId}`)) return true;
+        if (deleted.has(`${jId}:${pId}:${cId}`)) return true;
+      }
+    }
+  }
+  return false;
+}
+
 export const isMockAssignment = (a: any): boolean => {
   if (!a) return false;
   const id = String(a.id || '').toLowerCase();
@@ -58,6 +153,7 @@ export const isMockAssignment = (a: any): boolean => {
     id.includes('dummy') ||
     jId.includes('mock') ||
     jId.includes('dummy') ||
+    INITIAL_MOCK_JURY_IDS.has(jId) ||
     cId.includes('mock') ||
     cId.includes('dummy')
   );
@@ -879,26 +975,42 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
             return [];
           }
         } else {
-          // Bersihkan blacklist deletedIds lokal untuk akun yang ada di database Supabase
-          const currentDeleted = new Set(getDeletedProfileIds());
-          let changedDeleted = false;
-          remoteList.forEach((p) => {
-            if (currentDeleted.has(p.id)) {
-              currentDeleted.delete(p.id);
-              changedDeleted = true;
-            }
-          });
-          if (changedDeleted) {
-            setLocal(STORAGE_DELETED_PROFILES, Array.from(currentDeleted));
-          }
+          // Filter profil remote terhadap blacklist deletedIds (id, email, username)
+          const currentDeleted = new Set(getDeletedProfileIds().map((x) => x.toLowerCase().trim()));
+          const hasPurgedDummyJuries =
+            currentDeleted.has('jury-001') ||
+            currentDeleted.has('jury-002') ||
+            currentDeleted.has('jury-003') ||
+            currentDeleted.has('jury-004') ||
+            currentDeleted.has('jury-005') ||
+            currentDeleted.has('jury_profiles_purged') ||
+            currentDeleted.has('all_dummy_purged') ||
+            currentDeleted.has('all_jury_profiles_reset');
 
-          const validRemote = remoteList.filter((p) => !currentDeleted.has(p.id));
+          const validRemote = remoteList.filter((p) => {
+            const pId = String(p.id || '').toLowerCase().trim();
+            const pEmail = String(p.email || '').toLowerCase().trim();
+            const pUser = String(p.username || '').toLowerCase().trim();
+            const pStable = getStableUuid(pId);
+            if (currentDeleted.has(pId) || (pStable && currentDeleted.has(pStable))) return false;
+            if (pEmail && currentDeleted.has(pEmail)) return false;
+            if (pUser && currentDeleted.has(pUser)) return false;
+            if ((hasPurgedDummyJuries || currentDeleted.size > 0) && isMockJuryProfile(p)) return false;
+            return true;
+          });
 
           // Merge dengan akun lokal yang baru saja ditambahkan pengguna agar tidak hilang
           const merged = [...validRemote];
           for (const lp of localList) {
-            const lpUser = String(lp.username || '').toLowerCase();
-            const lpEmail = String(lp.email || '').toLowerCase();
+            const lpId = String(lp.id || '').toLowerCase().trim();
+            const lpUser = String(lp.username || '').toLowerCase().trim();
+            const lpEmail = String(lp.email || '').toLowerCase().trim();
+            if (currentDeleted.has(lpId) || (lpEmail && currentDeleted.has(lpEmail)) || (lpUser && currentDeleted.has(lpUser))) {
+              continue;
+            }
+            if ((hasPurgedDummyJuries || currentDeleted.size > 0) && isMockJuryProfile(lp)) {
+              continue;
+            }
             const alreadyInMerged = merged.some((m) => {
               if (m.id === lp.id) return true;
               const mUser = String(m.username || '').toLowerCase();
@@ -923,11 +1035,47 @@ export async function getJuryProfiles(): Promise<UserProfile[]> {
   // B. FALLBACK OFFLINE / SUPABASE BELUM TERHUBUNG:
   // Gunakan data lokal, dan jika belum ada data sama sekali baru gunakan INITIAL_JURY_PROFILES
   // ==============================================================================
-  if (localList.length > 0) {
-    return localList;
+  const rawStored = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_PROFILES) : null;
+  const hasInitializedProfiles = rawStored !== null;
+
+  const currentDeleted = new Set(getDeletedProfileIds().map((x) => x.toLowerCase().trim()));
+  const hasPurgedDummyJuries =
+    currentDeleted.has('jury-001') ||
+    currentDeleted.has('jury-002') ||
+    currentDeleted.has('jury-003') ||
+    currentDeleted.has('jury-004') ||
+    currentDeleted.has('jury-005') ||
+    currentDeleted.has('jury_profiles_purged') ||
+    currentDeleted.has('all_dummy_purged') ||
+    currentDeleted.has('all_jury_profiles_reset');
+
+  const validLocal = localList.filter((p) => {
+    const pId = String(p.id || '').toLowerCase().trim();
+    const pEmail = String(p.email || '').toLowerCase().trim();
+    const pUser = String(p.username || '').toLowerCase().trim();
+    const pStable = getStableUuid(pId);
+    if (currentDeleted.has(pId) || (pStable && currentDeleted.has(pStable))) return false;
+    if (pEmail && currentDeleted.has(pEmail)) return false;
+    if (pUser && currentDeleted.has(pUser)) return false;
+    if ((hasPurgedDummyJuries || currentDeleted.size > 0) && isMockJuryProfile(p)) return false;
+    return true;
+  });
+
+  if (validLocal.length > 0) {
+    return validLocal;
   }
 
-  return INITIAL_JURY_PROFILES.filter((p) => !deletedIds.has(p.id));
+  // Jika dummy juri pernah dihapus/dibersihkan, atau profil pernah diinisialisasi/dikosongkan, jangan pernah tampilkan lagi dummy bawaan
+  if (hasPurgedDummyJuries || hasInitializedProfiles || currentDeleted.size > 0) {
+    return [];
+  }
+
+  return INITIAL_JURY_PROFILES.filter((p) => {
+    const pId = p.id.toLowerCase().trim();
+    const pEmail = p.email.toLowerCase().trim();
+    const pUser = p.username.toLowerCase().trim();
+    return !currentDeleted.has(pId) && !currentDeleted.has(pEmail) && !currentDeleted.has(pUser) && !isMockJuryProfile(p);
+  });
 }
 
 /**
@@ -1370,62 +1518,174 @@ export async function deleteJuryProfile(
   juryId: string,
   adminName: string = 'Admin'
 ): Promise<boolean> {
+  const cleanJuryId = (juryId || '').trim();
+  const stableId = getStableUuid(cleanJuryId);
+
   const deletedProfiles = new Set(getDeletedProfileIds());
-  deletedProfiles.add(juryId);
-  setLocal(STORAGE_DELETED_PROFILES, Array.from(deletedProfiles));
+  deletedProfiles.add(cleanJuryId.toLowerCase());
+  if (stableId) deletedProfiles.add(stableId.toLowerCase());
 
   const list = getLocal<UserProfile[]>(STORAGE_PROFILES, []);
-  const target = list.find((p) => p.id === juryId);
-  const updated = list.filter((p) => p.id !== juryId);
+  let target = list.find((p) => p.id === cleanJuryId || (stableId && p.id === stableId));
+  if (!target) {
+    target = INITIAL_JURY_PROFILES.find((p) => p.id === cleanJuryId || (stableId && p.id === stableId));
+  }
+  if (!target) {
+    const adminUsers = getRegisteredAdminUsers();
+    const au = adminUsers.find((u) => u.id === cleanJuryId || (stableId && u.id === stableId));
+    if (au) {
+      target = {
+        id: au.id,
+        fullName: au.fullName,
+        email: au.email,
+        role: 'jury',
+        username: au.username,
+        isActive: au.isActive,
+      };
+    }
+  }
+
+  if (target?.email) deletedProfiles.add(target.email.toLowerCase().trim());
+  if (target?.username) deletedProfiles.add(target.username.toLowerCase().trim());
+
+  // Jika yang dihapus adalah profil dummy/mock, tandai juga flag purged
+  if (isMockJuryProfile(target) || isMockJuryProfile({ id: cleanJuryId })) {
+    deletedProfiles.add('jury_profiles_purged');
+    deletedProfiles.add('all_dummy_purged');
+    deletedProfiles.add(cleanJuryId.toLowerCase());
+  }
+
+  setLocal(STORAGE_DELETED_PROFILES, Array.from(deletedProfiles));
+
+  // 1. Bersihkan dari STORAGE_PROFILES
+  const updated = list.filter((p) => {
+    if (p.id === cleanJuryId || (stableId && p.id === stableId)) return false;
+    if (target?.email && p.email?.toLowerCase().trim() === target.email.toLowerCase().trim()) return false;
+    if (target?.username && p.username?.toLowerCase().trim() === target.username.toLowerCase().trim()) return false;
+    return true;
+  });
   setLocal(STORAGE_PROFILES, updated);
 
-  // Bersihkan seluruh penugasan juri ini dari penyimpanan lokal
+  // 2. Bersihkan dari daftar akun panitia lokal & blacklist registered users agar tidak kembali lagi
+  try {
+    if (cleanJuryId) recordDeletedUser(cleanJuryId, target?.username);
+    if (target?.username) recordDeletedUser(target.username, target.username);
+    if (target?.email) recordDeletedUser(target.email, target?.username);
+
+    const adminUsers = getRegisteredAdminUsers();
+    const updatedAdmins = adminUsers.filter((u) => {
+      if (u.id === cleanJuryId || (stableId && u.id === stableId)) return false;
+      if (target?.email && u.email?.toLowerCase().trim() === target.email.toLowerCase().trim()) return false;
+      if (target?.username && u.username?.toLowerCase().trim() === target.username.toLowerCase().trim()) return false;
+      return true;
+    });
+    saveRegisteredAdminUsers(updatedAdmins);
+  } catch (err) {
+    console.warn('Gagal membersihkan adminUsers lokal saat hapus juri:', err);
+  }
+
+  // 3. Bersihkan seluruh penugasan juri ini dari penyimpanan lokal
   const assignments = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, []);
-  const removedAssignments = assignments.filter((a) => a.juryId === juryId);
-  const updatedAssignments = assignments.filter((a) => a.juryId !== juryId);
+  const removedAssignments = assignments.filter((a) => {
+    if (a.juryId === cleanJuryId || (stableId && a.juryId === stableId)) return true;
+    if (target?.email && a.juryEmail && a.juryEmail.toLowerCase().trim() === target.email.toLowerCase().trim()) return true;
+    return false;
+  });
+  const updatedAssignments = assignments.filter((a) => {
+    if (a.juryId === cleanJuryId || (stableId && a.juryId === stableId)) return false;
+    if (target?.email && a.juryEmail && a.juryEmail.toLowerCase().trim() === target.email.toLowerCase().trim()) return false;
+    return true;
+  });
   setLocal(STORAGE_ASSIGNMENTS, updatedAssignments);
 
   const deletedAssignments = new Set(getDeletedAssignmentIds());
   removedAssignments.forEach((a) => deletedAssignments.add(a.id));
   setLocal(STORAGE_DELETED_ASSIGNMENTS, Array.from(deletedAssignments));
 
+  // 4. Bersihkan seluruh nilai yang pernah diinput juri ini untuk menghindari nilai yatim piatu (orphaned)
+  const allScores = getLocal<JuryScore[]>(STORAGE_SCORES, []);
+  const updatedScores = allScores.filter((s) => {
+    if (s.juryId === cleanJuryId || (stableId && s.juryId === stableId)) return false;
+    if (target?.email && (s as any).juryEmail && (s as any).juryEmail.toLowerCase().trim() === target.email.toLowerCase().trim()) return false;
+    return true;
+  });
+  setLocal(STORAGE_SCORES, updatedScores);
+
+  const deletedScores = new Set(getDeletedScoreKeys());
+  deletedScores.add(`j:${cleanJuryId.toLowerCase()}`);
+  if (stableId) deletedScores.add(`j:${stableId.toLowerCase()}`);
+  setLocal(STORAGE_DELETED_SCORES, Array.from(deletedScores));
+
   if (target) {
     createAuditLog({
       action: 'DELETE_JURY_PROFILE',
       entityType: 'jury_profile',
-      entityId: juryId,
+      entityId: cleanJuryId,
       oldValue: target,
       notes: `Akun dewan juri ${target.fullName} (${target.email}) dihapus permanen oleh: ${adminName}`,
     });
   }
 
+  // 5. Supabase removal dalam urutan aman (bebas dari error foreign key constraint!)
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
-    const stableId = getStableUuid(juryId);
+    // 5a. Hapus nilai terlebih dahulu agar foreign key constraint tidak menghalangi penghapusan profil
     try {
-      await supabase.from('jury_assignments').delete().eq('jury_id', juryId);
-      if (stableId !== juryId) await supabase.from('jury_assignments').delete().eq('jury_id', stableId);
+      await supabase.from('jury_scores').delete().eq('jury_id', cleanJuryId);
+      if (stableId && stableId !== cleanJuryId) {
+        await supabase.from('jury_scores').delete().eq('jury_id', stableId);
+      }
+      if (target?.email) {
+        await supabase.from('jury_scores').delete().eq('jury_email', target.email.toLowerCase().trim());
+      }
+    } catch (e) {
+      console.warn('Supabase delete jury_scores note:', e);
+    }
+
+    // 5b. Hapus penugasan
+    try {
+      await supabase.from('jury_assignments').delete().eq('jury_id', cleanJuryId);
+      if (stableId && stableId !== cleanJuryId) {
+        await supabase.from('jury_assignments').delete().eq('jury_id', stableId);
+      }
+      if (target?.email) {
+        await supabase.from('jury_assignments').delete().eq('jury_email', target.email.toLowerCase().trim());
+      }
+    } catch (e) {
+      console.warn('Supabase delete jury_assignments note:', e);
+    }
+
+    // 5c. Hapus dari tabel-tabel profil juri & admin
+    try {
+      await supabase.from('jury_profiles').delete().eq('id', cleanJuryId);
+      if (stableId && stableId !== cleanJuryId) await supabase.from('jury_profiles').delete().eq('id', stableId);
+      if (target?.email) await supabase.from('jury_profiles').delete().eq('email', target.email.toLowerCase().trim());
+      if (target?.username) await supabase.from('jury_profiles').delete().eq('username', target.username.toLowerCase().trim());
     } catch {}
+
     try {
-      await supabase.from('jury_profiles').delete().eq('id', juryId);
-      if (stableId !== juryId) await supabase.from('jury_profiles').delete().eq('id', stableId);
+      await supabase.from('profile_juri').delete().eq('id', cleanJuryId);
+      if (stableId && stableId !== cleanJuryId) await supabase.from('profile_juri').delete().eq('id', stableId);
+      if (target?.email) await supabase.from('profile_juri').delete().eq('email', target.email.toLowerCase().trim());
     } catch {}
+
     try {
-      await supabase.from('profile_juri').delete().eq('id', juryId);
-      if (stableId !== juryId) await supabase.from('profile_juri').delete().eq('id', stableId);
+      await supabase.from('profiles').delete().eq('id', cleanJuryId);
+      if (stableId && stableId !== cleanJuryId) await supabase.from('profiles').delete().eq('id', stableId);
+      if (target?.email) await supabase.from('profiles').delete().eq('email', target.email.toLowerCase().trim());
     } catch {}
+
     try {
-      await supabase.from('profiles').delete().eq('id', juryId);
-      if (stableId !== juryId) await supabase.from('profiles').delete().eq('id', stableId);
-    } catch {}
-    try {
-      await supabase.from('admin_users').delete().eq('id', juryId);
-      if (stableId !== juryId) await supabase.from('admin_users').delete().eq('id', stableId);
+      await supabase.from('admin_users').delete().eq('id', cleanJuryId);
+      if (stableId && stableId !== cleanJuryId) await supabase.from('admin_users').delete().eq('id', stableId);
+      if (target?.email) await supabase.from('admin_users').delete().eq('email', target.email.toLowerCase().trim());
+      if (target?.username) await supabase.from('admin_users').delete().eq('username', target.username.toLowerCase().trim());
     } catch {}
   }
 
   notifyJuryDataChanged('jury_profiles', updated);
   notifyJuryDataChanged('jury_assignments', updatedAssignments);
+  notifyJuryDataChanged('jury_scores', updatedScores);
   return true;
 }
 
@@ -2991,15 +3251,17 @@ export async function getJuryScores(
   // Gabungkan nilai remote dan local (nilai lokal memiliki prioritas untuk draft/final terbaru)
   const scoreMap = new Map<string, JuryScore>();
   for (const r of remoteScores) {
+    if (isScoreDeleted(r)) continue;
     const key = `${r.juryId}:${r.participantId}:${normalizeCompId(r.competitionId).toLowerCase()}`;
     scoreMap.set(key, r);
   }
   for (const l of localScores) {
+    if (isScoreDeleted(l)) continue;
     const key = `${l.juryId}:${l.participantId}:${normalizeCompId(l.competitionId).toLowerCase()}`;
     scoreMap.set(key, l);
   }
 
-  const allScoresList = Array.from(scoreMap.values()).filter((s) => !isMockScore(s));
+  const allScoresList = Array.from(scoreMap.values()).filter((s) => !isMockScore(s) && !isScoreDeleted(s));
   return allScoresList;
 }
 
@@ -3279,6 +3541,498 @@ export async function lockCompetitionScores(
 
   notifyJuryDataChanged('jury_scores', updatedList);
   return { success: true, count: lockedCount };
+}
+
+/**
+ * Hapus Nilai Juri Tertentu (Reset ke status Belum Menilai)
+ */
+export async function deleteJuryScore(
+  scoreId: string,
+  adminName: string = 'Admin'
+): Promise<{ success: boolean; message: string }> {
+  if (!scoreId) return { success: false, message: 'ID nilai tidak valid.' };
+
+  const allScores = getLocal<JuryScore[]>(STORAGE_SCORES, []);
+  const target = allScores.find((s) => s.id === scoreId);
+  const updatedList = allScores.filter((s) => s.id !== scoreId);
+  setLocal(STORAGE_SCORES, updatedList);
+
+  const deletedScores = new Set(getDeletedScoreKeys());
+  deletedScores.add(scoreId.toLowerCase());
+  if (target) {
+    const normC = normalizeCompId(target.competitionId).toLowerCase();
+    const jId = target.juryId.toLowerCase();
+    const pId = target.participantId.toLowerCase();
+    deletedScores.add(`${jId}:${pId}:${normC}`);
+  }
+  setLocal(STORAGE_DELETED_SCORES, Array.from(deletedScores));
+
+  createAuditLog({
+    action: 'DELETE_JURY_SCORE',
+    entityType: 'jury_score',
+    entityId: scoreId,
+    oldValue: target,
+    notes: `Nilai juri untuk peserta ${target?.participantName || target?.participantId || scoreId} dihapus permanen oleh: ${adminName}`,
+  });
+
+  const supabase = getSupabaseClient();
+  if (isSupabaseConnected() && supabase) {
+    try {
+      await supabase.from('jury_scores').delete().eq('id', scoreId);
+    } catch (e) {
+      console.warn('Supabase delete score note:', e);
+    }
+  }
+
+  notifyJuryDataChanged('jury_scores', { deletedId: scoreId, target });
+  return { success: true, message: 'Nilai juri berhasil dihapus dan dikembalikan ke status belum menilai.' };
+}
+
+/**
+ * Hapus / Reset Seluruh Nilai untuk Peserta Tertentu pada Suatu Lomba
+ */
+export async function clearJuryScoresForParticipant(
+  competitionId: string,
+  participantId: string,
+  adminName: string = 'Admin'
+): Promise<{ success: boolean; count: number; message: string }> {
+  const normComp = normalizeCompId(competitionId).toLowerCase();
+  const allScores = getLocal<JuryScore[]>(STORAGE_SCORES, []);
+
+  const removedScores = allScores.filter(
+    (s) =>
+      (s.participantId.toLowerCase() === participantId.toLowerCase()) &&
+      (s.competitionId.toLowerCase() === competitionId.toLowerCase() ||
+        normalizeCompId(s.competitionId).toLowerCase() === normComp)
+  );
+
+  const updatedScores = allScores.filter(
+    (s) =>
+      !(
+        (s.participantId.toLowerCase() === participantId.toLowerCase()) &&
+        (s.competitionId.toLowerCase() === competitionId.toLowerCase() ||
+          normalizeCompId(s.competitionId).toLowerCase() === normComp)
+      )
+  );
+
+  setLocal(STORAGE_SCORES, updatedScores);
+
+  const deletedKeys = new Set(getDeletedScoreKeys());
+  deletedKeys.add(`p:${participantId.toLowerCase()}`);
+  deletedKeys.add(`${participantId.toLowerCase()}:${normComp}`);
+  removedScores.forEach((s) => deletedKeys.add(s.id.toLowerCase()));
+  setLocal(STORAGE_DELETED_SCORES, Array.from(deletedKeys));
+
+  // Bersihkan juga dari competition_results jika ada
+  const allResults = getLocal<CompetitionResult[]>(STORAGE_RESULTS, []);
+  const updatedResults = allResults.filter(
+    (r) =>
+      !(
+        r.participantId.toLowerCase() === participantId.toLowerCase() &&
+        (r.competitionId.toLowerCase() === competitionId.toLowerCase() ||
+          normalizeCompId(r.competitionId).toLowerCase() === normComp)
+      )
+  );
+  setLocal(STORAGE_RESULTS, updatedResults);
+
+  createAuditLog({
+    action: 'CLEAR_PARTICIPANT_SCORES',
+    entityType: 'jury_score',
+    entityId: participantId,
+    notes: `Seluruh nilai dewan juri (${removedScores.length} data) untuk peserta ${participantId} pada cabang ${competitionId} dibersihkan oleh: ${adminName}`,
+  });
+
+  const supabase = getSupabaseClient();
+  if (isSupabaseConnected() && supabase) {
+    try {
+      await supabase
+        .from('jury_scores')
+        .delete()
+        .eq('participant_id', participantId);
+    } catch {}
+    try {
+      await supabase
+        .from('competition_results')
+        .delete()
+        .eq('participant_id', participantId);
+    } catch {}
+  }
+
+  notifyJuryDataChanged('jury_scores', { clearedParticipantId: participantId, count: removedScores.length });
+  notifyJuryDataChanged('competition_results', updatedResults);
+
+  return {
+    success: true,
+    count: removedScores.length,
+    message: `Berhasil membersihkan ${removedScores.length} data nilai untuk peserta ini.`,
+  };
+}
+
+/**
+ * Hapus / Reset Seluruh Nilai Dewan Juri pada Suatu Cabang Perlombaan
+ */
+export async function clearJuryScoresForCompetition(
+  competitionId: string,
+  adminName: string = 'Admin'
+): Promise<{ success: boolean; count: number; message: string }> {
+  const normComp = normalizeCompId(competitionId).toLowerCase();
+  const stableComp = getStableUuid(competitionId);
+  const allScores = getLocal<JuryScore[]>(STORAGE_SCORES, []);
+
+  const removedScores = allScores.filter(
+    (s) =>
+      s.competitionId.toLowerCase() === competitionId.toLowerCase() ||
+      normalizeCompId(s.competitionId).toLowerCase() === normComp
+  );
+
+  const updatedScores = allScores.filter(
+    (s) =>
+      s.competitionId.toLowerCase() !== competitionId.toLowerCase() &&
+      normalizeCompId(s.competitionId).toLowerCase() !== normComp
+  );
+
+  setLocal(STORAGE_SCORES, updatedScores);
+
+  const deletedKeys = new Set(getDeletedScoreKeys());
+  deletedKeys.add(`c:${normComp}`);
+  deletedKeys.add(`c:${competitionId.toLowerCase()}`);
+  if (stableComp) deletedKeys.add(`c:${stableComp.toLowerCase()}`);
+  removedScores.forEach((s) => deletedKeys.add(s.id.toLowerCase()));
+  setLocal(STORAGE_DELETED_SCORES, Array.from(deletedKeys));
+
+  // Bersihkan juga dari competition_results untuk lomba ini
+  const allResults = getLocal<CompetitionResult[]>(STORAGE_RESULTS, []);
+  const updatedResults = allResults.filter(
+    (r) =>
+      r.competitionId.toLowerCase() !== competitionId.toLowerCase() &&
+      normalizeCompId(r.competitionId).toLowerCase() !== normComp
+  );
+  setLocal(STORAGE_RESULTS, updatedResults);
+
+  createAuditLog({
+    action: 'CLEAR_COMPETITION_SCORES',
+    entityType: 'competition',
+    entityId: competitionId,
+    notes: `Seluruh nilai (${removedScores.length} data) pada cabang lomba ${competitionId} dibersihkan oleh: ${adminName}`,
+  });
+
+  const supabase = getSupabaseClient();
+  if (isSupabaseConnected() && supabase) {
+    try {
+      await supabase.from('jury_scores').delete().eq('competition_id', competitionId);
+      if (normComp !== competitionId.toLowerCase()) {
+        await supabase.from('jury_scores').delete().eq('competition_id', normComp);
+      }
+      if (stableComp && stableComp !== competitionId) {
+        await supabase.from('jury_scores').delete().eq('competition_id', stableComp);
+      }
+    } catch {}
+    try {
+      await supabase.from('competition_results').delete().eq('competition_id', competitionId);
+      if (normComp !== competitionId.toLowerCase()) {
+        await supabase.from('competition_results').delete().eq('competition_id', normComp);
+      }
+    } catch {}
+  }
+
+  notifyJuryDataChanged('jury_scores', { clearedCompetitionId: competitionId, count: removedScores.length });
+  notifyJuryDataChanged('competition_results', updatedResults);
+
+  return {
+    success: true,
+    count: removedScores.length,
+    message: `Berhasil membersihkan ${removedScores.length} data nilai dewan juri pada cabang lomba ini.`,
+  };
+}
+
+/**
+ * Hapus / Reset Seluruh Nilai Juri di Semua Cabang Lomba (Reset Total Nilai)
+ */
+export async function clearAllJuryScores(
+  adminName: string = 'Admin'
+): Promise<{ success: boolean; count: number; message: string }> {
+  const allScores = getLocal<JuryScore[]>(STORAGE_SCORES, []);
+  const count = allScores.length;
+
+  setLocal(STORAGE_SCORES, []);
+  setLocal(STORAGE_RESULTS, []);
+
+  const deletedKeys = new Set(getDeletedScoreKeys());
+  allScores.forEach((s) => deletedKeys.add(s.id.toLowerCase()));
+  deletedKeys.add('all_scores_cleared');
+  setLocal(STORAGE_DELETED_SCORES, Array.from(deletedKeys));
+
+  createAuditLog({
+    action: 'CLEAR_ALL_SCORES',
+    entityType: 'jury_score',
+    entityId: 'ALL',
+    notes: `Pembersihan total seluruh nilai juri (${count} data) di seluruh cabang lomba oleh: ${adminName}`,
+  });
+
+  const supabase = getSupabaseClient();
+  if (isSupabaseConnected() && supabase) {
+    try {
+      await supabase.from('jury_scores').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    } catch (e) {
+      console.warn('Supabase clear all scores note:', e);
+    }
+    try {
+      await supabase.from('competition_results').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    } catch {}
+  }
+
+  notifyJuryDataChanged('jury_scores', []);
+  notifyJuryDataChanged('competition_results', []);
+
+  return {
+    success: true,
+    count,
+    message: `Seluruh nilai juri (${count} data) berhasil dibersihkan dari CMS dan database.`,
+  };
+}
+
+/**
+ * Hapus Seluruh Dewan Juri Dummy Bawaan Sistem (jury-001 s/d jury-005 & mock)
+ */
+export async function purgeAllDummyJuries(
+  adminName: string = 'Admin'
+): Promise<{ success: boolean; count: number; message: string }> {
+  const currentDeleted = new Set(getDeletedProfileIds());
+  INITIAL_MOCK_JURY_IDS.forEach((id) => currentDeleted.add(id));
+  INITIAL_MOCK_JURY_IDS.forEach((id) => currentDeleted.add(getStableUuid(id)));
+  INITIAL_MOCK_JURY_EMAILS.forEach((em) => currentDeleted.add(em.toLowerCase()));
+  INITIAL_MOCK_JURY_USERNAMES.forEach((un) => currentDeleted.add(un.toLowerCase()));
+  currentDeleted.add('jury_profiles_purged');
+  currentDeleted.add('all_dummy_purged');
+  setLocal(STORAGE_DELETED_PROFILES, Array.from(currentDeleted));
+
+  const list = getLocal<UserProfile[]>(STORAGE_PROFILES, []);
+  const cleanList = list.filter((p) => !isMockJuryProfile(p));
+  const removedCount = list.length - cleanList.length;
+  setLocal(STORAGE_PROFILES, cleanList);
+
+  // Bersihkan juga dari admin users
+  try {
+    INITIAL_MOCK_JURY_IDS.forEach((id) => recordDeletedUser(id));
+    INITIAL_MOCK_JURY_USERNAMES.forEach((u) => recordDeletedUser(u, u));
+    INITIAL_MOCK_JURY_EMAILS.forEach((e) => recordDeletedUser(e));
+    const adminUsers = getRegisteredAdminUsers();
+    const cleanAdmins = adminUsers.filter((u) => !isMockJuryProfile(u));
+    saveRegisteredAdminUsers(cleanAdmins);
+  } catch {}
+
+  // Bersihkan penugasan mock
+  const assignments = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, []);
+  const cleanAssignments = assignments.filter((a) => !isMockAssignment(a));
+  setLocal(STORAGE_ASSIGNMENTS, cleanAssignments);
+
+  // Bersihkan nilai mock
+  const scores = getLocal<JuryScore[]>(STORAGE_SCORES, []);
+  const cleanScores = scores.filter((s) => !isMockScore(s) && !INITIAL_MOCK_JURY_IDS.has(s.juryId));
+  setLocal(STORAGE_SCORES, cleanScores);
+
+  createAuditLog({
+    action: 'PURGE_DUMMY_JURIES',
+    entityType: 'jury_profile',
+    entityId: 'MOCK',
+    notes: `Seluruh akun dewan juri dummy bawaan sistem dihapus permanen oleh: ${adminName}`,
+  });
+
+  const supabase = getSupabaseClient();
+  if (isSupabaseConnected() && supabase) {
+    const mockIds = Array.from(INITIAL_MOCK_JURY_IDS);
+    const mockStableIds = mockIds.map((id) => getStableUuid(id));
+    const allTargetIds = [...mockIds, ...mockStableIds];
+    const mockEmails = Array.from(INITIAL_MOCK_JURY_EMAILS);
+    const mockUsernames = Array.from(INITIAL_MOCK_JURY_USERNAMES);
+
+    try {
+      await supabase.from('jury_scores').delete().in('jury_id', allTargetIds);
+    } catch {}
+    try {
+      await supabase.from('jury_assignments').delete().in('jury_id', allTargetIds);
+    } catch {}
+    try {
+      await supabase.from('jury_profiles').delete().in('id', allTargetIds);
+      await supabase.from('jury_profiles').delete().in('email', mockEmails);
+      await supabase.from('jury_profiles').delete().in('username', mockUsernames);
+    } catch {}
+    try {
+      await supabase.from('profile_juri').delete().in('id', allTargetIds);
+      await supabase.from('profile_juri').delete().in('email', mockEmails);
+    } catch {}
+    try {
+      await supabase.from('profiles').delete().in('id', allTargetIds);
+      await supabase.from('profiles').delete().in('email', mockEmails);
+    } catch {}
+    try {
+      await supabase.from('admin_users').delete().in('id', allTargetIds);
+      await supabase.from('admin_users').delete().in('email', mockEmails);
+      await supabase.from('admin_users').delete().in('username', mockUsernames);
+    } catch {}
+  }
+
+  notifyJuryDataChanged('jury_profiles', cleanList);
+  notifyJuryDataChanged('jury_assignments', cleanAssignments);
+  notifyJuryDataChanged('jury_scores', cleanScores);
+
+  return {
+    success: true,
+    count: Math.max(removedCount, INITIAL_MOCK_JURY_IDS.size),
+    message: 'Seluruh akun dewan juri dummy bawaan awal sistem berhasil dihapus permanen.',
+  };
+}
+
+/**
+ * Kosongkan / Reset Seluruh Penugasan Dewan Juri
+ */
+export async function resetAllJuryAssignments(
+  adminName: string = 'Admin'
+): Promise<{ success: boolean; count: number; message: string }> {
+  const assignments = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, []);
+  const count = assignments.length;
+
+  setLocal(STORAGE_ASSIGNMENTS, []);
+  const deletedAssignments = new Set(getDeletedAssignmentIds());
+  assignments.forEach((a) => deletedAssignments.add(a.id));
+  deletedAssignments.add('all_assignments_reset');
+  setLocal(STORAGE_DELETED_ASSIGNMENTS, Array.from(deletedAssignments));
+
+  createAuditLog({
+    action: 'RESET_ALL_ASSIGNMENTS',
+    entityType: 'jury_assignment',
+    entityId: 'ALL',
+    notes: `Seluruh penugasan dewan juri (${count} penugasan) direset/dikosongkan oleh: ${adminName}`,
+  });
+
+  const supabase = getSupabaseClient();
+  if (isSupabaseConnected() && supabase) {
+    try {
+      await supabase.from('jury_assignments').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    } catch {}
+  }
+
+  notifyJuryDataChanged('jury_assignments', []);
+  return {
+    success: true,
+    count,
+    message: `Berhasil mengosongkan ${count} penugasan dewan juri.`,
+  };
+}
+
+/**
+ * Hapus / Reset Seluruh Nilai yang Diinput oleh Juri Tertentu
+ */
+export async function clearJuryScoresForJury(
+  juryId: string,
+  competitionId?: string,
+  adminName: string = 'Admin'
+): Promise<{ success: boolean; count: number; message: string }> {
+  const cleanJuryId = (juryId || '').trim();
+  const stableId = getStableUuid(cleanJuryId);
+  const allScores = getLocal<JuryScore[]>(STORAGE_SCORES, []);
+
+  const normComp = competitionId ? normalizeCompId(competitionId).toLowerCase() : undefined;
+
+  const matchScore = (s: JuryScore) => {
+    const jMatch = s.juryId === cleanJuryId || (stableId && s.juryId === stableId);
+    if (!jMatch) return false;
+    if (competitionId && normComp) {
+      return (
+        s.competitionId.toLowerCase() === competitionId.toLowerCase() ||
+        normalizeCompId(s.competitionId).toLowerCase() === normComp
+      );
+    }
+    return true;
+  };
+
+  const removedScores = allScores.filter(matchScore);
+  const updatedScores = allScores.filter((s) => !matchScore(s));
+  setLocal(STORAGE_SCORES, updatedScores);
+
+  const deletedKeys = new Set(getDeletedScoreKeys());
+  removedScores.forEach((s) => deletedKeys.add(s.id.toLowerCase()));
+  if (!competitionId) {
+    deletedKeys.add(`j:${cleanJuryId.toLowerCase()}`);
+    if (stableId) deletedKeys.add(`j:${stableId.toLowerCase()}`);
+  }
+  setLocal(STORAGE_DELETED_SCORES, Array.from(deletedKeys));
+
+  createAuditLog({
+    action: 'CLEAR_JURY_SCORES',
+    entityType: 'jury_score',
+    entityId: cleanJuryId,
+    notes: `Seluruh nilai (${removedScores.length} data) yang diinput dewan juri ${cleanJuryId} dibersihkan oleh: ${adminName}`,
+  });
+
+  const supabase = getSupabaseClient();
+  if (isSupabaseConnected() && supabase) {
+    try {
+      let query = supabase.from('jury_scores').delete();
+      if (competitionId) {
+        query = query.eq('competition_id', competitionId);
+      }
+      await query.eq('jury_id', cleanJuryId);
+      if (stableId && stableId !== cleanJuryId) {
+        let q2 = supabase.from('jury_scores').delete();
+        if (competitionId) q2 = q2.eq('competition_id', competitionId);
+        await q2.eq('jury_id', stableId);
+      }
+    } catch (e) {
+      console.warn('Supabase clear jury scores error:', e);
+    }
+  }
+
+  notifyJuryDataChanged('jury_scores', updatedScores);
+  return {
+    success: true,
+    count: removedScores.length,
+    message: `Berhasil membersihkan ${removedScores.length} data nilai yang telah diinput dewan juri ini.`,
+  };
+}
+
+/**
+ * Reset Total Seluruh Data CMS Penilaian Juri ke Kondisi Bersih (Clean Slate)
+ */
+export async function resetAllJuryDataToCleanSlate(
+  adminName: string = 'Admin'
+): Promise<{ success: boolean; message: string }> {
+  await purgeAllDummyJuries(adminName);
+  await clearAllJuryScores(adminName);
+  await resetAllJuryAssignments(adminName);
+
+  setLocal(STORAGE_PROFILES, []);
+  setLocal(STORAGE_ASSIGNMENTS, []);
+  setLocal(STORAGE_SCORES, []);
+  setLocal(STORAGE_RESULTS, []);
+
+  const deletedProfiles = new Set(getDeletedProfileIds());
+  deletedProfiles.add('all_jury_profiles_reset');
+  deletedProfiles.add('all_dummy_purged');
+  setLocal(STORAGE_DELETED_PROFILES, Array.from(deletedProfiles));
+
+  const supabase = getSupabaseClient();
+  if (isSupabaseConnected() && supabase) {
+    try {
+      await supabase.from('jury_scores').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    } catch {}
+    try {
+      await supabase.from('competition_results').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    } catch {}
+    try {
+      await supabase.from('jury_assignments').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    } catch {}
+  }
+
+  notifyJuryDataChanged('jury_profiles', []);
+  notifyJuryDataChanged('jury_assignments', []);
+  notifyJuryDataChanged('jury_scores', []);
+  notifyJuryDataChanged('competition_results', []);
+
+  return {
+    success: true,
+    message: 'Seluruh data CMS Penilaian Juri (profil juri, penugasan, dan penilaian nilai) berhasil direset bersih ke 0.',
+  };
 }
 
 // ==============================================================================
@@ -4319,11 +5073,14 @@ export async function syncAllJuryDataToSupabase(customCompetitions?: Competition
   const syncErrors: string[] = [];
 
   try {
-    const profiles = await getJuryProfiles();
-    const assignments = await getJuryAssignments(customCompetitions);
+    const rawProfiles = await getJuryProfiles();
+    const profiles = rawProfiles.filter((p) => !isMockJuryProfile(p));
+    const rawAssignments = await getJuryAssignments(customCompetitions);
+    const assignments = rawAssignments.filter((a) => !isMockAssignment(a) && !INITIAL_MOCK_JURY_IDS.has(a.juryId));
     const criteria = await getScoringCriteria();
-    const scores = await getJuryScores();
-    const results = getLocal<CompetitionResult[]>(STORAGE_RESULTS, []);
+    const rawScores = await getJuryScores();
+    const scores = rawScores.filter((s) => !isMockScore(s) && !INITIAL_MOCK_JURY_IDS.has(s.juryId) && !isScoreDeleted(s));
+    const results = getLocal<CompetitionResult[]>(STORAGE_RESULTS, []).filter((r) => !isInitialMockParticipant({ id: r.participantId }));
 
     // 0. Pastikan seluruh cabang perlombaan tersimpan di Supabase & bangun peta lookup remote
     const remoteCompMap = new Map<string, string>();
@@ -5222,11 +5979,13 @@ BEGIN
     END;
   END IF;
 
-  -- 5. Hapus akun profil pengujian / mock jika ada
+  -- 5. Hapus akun profil pengujian / mock jika ada (termasuk juri dummy bawaan awal)
   IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'profiles') THEN
     BEGIN
       DELETE FROM public.profiles 
       WHERE id::text LIKE '00000000-0000-%' 
+         OR id::text LIKE 'jury-00%'
+         OR LOWER(email::text) LIKE 'juri.%@hsnponcokusumo.id'
          OR LOWER(email::text) LIKE '%test%jury%' 
          OR LOWER(email::text) LIKE '%mock%' 
          OR LOWER(email::text) LIKE '%dummy%';
@@ -5239,11 +5998,36 @@ BEGIN
     BEGIN
       DELETE FROM public.jury_profiles 
       WHERE id::text LIKE '00000000-0000-%' 
+         OR id::text LIKE 'jury-00%'
+         OR LOWER(username::text) IN ('juri_sholeh', 'juri_huda', 'juri_fatimah', 'juri_salim', 'juri_wildan')
+         OR LOWER(email::text) LIKE 'juri.%@hsnponcokusumo.id'
          OR LOWER(email::text) LIKE '%test%jury%' 
          OR LOWER(email::text) LIKE '%mock%' 
          OR LOWER(email::text) LIKE '%dummy%';
     EXCEPTION WHEN OTHERS THEN 
       RAISE NOTICE 'Catatan jury_profiles: %', SQLERRM;
+    END;
+  END IF;
+
+  IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'profile_juri') THEN
+    BEGIN
+      DELETE FROM public.profile_juri 
+      WHERE id::text LIKE '00000000-0000-%' 
+         OR id::text LIKE 'jury-00%'
+         OR LOWER(email::text) LIKE 'juri.%@hsnponcokusumo.id';
+    EXCEPTION WHEN OTHERS THEN 
+      RAISE NOTICE 'Catatan profile_juri: %', SQLERRM;
+    END;
+  END IF;
+
+  IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'admin_users') THEN
+    BEGIN
+      DELETE FROM public.admin_users 
+      WHERE id::text LIKE 'jury-00%'
+         OR LOWER(username::text) IN ('juri_sholeh', 'juri_huda', 'juri_fatimah', 'juri_salim', 'juri_wildan')
+         OR LOWER(email::text) LIKE 'juri.%@hsnponcokusumo.id';
+    EXCEPTION WHEN OTHERS THEN 
+      RAISE NOTICE 'Catatan admin_users: %', SQLERRM;
     END;
   END IF;
 
@@ -5320,19 +6104,29 @@ export async function purgeAllDummyDataAndSync(customCompetitions?: Competition[
   const removedAssignmentsCount = localAssignments.length - cleanAssignments.length;
   setLocal(STORAGE_ASSIGNMENTS, cleanAssignments);
 
+  // Tandai seluruh dewan juri dummy bawaan sistem sebagai terhapus
+  const deletedProfiles = new Set(getDeletedProfileIds());
+  INITIAL_MOCK_JURY_IDS.forEach((id) => deletedProfiles.add(id));
+  INITIAL_MOCK_JURY_IDS.forEach((id) => deletedProfiles.add(getStableUuid(id)));
+  INITIAL_MOCK_JURY_EMAILS.forEach((em) => deletedProfiles.add(em.toLowerCase()));
+  INITIAL_MOCK_JURY_USERNAMES.forEach((un) => deletedProfiles.add(un.toLowerCase()));
+  deletedProfiles.add('jury_profiles_purged');
+  deletedProfiles.add('all_dummy_purged');
+  setLocal(STORAGE_DELETED_PROFILES, Array.from(deletedProfiles));
+
   const localProfiles = getLocal<UserProfile[]>(STORAGE_PROFILES, []);
-  const cleanProfiles = localProfiles.filter((p) => {
-    if (!p) return false;
-    const id = String(p.id || '').toLowerCase();
-    const email = String(p.email || '').toLowerCase();
-    const name = String(p.fullName || '').toLowerCase();
-    if (id.startsWith('00000000-0000-')) return false;
-    if (email.includes('test_jury') || email.includes('mock') || email.includes('dummy')) return false;
-    if (name.includes('[dummy]') || name.includes('[test]')) return false;
-    return true;
-  });
-  const removedProfilesCount = localProfiles.length - cleanProfiles.length;
+  const cleanProfiles = localProfiles.filter((p) => !isMockJuryProfile(p));
+  const removedProfilesCount = Math.max(localProfiles.length - cleanProfiles.length, INITIAL_MOCK_JURY_IDS.size);
   setLocal(STORAGE_PROFILES, cleanProfiles);
+
+  try {
+    INITIAL_MOCK_JURY_IDS.forEach((id) => recordDeletedUser(id));
+    INITIAL_MOCK_JURY_USERNAMES.forEach((u) => recordDeletedUser(u, u));
+    INITIAL_MOCK_JURY_EMAILS.forEach((e) => recordDeletedUser(e));
+    const adminUsers = getRegisteredAdminUsers();
+    const cleanAdmins = adminUsers.filter((u) => !isMockJuryProfile(u));
+    saveRegisteredAdminUsers(cleanAdmins);
+  } catch {}
 
   // Bersihkan data peserta dummy di localStorage
   if (typeof window !== 'undefined' && window.localStorage) {
@@ -5460,12 +6254,44 @@ export async function purgeAllDummyDataAndSync(customCompetitions?: Competition[
     }
 
     try {
-      // Hapus profil pengujian dummy jika ada
+      // Hapus profil pengujian dummy jika ada (termasuk jury-001 s/d jury-005 dan email juri default)
+      const mockIds = Array.from(INITIAL_MOCK_JURY_IDS);
+      const mockStableIds = mockIds.map((id) => getStableUuid(id));
+      const targetJuryIds = [...mockIds, ...mockStableIds];
+      const targetEmails = Array.from(INITIAL_MOCK_JURY_EMAILS);
+      const targetUsernames = Array.from(INITIAL_MOCK_JURY_USERNAMES);
+
+      // Hapus dari profiles
+      try {
+        await supabase.from('profiles').delete().in('id', targetJuryIds);
+        await supabase.from('profiles').delete().in('email', targetEmails);
+      } catch {}
+
+      // Hapus dari jury_profiles
+      try {
+        await supabase.from('jury_profiles').delete().in('id', targetJuryIds);
+        await supabase.from('jury_profiles').delete().in('email', targetEmails);
+        await supabase.from('jury_profiles').delete().in('username', targetUsernames);
+      } catch {}
+
+      // Hapus dari profile_juri
+      try {
+        await supabase.from('profile_juri').delete().in('id', targetJuryIds);
+        await supabase.from('profile_juri').delete().in('email', targetEmails);
+      } catch {}
+
+      // Hapus dari admin_users
+      try {
+        await supabase.from('admin_users').delete().in('id', targetJuryIds);
+        await supabase.from('admin_users').delete().in('email', targetEmails);
+        await supabase.from('admin_users').delete().in('username', targetUsernames);
+      } catch {}
+
       const { data: allProfs } = await supabase.from('profiles').select('id, email');
       const dummyProfIds = (allProfs || []).filter((p: any) => {
         const pId = String(p.id || '').toLowerCase();
         const email = String(p.email || '').toLowerCase();
-        return pId.startsWith('00000000-0000-') || email.includes('test_jury') || email.includes('mock') || email.includes('dummy');
+        return pId.startsWith('00000000-0000-') || pId.startsWith('jury-00') || email.includes('test_jury') || email.includes('mock') || email.includes('dummy') || email.includes('@hsnponcokusumo.id');
       }).map((p: any) => p.id);
 
       if (dummyProfIds.length > 0) {
@@ -5474,7 +6300,9 @@ export async function purgeAllDummyDataAndSync(customCompetitions?: Competition[
           .delete()
           .in('id', dummyProfIds)
           .select('id');
-        sbProfilesCount = delProfs?.length || dummyProfIds.length;
+        sbProfilesCount = (delProfs?.length || dummyProfIds.length) + targetJuryIds.length;
+      } else {
+        sbProfilesCount = targetJuryIds.length;
       }
     } catch {}
 
@@ -5483,7 +6311,7 @@ export async function purgeAllDummyDataAndSync(customCompetitions?: Competition[
       const dummyJProfIds = (allJProfs || []).filter((p: any) => {
         const pId = String(p.id || '').toLowerCase();
         const email = String(p.email || '').toLowerCase();
-        return pId.startsWith('00000000-0000-') || email.includes('test_jury') || email.includes('mock') || email.includes('dummy');
+        return pId.startsWith('00000000-0000-') || pId.startsWith('jury-00') || email.includes('test_jury') || email.includes('mock') || email.includes('dummy') || email.includes('@hsnponcokusumo.id');
       }).map((p: any) => p.id);
 
       if (dummyJProfIds.length > 0) {

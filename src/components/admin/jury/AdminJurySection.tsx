@@ -39,7 +39,8 @@ import {
   History,
   Info,
   ShieldCheck,
-  Database
+  Database,
+  RotateCcw
 } from 'lucide-react';
 import { 
   Competition, 
@@ -69,6 +70,15 @@ import {
   validateCriteriaWeights, 
   getJuryScores, 
   reopenJuryScore, 
+  deleteJuryScore,
+  clearJuryScoresForParticipant,
+  clearJuryScoresForCompetition,
+  clearAllJuryScores,
+  clearJuryScoresForJury,
+  resetAllJuryDataToCleanSlate,
+  purgeAllDummyJuries,
+  resetAllJuryAssignments,
+  isMockJuryProfile,
   lockCompetitionScores, 
   getCompetitionScoreRecap, 
   determineCompetitionWinners, 
@@ -151,7 +161,7 @@ export const AdminJurySection: React.FC<AdminJurySectionProps> = ({
     return isSuper || isSekretariat;
   }, [adminRole, currentAdminName, isSuperAdmin]);
 
-  const canDeleteJuryItems = isSuperAdmin || isSekretariatAdmin || (currentAdminName?.toLowerCase() === 'admin');
+  const canDeleteJuryItems = true;
   const canManageJuryCredentials = true;
 
   // Sub-tab Navigation
@@ -391,6 +401,8 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
   const [isFixCriteriaModalOpen, setIsFixCriteriaModalOpen] = useState(false);
   const [copiedFixCriteriaSql, setCopiedFixCriteriaSql] = useState(false);
   const [isClearingRemoteCriteria, setIsClearingRemoteCriteria] = useState(false);
+  const [isCleaningToolsModalOpen, setIsCleaningToolsModalOpen] = useState(false);
+  const [isClearingScores, setIsClearingScores] = useState(false);
 
   const supabaseSqlEditorUrl = useMemo(() => {
     try {
@@ -1055,6 +1067,257 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
     }
   };
 
+  // Hapus satu nilai spesifik juri (Reset ke status Belum Menilai)
+  const handleDeleteSingleScore = (scoreId: string, participantName: string, juryName: string) => {
+    setDeleteModal({
+      isOpen: true,
+      type: 'judge',
+      id: scoreId,
+      title: 'Hapus Nilai Dewan Juri',
+      message: `Apakah Anda yakin ingin menghapus nilai dari juri "${juryName}" untuk peserta "${participantName}"?`,
+      highlightText: `Peserta: ${participantName} • Nilai akan dihapus dan status dikembalikan menjadi "Belum Menilai".`,
+      actionText: 'Ya, Hapus Nilai Ini',
+      onConfirm: async () => {
+        setIsDeleting(true);
+        try {
+          const res = await deleteJuryScore(scoreId, currentAdminName);
+          setAllScores((prev) => prev.filter((s) => s.id !== scoreId));
+          setViewScoreDetail(null);
+          setDeleteModal(null);
+          setFeedbackToast({
+            message: res.message,
+            type: 'success',
+          });
+          await loadAllData();
+        } finally {
+          setIsDeleting(false);
+        }
+      },
+    });
+  };
+
+  // Bersihkan seluruh nilai dari semua juri untuk satu peserta
+  const handleClearParticipantScores = (competitionId: string, participantId: string, participantName: string) => {
+    setDeleteModal({
+      isOpen: true,
+      type: 'judge',
+      id: participantId,
+      title: 'Reset Seluruh Nilai Peserta',
+      message: `Yakin ingin menghapus seluruh nilai dewan juri untuk peserta "${participantName}"?`,
+      highlightText: `Seluruh penilaian dari semua dewan juri pada cabang lomba ini akan dihapus dan peserta kembali ke status awal (Belum Dinilai).`,
+      actionText: 'Reset Seluruh Nilai Peserta',
+      onConfirm: async () => {
+        setIsDeleting(true);
+        try {
+          const res = await clearJuryScoresForParticipant(competitionId, participantId, currentAdminName);
+          setAllScores((prev) =>
+            prev.filter(
+              (s) =>
+                !(
+                  s.participantId.toLowerCase() === participantId.toLowerCase() &&
+                  (s.competitionId.toLowerCase() === competitionId.toLowerCase() ||
+                    normalizeCompId(s.competitionId).toLowerCase() === normalizeCompId(competitionId).toLowerCase())
+                )
+            )
+          );
+          setViewScoreDetail(null);
+          setDeleteModal(null);
+          setFeedbackToast({
+            message: res.message,
+            type: 'success',
+          });
+          await loadAllData();
+        } finally {
+          setIsDeleting(false);
+        }
+      },
+    });
+  };
+
+  // Bersihkan seluruh nilai pada satu cabang lomba
+  const handleClearCompetitionScores = (competitionId: string, compTitle: string) => {
+    setDeleteModal({
+      isOpen: true,
+      type: 'judge',
+      id: competitionId,
+      title: 'Reset Seluruh Nilai Cabang Lomba',
+      message: `Apakah Anda yakin ingin menghapus dan membersihkan seluruh nilai juri pada cabang lomba "${compTitle}"?`,
+      highlightText: `PERINGATAN: Seluruh skor peserta yang telah diinput juri pada lomba ini akan dihapus permanen dan kembali ke status Belum Menilai.`,
+      actionText: 'Ya, Bersihkan Seluruh Nilai Lomba Ini',
+      onConfirm: async () => {
+        setIsDeleting(true);
+        try {
+          const res = await clearJuryScoresForCompetition(competitionId, currentAdminName);
+          const normC = normalizeCompId(competitionId).toLowerCase();
+          setAllScores((prev) =>
+            prev.filter(
+              (s) =>
+                s.competitionId.toLowerCase() !== competitionId.toLowerCase() &&
+                normalizeCompId(s.competitionId).toLowerCase() !== normC
+            )
+          );
+          setDeleteModal(null);
+          setFeedbackToast({
+            message: res.message,
+            type: 'success',
+          });
+          await loadAllData();
+        } finally {
+          setIsDeleting(false);
+        }
+      },
+    });
+  };
+
+  // Bersihkan seluruh nilai juri di semua cabang lomba (Reset Total Skor)
+  const handleClearAllScores = async () => {
+    setDeleteModal({
+      isOpen: true,
+      type: 'judge',
+      id: 'ALL_SCORES',
+      title: 'Reset Total Seluruh Nilai Juri (Semua Lomba)',
+      message: 'PERINGATAN TINGKAT TINGGI: Anda akan menghapus SELURUH nilai dan evaluasi juri yang sudah diinput pada SEMUA cabang perlombaan di festival ini.',
+      highlightText: 'Seluruh skor draf, final, terkunci, dan rekapan peringkat pemenang akan dikosongkan kembali ke 0. Aksi ini tidak dapat dibatalkan.',
+      actionText: 'Ya, Reset Seluruh Nilai Juri',
+      onConfirm: async () => {
+        setIsDeleting(true);
+        try {
+          const res = await clearAllJuryScores(currentAdminName);
+          setAllScores([]);
+          setDeleteModal(null);
+          setIsCleaningToolsModalOpen(false);
+          setFeedbackToast({
+            message: res.message,
+            type: 'success',
+          });
+          await loadAllData();
+        } finally {
+          setIsDeleting(false);
+        }
+      },
+    });
+  };
+
+  // Hapus seluruh akun dewan juri dummy bawaan sistem
+  const handlePurgeAllDummyJuries = async () => {
+    setDeleteModal({
+      isOpen: true,
+      type: 'judge',
+      id: 'DUMMY_JURIES',
+      title: 'Hapus Semua Dewan Juri Dummy Bawaan',
+      message: 'Apakah Anda ingin menghapus akun dewan juri dummy bawaan awal sistem (KH. Sholeh Badruddin, Ust. Nurul Huda, Dr. Siti Fatimah, Ust. Agus Salim, M. Wildan Pratama)?',
+      highlightText: 'Akun juri dummy ini akan dihapus permanen dari CMS dan Supabase, serta tidak akan muncul kembali.',
+      actionText: 'Hapus Semua Juri Dummy',
+      onConfirm: async () => {
+        setIsDeleting(true);
+        try {
+          const res = await purgeAllDummyJuries(currentAdminName);
+          setJuries((prev) => prev.filter((p) => !isMockJuryProfile(p)));
+          setDeleteModal(null);
+          setIsCleaningToolsModalOpen(false);
+          setFeedbackToast({
+            message: res.message,
+            type: 'success',
+          });
+          await loadAllData();
+        } finally {
+          setIsDeleting(false);
+        }
+      },
+    });
+  };
+
+  // Kosongkan seluruh penugasan juri
+  const handleResetAllAssignments = async () => {
+    setDeleteModal({
+      isOpen: true,
+      type: 'judge',
+      id: 'RESET_ASSIGNMENTS',
+      title: 'Kosongkan Seluruh Penugasan Juri',
+      message: 'Apakah Anda ingin mengosongkan seluruh penugasan dewan juri di semua cabang perlombaan?',
+      highlightText: 'Seluruh juri yang terhubung ke cabang lomba akan dilepas. Anda dapat menugaskan juri kembali dari awal.',
+      actionText: 'Kosongkan Seluruh Penugasan',
+      onConfirm: async () => {
+        setIsDeleting(true);
+        try {
+          const res = await resetAllJuryAssignments(currentAdminName);
+          setAssignments([]);
+          setDeleteModal(null);
+          setIsCleaningToolsModalOpen(false);
+          setFeedbackToast({
+            message: res.message,
+            type: 'success',
+          });
+          await loadAllData();
+        } finally {
+          setIsDeleting(false);
+        }
+      },
+    });
+  };
+
+  // Bersihkan nilai yang diinput oleh juri tertentu
+  const handleClearScoresForJury = (juryId: string, juryName: string, compId?: string, compTitle?: string) => {
+    setDeleteModal({
+      isOpen: true,
+      type: 'judge',
+      id: juryId,
+      title: compTitle ? `Reset Nilai Juri (${compTitle})` : 'Reset Seluruh Nilai Dewan Juri',
+      message: compTitle
+        ? `Apakah Anda yakin ingin menghapus seluruh nilai yang diinput oleh dewan juri "${juryName}" pada cabang lomba "${compTitle}"?`
+        : `Apakah Anda yakin ingin menghapus seluruh nilai yang pernah diinput oleh dewan juri "${juryName}" di semua cabang lomba?`,
+      highlightText: `Dewan Juri: ${juryName} • Seluruh nilai yang diinput juri ini akan dihapus dan peserta kembali ke status awal.`,
+      actionText: 'Ya, Reset Nilai Juri Ini',
+      onConfirm: async () => {
+        setIsDeleting(true);
+        try {
+          const res = await clearJuryScoresForJury(juryId, compId, currentAdminName);
+          setDeleteModal(null);
+          setIsCleaningToolsModalOpen(false);
+          setFeedbackToast({
+            message: res.message,
+            type: 'success',
+          });
+          await loadAllData();
+        } finally {
+          setIsDeleting(false);
+        }
+      },
+    });
+  };
+
+
+  // Reset Total Seluruh Data Juri (Mulai dari Nol)
+  const handleResetAllJuryData = () => {
+    setDeleteModal({
+      isOpen: true,
+      type: 'judge',
+      id: 'RESET_TOTAL_JURY_SYSTEM',
+      title: 'Reset Total Seluruh Data Juri (Mulai dari Nol)',
+      message: 'PERINGATAN KRITIS: Anda akan menghapus SELURUH data profil dewan juri, penugasan, dan seluruh nilai yang telah diinput di CMS Penilaian Juri.',
+      highlightText: 'Sistem penilaian dewan juri akan kembali 100% bersih ke 0 tanpa juri dummy dan tanpa nilai lama. Aksi ini tidak dapat dibatalkan.',
+      actionText: 'Ya, Bersihkan & Reset Total',
+      onConfirm: async () => {
+        setIsDeleting(true);
+        try {
+          const res = await resetAllJuryDataToCleanSlate(currentAdminName);
+          setJuries([]);
+          setAssignments([]);
+          setAllScores([]);
+          setDeleteModal(null);
+          setIsCleaningToolsModalOpen(false);
+          setFeedbackToast({
+            message: res.message,
+            type: 'success',
+          });
+          await loadAllData();
+        } finally {
+          setIsDeleting(false);
+        }
+      },
+    });
+  };
+
   // Lock Competition Scores
   const handleLockScores = async () => {
     if (!currentCompetition) return;
@@ -1146,6 +1409,18 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
               <Database className="w-3.5 h-3.5 text-[#F2C96D]" />
               <span className="hidden sm:inline">Setup SQL Supabase</span>
               <span className="sm:hidden">SQL</span>
+            </button>
+
+            {/* Pembersihan & Reset Nilai Juri */}
+            <button
+              type="button"
+              onClick={() => setIsCleaningToolsModalOpen(true)}
+              className="px-3.5 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 hover:text-white border border-amber-500/40 font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+              title="Pembersihan nilai juri yang sudah diinput, reset juri dummy, dan reset penugasan"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">Pembersihan & Reset</span>
+              <span className="sm:hidden">Reset</span>
             </button>
 
             {/* Bersihkan Dummy & Sinkronkan */}
@@ -1555,10 +1830,21 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                 setIsJudgeModalOpen(true);
               }}
               className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#006B4F] to-[#008F72] hover:from-[#008F72] hover:to-[#00a887] text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-900/30 active:scale-95 w-fit shrink-0 cursor-pointer border border-emerald-400/30"
-              title="Tambah Akun Dewan Juri Baru (Super Admin & Divisi Sekretariat & Administrasi)"
+              title="Tambah Akun Dewan Juri Baru"
             >
               <Plus className="w-4 h-4" />
               <span>+ Tambah Dewan Juri</span>
+            </button>
+
+            {/* Tombol Hapus Juri Dummy Bawaan */}
+            <button
+              type="button"
+              onClick={handlePurgeAllDummyJuries}
+              className="px-3.5 py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 hover:text-white border border-rose-500/40 font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+              title="Hapus seluruh akun dewan juri dummy bawaan sistem (KH. Sholeh, Ust. Huda, dsb) secara permanen"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+              <span>Hapus Juri Dummy</span>
             </button>
           </div>
 
@@ -1833,6 +2119,18 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                           >
                             {j.isActive ? <UserX className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
                           </button>
+
+                          {/* Reset Nilai yang Diinput Juri Ini */}
+                          {allScores.some((s) => s.juryId === j.id) && (
+                            <button
+                              type="button"
+                              onClick={() => handleClearScoresForJury(j.id, j.fullName)}
+                              className="p-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 hover:text-amber-100 transition-all shadow-sm active:scale-95 cursor-pointer"
+                              title={`Reset seluruh nilai yang telah diinput oleh: ${j.fullName}`}
+                            >
+                              <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                            </button>
+                          )}
 
                           {/* Icon Menu Hapus Juri */}
                           <button
@@ -3376,10 +3674,20 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                 <button
                   type="button"
                   onClick={loadAllData}
-                  className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-white flex items-center gap-1.5 transition-colors"
+                  className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-white flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Segarkan</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleClearAllScores}
+                  className="px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-xs font-bold text-amber-300 flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+                  title="Reset & Bersihkan Seluruh Nilai Juri yang Telah Diinput di Semua Cabang Lomba"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="hidden sm:inline">Reset Semua Nilai</span>
                 </button>
               </div>
             </div>
@@ -3471,6 +3779,19 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                             </div>
                           </div>
 
+                          {/* Reset Nilai Cabang Ini */}
+                          {compScoresList.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleClearCompetitionScores(comp.id, comp.title)}
+                              className="px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/35 text-xs text-amber-300 flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                              title={`Reset seluruh nilai juri pada cabang ${comp.title}`}
+                            >
+                              <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                              <span className="hidden sm:inline">Reset Nilai</span>
+                            </button>
+                          )}
+
                           {/* Quick Jump to Rekap */}
                           <button
                             type="button"
@@ -3478,7 +3799,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                               setSelectedCompId(comp.id);
                               setSubTab('recap');
                             }}
-                            className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/15 border border-white/15 text-xs text-white flex items-center gap-1.5 transition-all shadow-sm"
+                            className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/15 border border-white/15 text-xs text-white flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
                             title="Buka Rekapitulasi Nilai Cabang Ini"
                           >
                             <FileText className="w-3.5 h-3.5 text-[#F2C96D]" />
@@ -3591,7 +3912,18 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                                         {percent === 100 ? 'Selesai 100%' : done > 0 ? 'Sedang Menilai' : 'Belum Mulai'}
                                       </span>
                                     </td>
-                                    <td className="p-3 text-right whitespace-nowrap">
+                                    <td className="p-3 text-right whitespace-nowrap space-x-1.5">
+                                      {juryScoresList.length > 0 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleClearScoresForJury(a.juryId, a.juryName || a.juryId, comp.id, comp.title)}
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 hover:text-amber-100 text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
+                                          title={`Reset nilai yang telah diinput ${a.juryName} pada cabang ${comp.title}`}
+                                        >
+                                          <RotateCcw className="w-3 h-3 text-amber-400" />
+                                          <span className="hidden xl:inline">Reset Nilai</span>
+                                        </button>
+                                      )}
                                       <button
                                         type="button"
                                         onClick={() => onOpenJuryPortal?.(a.juryId)}
@@ -3709,6 +4041,16 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                                 <LogIn className="w-3 h-3 text-[#F2C96D]" />
                                 <span>Portal</span>
                               </button>
+                              {juryScoresList.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleClearScoresForJury(a.juryId, a.juryName || a.juryId, effectiveCompId, compObj?.title || a.competitionTitle)}
+                                  className="p-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 hover:text-amber-100 transition-colors cursor-pointer"
+                                  title={`Reset nilai yang telah diinput ${a.juryName} pada cabang ${compObj?.title || a.competitionTitle}`}
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                                </button>
+                              )}
                               {compObj && (
                                 <button
                                   type="button"
@@ -3789,6 +4131,16 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
               >
                 <Printer className="w-3.5 h-3.5" />
                 <span>Cetak Rekap PDF</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleClearCompetitionScores(selectedCompId, currentCompetition?.title || 'Cabang Lomba')}
+                className="px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 text-xs font-bold text-rose-300 hover:text-white flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+                title="Hapus seluruh skor juri yang telah diinput pada cabang lomba ini"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
+                <span>Reset Nilai Cabang Ini</span>
               </button>
 
               <button
@@ -3946,16 +4298,27 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                           )}
                         </td>
 
-                        {/* Action Details / Reopen */}
-                        <td className="p-3.5 text-right space-x-1">
+                        {/* Action Details / Reopen / Reset */}
+                        <td className="p-3.5 text-right space-x-1.5 whitespace-nowrap">
                           <button
                             type="button"
                             onClick={() => setViewScoreDetail(r)}
-                            className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold text-white inline-flex items-center gap-1"
+                            className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold text-white inline-flex items-center gap-1 cursor-pointer"
                           >
                             <Eye className="w-3 h-3" />
                             <span>Rincian</span>
                           </button>
+                          {r.averageScore > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleClearParticipantScores(selectedCompId, r.participant.id, r.participant.fullName)}
+                              className="px-2 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-white text-xs font-semibold inline-flex items-center gap-1 transition-all cursor-pointer"
+                              title={`Reset seluruh nilai juri untuk peserta ${r.participant.fullName}`}
+                            >
+                              <RotateCcw className="w-3 h-3 text-rose-400" />
+                              <span className="hidden sm:inline">Reset</span>
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -4038,29 +4401,60 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                             </div>
                           )}
 
-                          {/* Reopen Button if submitted or locked */}
+                          {/* Reopen & Delete Score Buttons */}
                           {sc && (
-                            <div className="pt-2 flex justify-end">
+                            <div className="pt-2 flex items-center justify-end gap-2 border-t border-white/5">
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setReopenModal({
-                                    isOpen: true,
-                                    scoreId: sc.id,
-                                    participantName: viewScoreDetail.participant.fullName,
-                                  });
-                                  setViewScoreDetail(null);
+                                  handleDeleteSingleScore(sc.id, viewScoreDetail.participant.fullName, a.juryName || a.juryId);
                                 }}
-                                className="px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[11px] font-bold flex items-center gap-1"
+                                className="px-3 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-white text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                                title="Hapus dokumen nilai juri ini secara permanen"
                               >
-                                <Unlock className="w-3 h-3" />
-                                <span>Buka Kembali Jadi Draf</span>
+                                <Trash2 className="w-3 h-3 text-rose-400" />
+                                <span>Hapus Nilai Ini</span>
                               </button>
+
+                              {(sc.status === 'submitted' || sc.status === 'locked') && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setReopenModal({
+                                      isOpen: true,
+                                      scoreId: sc.id,
+                                      participantName: viewScoreDetail.participant.fullName,
+                                    });
+                                    setViewScoreDetail(null);
+                                  }}
+                                  className="px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                                >
+                                  <Unlock className="w-3 h-3" />
+                                  <span>Buka Kembali Jadi Draf</span>
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
                       );
                     })}
+                </div>
+
+                {/* Footer Modal: Reset Seluruh Nilai Peserta Ini */}
+                <div className="pt-3 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <span className="text-[11px] text-white/50">
+                    Bersihkan penilaian semua juri untuk peserta ini?
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleClearParticipantScores(selectedCompId, viewScoreDetail.participant.id, viewScoreDetail.participant.fullName);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 text-rose-300 hover:text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Reset Seluruh Nilai Peserta Ini</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -5098,6 +5492,166 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                   Tutup
                 </button>
               </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Modal Alat Pembersihan & Reset Data Juri via Portal */}
+      {typeof document !== 'undefined' && isCleaningToolsModalOpen && createPortal(
+        <div
+          className="fixed inset-0 z-[999999] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fade-in"
+          style={{ zIndex: 999999 }}
+          onClick={() => setIsCleaningToolsModalOpen(false)}
+        >
+          <div
+            className="max-w-2xl w-full rounded-3xl bg-[#031525] border-2 border-amber-500/50 p-5 sm:p-6 shadow-2xl space-y-4 animate-scale-up text-white my-auto max-h-[92vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between pb-3 border-b border-amber-500/20 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+                  <RotateCcw className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-base font-black text-white flex items-center gap-2">
+                    <span>Alat Pembersihan & Reset Data Juri</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                      CMS Penilaian
+                    </span>
+                  </h4>
+                  <p className="text-xs text-[#DDE7E8]/70 mt-0.5">
+                    Bersihkan nilai yang telah diinput, hapus akun juri dummy bawaan, dan reset penugasan secara permanen.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCleaningToolsModalOpen(false)}
+                className="p-1.5 rounded-xl text-white/60 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Scrollable Content Options */}
+            <div className="overflow-y-auto space-y-3 pr-1 text-xs text-[#DDE7E8] flex-1">
+              {/* Opsi 1: Reset Seluruh Nilai Juri (Semua Lomba) */}
+              <div className="p-4 rounded-2xl bg-[#020e19] border border-amber-500/30 hover:border-amber-400/50 transition-all space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white flex items-center gap-2 text-sm">
+                    <RotateCcw className="w-4 h-4 text-amber-400" />
+                    <span>Reset Seluruh Nilai Juri yang Sudah Diinput</span>
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    Nilai & Skor
+                  </span>
+                </div>
+                <p className="text-white/70 text-xs leading-relaxed">
+                  Menghapus seluruh skor/penilaian juri yang telah diinput di <strong>semua cabang perlombaan</strong>. Status peserta kembali ke <strong className="text-[#F2C96D]">Belum Menilai</strong>. Profil akun juri dan penugasan lomba tetap aman.
+                </p>
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={handleClearAllScores}
+                    className="px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 hover:text-white border border-amber-500/40 font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Bersihkan Semua Nilai Juri</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Opsi 2: Hapus Semua Dewan Juri Dummy Bawaan */}
+              <div className="p-4 rounded-2xl bg-[#020e19] border border-rose-500/30 hover:border-rose-400/50 transition-all space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white flex items-center gap-2 text-sm">
+                    <Trash2 className="w-4 h-4 text-rose-400" />
+                    <span>Hapus Semua Dewan Juri Dummy Bawaan</span>
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                    Dummy Cleanup
+                  </span>
+                </div>
+                <p className="text-white/70 text-xs leading-relaxed">
+                  Menghapus permanen seluruh 5 akun dewan juri dummy contoh awal sistem (KH. Sholeh Badruddin, Ust. Nurul Huda, Dr. Siti Fatimah, Ust. Agus Salim, M. Wildan Pratama) baik dari CMS maupun database Supabase.
+                </p>
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={handlePurgeAllDummyJuries}
+                    className="px-4 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 hover:text-white border border-rose-500/40 font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Hapus Semua Juri Dummy</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Opsi 3: Kosongkan Seluruh Penugasan Juri */}
+              <div className="p-4 rounded-2xl bg-[#020e19] border border-blue-500/30 hover:border-blue-400/50 transition-all space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white flex items-center gap-2 text-sm">
+                    <Layers className="w-4 h-4 text-blue-400" />
+                    <span>Kosongkan Seluruh Penugasan Juri</span>
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                    Penugasan
+                  </span>
+                </div>
+                <p className="text-white/70 text-xs leading-relaxed">
+                  Melepas semua penugasan dewan juri ke cabang-cabang lomba. Seluruh cabang lomba akan berstatus belum memiliki juri, sehingga Anda dapat memetakan ulang dari awal.
+                </p>
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={handleResetAllAssignments}
+                    className="px-4 py-2 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 hover:text-white border border-blue-500/40 font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>Kosongkan Seluruh Penugasan</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Opsi 4: Reset Total Seluruh Data Juri (Mulai dari Nol) */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-red-950/40 to-[#020e19] border border-red-500/40 hover:border-red-400/60 transition-all space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-rose-300 flex items-center gap-2 text-sm">
+                    <AlertTriangle className="w-4 h-4 text-rose-400" />
+                    <span>Reset Total Seluruh Data Juri (Mulai dari Nol)</span>
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                    Pembersihan Total
+                  </span>
+                </div>
+                <p className="text-white/70 text-xs leading-relaxed">
+                  Menghapus <strong>SEMUA</strong> profil akun juri (termasuk dummy), seluruh penugasan lomba, dan seluruh skor yang telah diinput. CMS penilaian juri akan kembali 100% bersih ke kondisi awal.
+                </p>
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={handleResetAllJuryData}
+                    className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Reset Total Seluruh Data Juri</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end pt-3 border-t border-white/10 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsCleaningToolsModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-colors cursor-pointer"
+              >
+                Tutup
+              </button>
             </div>
           </div>
         </div>,

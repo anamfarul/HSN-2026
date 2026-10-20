@@ -30,7 +30,8 @@ import {
   HelpCircle,
   FolderOpen,
   Info,
-  Maximize2
+  Maximize2,
+  RotateCcw
 } from 'lucide-react';
 import { 
   Competition, 
@@ -56,6 +57,7 @@ import {
   getJuryScores, 
   saveScoreDraft, 
   submitFinalScore, 
+  deleteJuryScore,
   calculateJuryTotal, 
   validateCriteriaWeights,
   resolveCompetition,
@@ -572,6 +574,32 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
       setScoreFeedback({ type: 'error', message: 'Terjadi kesalahan sistem.' });
     } finally {
       setIsSubmittingScore(false);
+    }
+  };
+
+  // Kosongkan Lembar Nilai / Hapus Draf
+  const handleResetFormScores = async () => {
+    if (!profile) return;
+    const confirmReset = window.confirm(
+      'Apakah Anda yakin ingin mengosongkan seluruh nilai dan catatan evaluasi pada peserta ini?'
+    );
+    if (!confirmReset) return;
+
+    setActiveScores({});
+    setActiveNotes('');
+
+    if (currentScoreRecord && currentScoreRecord.status === 'draft') {
+      try {
+        await deleteJuryScore(currentScoreRecord.id, profile.fullName);
+        await refreshJuryData(profile.id);
+        setScoreFeedback({ type: 'success', message: 'Draf nilai berhasil dibersihkan.' });
+        setTimeout(() => setScoreFeedback(null), 3000);
+      } catch {
+        // fallback
+      }
+    } else {
+      setScoreFeedback({ type: 'success', message: 'Formulir penilaian telah dikosongkan.' });
+      setTimeout(() => setScoreFeedback(null), 2500);
     }
   };
 
@@ -1753,26 +1781,39 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
 
                   {/* Action Buttons */}
                   {currentScoreRecord?.status !== 'submitted' && currentScoreRecord?.status !== 'locked' ? (
-                    <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-3 border-t border-white/10">
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-white/10">
                       <button
                         type="button"
-                        onClick={handleSaveDraft}
+                        onClick={handleResetFormScores}
                         disabled={isSubmittingScore}
-                        className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 text-xs font-bold transition-all flex items-center justify-center gap-2 active:scale-95"
+                        className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-bold transition-all flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
+                        title="Kosongkan seluruh isian nilai dan catatan untuk peserta ini"
                       >
-                        <Save className="w-4 h-4" />
-                        <span>Simpan Sebagai Draf</span>
+                        <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
+                        <span>Kosongkan Nilai</span>
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => setShowConfirmSubmit(true)}
-                        disabled={isSubmittingScore}
-                        className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#006B4F] via-[#008F72] to-[#00D9F5] hover:opacity-95 text-white text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95"
-                      >
-                        <Send className="w-4 h-4" />
-                        <span>Kirim Nilai Final</span>
-                      </button>
+                      <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full sm:w-auto justify-end">
+                        <button
+                          type="button"
+                          onClick={handleSaveDraft}
+                          disabled={isSubmittingScore}
+                          className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 text-xs font-bold transition-all flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
+                        >
+                          <Save className="w-4 h-4" />
+                          <span>Simpan Sebagai Draf</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmSubmit(true)}
+                          disabled={isSubmittingScore}
+                          className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#006B4F] via-[#008F72] to-[#00D9F5] hover:opacity-95 text-white text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95 cursor-pointer"
+                        >
+                          <Send className="w-4 h-4" />
+                          <span>Kirim Nilai Final</span>
+                        </button>
+                      </div>
                     </div>
                   ) : null}
                 </div>
