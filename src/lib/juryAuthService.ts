@@ -238,33 +238,39 @@ export async function signInJury(
     } catch (_) {}
   }
 
-  // Pencarian profil juri yang fleksibel (email, username, id, nama lengkap, atau no HP)
+  // Pencarian profil juri yang aman & terisolasi (Prioritas: Username, Email, ID, No HP, Nama Lengkap Eksak)
   const cleanDigits = cleanId.replace(/[^0-9]/g, '');
-  const alphaClean = cleanId.replace(/[^a-z0-9]/g, '');
 
-  const matchedJury = allJuries.find((j) => {
+  // 1. Prioritas Utama: Pencocokan eksak username, email, ID, atau prefix email
+  let matchedJury = allJuries.find((j) => {
     const jEmail = (j.email || '').trim().toLowerCase();
     const jUsername = (j.username || '').trim().toLowerCase();
-    const jFullName = (j.fullName || '').trim().toLowerCase();
     const jId = (j.id || '').trim().toLowerCase();
-    const jPhone = (j.phone || '').replace(/[^0-9]/g, '');
     const jEmailPrefix = jEmail.includes('@') ? jEmail.split('@')[0] : jEmail;
 
-    const alphaJName = jFullName.replace(/[^a-z0-9]/g, '');
-    const alphaJUser = jUsername.replace(/[^a-z0-9]/g, '');
-    const alphaJId = jId.replace(/[^a-z0-9]/g, '');
-
     return (
-      jEmail === cleanId ||
       jUsername === cleanId ||
-      jEmailPrefix === cleanId ||
-      jFullName === cleanId ||
+      jEmail === cleanId ||
       jId === cleanId ||
-      (alphaClean.length >= 3 && (alphaJName === alphaClean || alphaJUser === alphaClean || alphaJId === alphaClean)) ||
-      (cleanId.length >= 3 && (jFullName.includes(cleanId) || cleanId.includes(jFullName))) ||
-      (cleanDigits.length >= 7 && jPhone && jPhone === cleanDigits)
+      jEmailPrefix === cleanId
     );
   });
+
+  // 2. Prioritas Kedua: No HP (jika input berupa nomor telepon)
+  if (!matchedJury && cleanDigits.length >= 7) {
+    matchedJury = allJuries.find((j) => {
+      const jPhone = (j.phone || '').replace(/[^0-9]/g, '');
+      return jPhone && jPhone === cleanDigits;
+    });
+  }
+
+  // 3. Prioritas Ketiga: Nama Lengkap Persis Eksak (bukan substring/potongan)
+  if (!matchedJury) {
+    matchedJury = allJuries.find((j) => {
+      const jFullName = (j.fullName || '').trim().toLowerCase();
+      return jFullName && jFullName === cleanId;
+    });
+  }
 
   if (matchedJury) {
     if (matchedJury.isActive === false) {

@@ -4387,10 +4387,14 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                         if (sComp !== normSel && s.competitionId !== selectedCompId) return false;
 
                         const sJ = s.juryId.toLowerCase().trim();
+                        const sEmail = ((s as any).juryEmail || '').toLowerCase().trim();
+                        const normSJ = sJ.replace(/^juri-/, 'jury-');
+                        const normCleanJId = cleanJId.replace(/^juri-/, 'jury-');
                         const juryMatch =
                           sJ === cleanJId ||
+                          normSJ === normCleanJId ||
                           (cleanEmail && sJ === cleanEmail) ||
-                          sJ === a.juryName?.toLowerCase().trim();
+                          (cleanEmail && sEmail && sEmail === cleanEmail);
                         if (!juryMatch) return false;
 
                         const sP = s.participantId.toLowerCase().trim();

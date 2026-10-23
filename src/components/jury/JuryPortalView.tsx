@@ -172,52 +172,40 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
       // Ambil daftar dewan juri terkini dari Supabase (termasuk profile_juri)
       const freshJuries = await getJuryProfiles();
 
-      // Sinkronkan profil sesi saat ini jika terdeteksi data baru atau login admin
+      // Sinkronkan profil sesi saat ini HANYA untuk juri yang sama (ID, email, atau username persis)
       const activeProf = sessionRef.current?.profile || profileRef.current;
-      let matchedProf: UserProfile | undefined;
+      let matchedProf: UserProfile | undefined = undefined;
       if (activeProf) {
-        const cleanActiveName = (activeProf.fullName || '').replace(/\s*\(.*?\)\s*/g, '').trim().toLowerCase();
-        const cleanActiveUser = (activeProf.username || '').trim().toLowerCase();
         const cleanActiveId = (activeProf.id || '').trim().toLowerCase();
-        const alphaActiveName = cleanActiveName.replace(/[^a-z0-9]/g, '');
-        const alphaActiveUser = cleanActiveUser.replace(/[^a-z0-9]/g, '');
-        const alphaActiveId = cleanActiveId.replace(/[^a-z0-9]/g, '');
+        const cleanActiveEmail = (activeProf.email || '').trim().toLowerCase();
+        const cleanActiveUser = (activeProf.username || '').trim().toLowerCase();
 
         matchedProf = freshJuries.find((j) => {
-          const jId = (j.id || '').toLowerCase();
-          const jUser = (j.username || '').toLowerCase();
-          const jName = (j.fullName || '').toLowerCase();
-          const alphaJName = jName.replace(/[^a-z0-9]/g, '');
-          const alphaJUser = jUser.replace(/[^a-z0-9]/g, '');
-          const alphaJId = jId.replace(/[^a-z0-9]/g, '');
+          const jId = (j.id || '').trim().toLowerCase();
+          const jEmail = (j.email || '').trim().toLowerCase();
+          const jUser = (j.username || '').trim().toLowerCase();
 
-          return (
-            (cleanActiveId !== 'user-admin-root' && jId === cleanActiveId) ||
-            (cleanActiveUser && (jUser === cleanActiveUser || alphaJUser === alphaActiveUser)) ||
-            (cleanActiveName && (
-              jName === cleanActiveName ||
-              alphaJName === alphaActiveName ||
-              alphaJUser === alphaActiveName ||
-              alphaJId === alphaActiveName
-            ))
-          );
+          if (cleanActiveId && jId === cleanActiveId) return true;
+          if (cleanActiveEmail && jEmail === cleanActiveEmail) return true;
+          if (cleanActiveUser && jUser === cleanActiveUser) return true;
+          return false;
         });
 
         if (matchedProf) {
-          const hasChanged =
-            matchedProf.id !== activeProf.id ||
-            matchedProf.fullName !== activeProf.fullName ||
-            matchedProf.role !== activeProf.role ||
-            matchedProf.username !== activeProf.username ||
-            matchedProf.institution !== activeProf.institution;
-
-          if (hasChanged) {
-            setProfile(matchedProf);
-            if (sessionRef.current) {
-              const nextSession = { ...sessionRef.current, profile: matchedProf };
-              setSession(nextSession);
-              saveJurySession(nextSession, true);
-            }
+          // Perbarui metadata juri aktif tanpa pernah mengubah identitas akun ke juri lain
+          const updatedProf: UserProfile = {
+            ...activeProf,
+            fullName: matchedProf.fullName || activeProf.fullName,
+            institution: matchedProf.institution || activeProf.institution,
+            phone: matchedProf.phone || activeProf.phone,
+            role: 'jury',
+            isActive: matchedProf.isActive !== undefined ? matchedProf.isActive : activeProf.isActive,
+          };
+          setProfile(updatedProf);
+          if (sessionRef.current) {
+            const nextSession = { ...sessionRef.current, profile: updatedProf };
+            setSession(nextSession);
+            saveJurySession(nextSession, true);
           }
         }
       }

@@ -869,11 +869,7 @@ export function isAssignmentForJury(
   const aEmail = (assignment.juryEmail || '').toLowerCase().trim();
   const jUser = (jury.username || '').toLowerCase().trim();
 
-  // Bersihkan catatan kurung seperti "(Panitia CMS)" atau "(Sekretariat)"
-  const jName = rawJName.replace(/\s*\(.*?\)\s*/g, '').trim();
-  const aName = rawAName.replace(/\s*\(.*?\)\s*/g, '').trim();
-
-  // 1. Direct ID match
+  // 1. Direct ID match (authoritative)
   if (aJuryId && jId && aJuryId === jId) return true;
 
   // 2. Normalized alias e.g. juri-001 vs jury-001
@@ -885,39 +881,23 @@ export function isAssignmentForJury(
   if (jId && getStableUuid(jId).toLowerCase() === aJuryId) return true;
   if (aJuryId && getStableUuid(aJuryId).toLowerCase() === jId) return true;
 
-  // 4. Email match (case-insensitive)
+  // 4. Email match (authoritative)
   if (jEmail && aEmail && jEmail === aEmail) return true;
   if (jEmail && aJuryId && jEmail === aJuryId) return true;
 
-  // 5. Username match
+  // 5. Username match (authoritative)
   if (jUser) {
     if (aJuryId === jUser || normA === jUser) return true;
-    if (aName === jUser || rawAName === jUser) return true;
   }
 
-  // 6. Alphanumeric stripped match (misal: "dewan2" vs "dewan 2" atau "DEWAN2")
-  const alphaJName = jName.replace(/[^a-z0-9]/g, '');
-  const alphaAName = aName.replace(/[^a-z0-9]/g, '');
-  const alphaAJuryId = aJuryId.replace(/[^a-z0-9]/g, '');
-  const alphaJId = jId.replace(/[^a-z0-9]/g, '');
-  const alphaJUser = jUser.replace(/[^a-z0-9]/g, '');
+  // 6. Nama Lengkap HANYA jika persis sama DAN bukan nama generik
+  const jName = rawJName.replace(/\s*\(.*?\)\s*/g, '').trim();
+  const aName = rawAName.replace(/\s*\(.*?\)\s*/g, '').trim();
+  const isGeneric = (n: string) => !n || n === 'dewan juri' || n === 'juri' || n === 'juri lomba' || n === 'dewan';
 
-  if (alphaJName && alphaAName && alphaJName === alphaAName) return true;
-  if (alphaJName && alphaAJuryId && alphaJName === alphaAJuryId) return true;
-  if (alphaJUser && alphaAName && alphaJUser === alphaAName) return true;
-  if (alphaJUser && alphaAJuryId && alphaJUser === alphaAJuryId) return true;
-  if (alphaJId && alphaAName && alphaJId === alphaAName) return true;
-
-  // 7. Full Name exact or inclusion match
-  if (jName && aName) {
-    if (jName === aName) return true;
-    if (jName.length >= 4 && aName.includes(jName)) return true;
-    if (aName.length >= 4 && jName.includes(aName)) return true;
+  if (!isGeneric(jName) && !isGeneric(aName) && jName === aName) {
+    return true;
   }
-
-  // 8. If jury fullName or username equals assignment.juryId
-  if (jName && aJuryId === jName) return true;
-  if (jId && aName === jId) return true;
 
   return false;
 }
@@ -3685,11 +3665,6 @@ export async function getJuryScores(
     const cleanP = r.participantId.toLowerCase().trim();
     const cleanC = normalizeCompId(r.competitionId).toLowerCase().trim();
     scoreMap.set(`${cleanJ}:${cleanP}:${cleanC}`, r);
-    // Simpan juga versi stable UUID juri jika ada
-    const stableJ = getStableUuid(cleanJ);
-    if (stableJ && stableJ !== cleanJ) {
-      scoreMap.set(`${stableJ}:${cleanP}:${cleanC}`, r);
-    }
   }
 
   let allScoresList = Array.from(scoreMap.values()).filter((s) => !isMockScore(s));
@@ -3865,9 +3840,6 @@ export async function persistScoreToSupabase(
           break;
         }
       }
-      if (!remoteRowId && data.length === 1 && data[0]?.id) {
-        remoteRowId = String(data[0].id);
-      }
     }
   } catch (err: any) {
     console.warn('Cek baris remote jury_scores gagal:', err?.message || err);
@@ -3878,11 +3850,16 @@ export async function persistScoreToSupabase(
     try {
       const { data: byIdData } = await supabase
         .from('jury_scores')
-        .select('id')
+        .select('id, jury_id')
         .or(`id.eq.${safeScoreId},id.eq.${scoreRecord.id}`)
         .limit(1);
       if (byIdData && byIdData.length > 0 && byIdData[0]?.id) {
-        remoteRowId = String(byIdData[0].id);
+        const rowJury = String(byIdData[0].jury_id || '').toLowerCase();
+        // Hanya pakai remoteRowId jika juri-nya benar-benar cocok!
+        const isJMatch = Array.from(juryIdCandidates).some((j) => String(j).toLowerCase() === rowJury);
+        if (isJMatch) {
+          remoteRowId = String(byIdData[0].id);
+        }
       }
     } catch {}
   }
@@ -3891,6 +3868,7 @@ export async function persistScoreToSupabase(
   if (remoteRowId) {
     const updatePayloads = [
       {
+        jury_id: scoreRecord.juryId,
         scores: scoreRecord.scores,
         total_score: scoreRecord.totalScore,
         notes: scoreRecord.notes || '',
@@ -3900,6 +3878,7 @@ export async function persistScoreToSupabase(
         updated_at: now,
       },
       {
+        jury_id: scoreRecord.juryId,
         scores: scoreRecord.scores,
         total_score: scoreRecord.totalScore,
         notes: scoreRecord.notes || '',
@@ -3907,6 +3886,7 @@ export async function persistScoreToSupabase(
         updated_at: now,
       },
       {
+        jury_id: scoreRecord.juryId,
         scores: scoreRecord.scores,
         total_score: scoreRecord.totalScore,
         status: status,
@@ -4992,16 +4972,17 @@ export async function getCompetitionScoreRecap(
             (j.email && j.email.toLowerCase() === aJuryId)
         );
 
+        const isGenericName = (n: string) => !n || n === 'dewan juri' || n === 'juri' || n === 'juri lomba' || n === 'dewan';
         const isMatch =
           aJuryId === sJuryId ||
           (aStable && sJuryId === aStable) ||
           (sStableJuryId && aJuryId === sStableJuryId) ||
-          (aName && sName && aName === sName) ||
           (matchedJudge && (
             matchedJudge.id.toLowerCase() === sJuryId ||
             (matchedJudge.username && matchedJudge.username.toLowerCase() === sJuryId) ||
             (matchedJudge.email && matchedJudge.email.toLowerCase() === sJuryId)
-          ));
+          )) ||
+          (!isGenericName(aName) && !isGenericName(sName) && aName === sName);
 
         if (isMatch) {
           juryScoresMap[a.juryId] = score.totalScore;
@@ -5023,12 +5004,6 @@ export async function getCompetitionScoreRecap(
             }
           }
         }
-      }
-
-      // Jika hanya ada 1 juri yang ditugaskan pada lomba ini, pastikan nilainya langsung terpetakan
-      if (assignedJuries.length === 1 && juryScoresMap[assignedJuries[0].juryId] === undefined) {
-        juryScoresMap[assignedJuries[0].juryId] = score.totalScore;
-        juryStatusesMap[assignedJuries[0].juryId] = score.status;
       }
 
       if (score.status === 'submitted' || score.status === 'locked') {
