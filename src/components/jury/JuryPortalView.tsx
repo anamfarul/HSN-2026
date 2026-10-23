@@ -528,14 +528,34 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
   // Current score document for selected participant
   const currentScoreRecord = useMemo(() => {
     if (!profile || !selectedParticipantId || !selectedCompId) return null;
-    return juryScores.find(
-      (s) =>
-        s.competitionId === selectedCompId &&
-        s.juryId === profile.id &&
-        (s.participantId === selectedParticipantId ||
-          s.participantId === selectedParticipant?.registrationNumber ||
-          s.participantId === selectedParticipant?.id)
-    );
+    const normComp = normalizeCompId(selectedCompId).toLowerCase();
+    const cleanJuryId = (profile.id || '').toLowerCase().trim();
+    const cleanUsername = (profile.username || '').toLowerCase().trim();
+    const cleanEmail = (profile.email || '').toLowerCase().trim();
+    const cleanPartId = (selectedParticipantId || '').toLowerCase().trim();
+    const cleanPartReg = (selectedParticipant?.registrationNumber || '').toLowerCase().trim();
+    const cleanPartActualId = (selectedParticipant?.id || '').toLowerCase().trim();
+
+    return juryScores.find((s) => {
+      const sComp = normalizeCompId(s.competitionId).toLowerCase();
+      if (sComp !== normComp && s.competitionId !== selectedCompId) return false;
+
+      const sJury = (s.juryId || '').toLowerCase().trim();
+      const juryMatch =
+        sJury === cleanJuryId ||
+        (cleanUsername && sJury === cleanUsername) ||
+        (cleanEmail && sJury === cleanEmail);
+      if (!juryMatch) return false;
+
+      const sPart = (s.participantId || '').toLowerCase().trim();
+      return (
+        sPart === cleanPartId ||
+        (cleanPartReg && sPart === cleanPartReg) ||
+        (cleanPartActualId && sPart === cleanPartActualId) ||
+        (cleanPartReg && sPart.includes(cleanPartReg)) ||
+        (cleanPartId && sPart.includes(cleanPartId))
+      );
+    });
   }, [juryScores, profile, selectedParticipantId, selectedCompId, selectedParticipant]);
 
   // When opening scoring form, populate active scores
@@ -545,13 +565,33 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
 
     setSelectedParticipantId(partId);
     setScoreFeedback(null);
-    const existing = juryScores.find(
-      (s) =>
-        s.competitionId === selectedCompId &&
-        s.juryId === profile?.id &&
-        (s.participantId === partId ||
-          s.participantId === participants.find((p) => p.id === partId)?.registrationNumber)
-    );
+    const normComp = normalizeCompId(selectedCompId).toLowerCase();
+    const cleanJuryId = (profile?.id || '').toLowerCase().trim();
+    const cleanUsername = (profile?.username || '').toLowerCase().trim();
+    const cleanEmail = (profile?.email || '').toLowerCase().trim();
+    const cleanPartId = (partId || '').toLowerCase().trim();
+    const targetPart = participants.find((p) => p.id === partId);
+    const cleanPartReg = (targetPart?.registrationNumber || '').toLowerCase().trim();
+
+    const existing = juryScores.find((s) => {
+      const sComp = normalizeCompId(s.competitionId).toLowerCase();
+      if (sComp !== normComp && s.competitionId !== selectedCompId) return false;
+
+      const sJury = (s.juryId || '').toLowerCase().trim();
+      const juryMatch =
+        sJury === cleanJuryId ||
+        (cleanUsername && sJury === cleanUsername) ||
+        (cleanEmail && sJury === cleanEmail);
+      if (!juryMatch) return false;
+
+      const sPart = (s.participantId || '').toLowerCase().trim();
+      return (
+        sPart === cleanPartId ||
+        (cleanPartReg && sPart === cleanPartReg) ||
+        (cleanPartReg && sPart.includes(cleanPartReg)) ||
+        (cleanPartId && sPart.includes(cleanPartId))
+      );
+    });
 
     if (existing) {
       setActiveScores({ ...existing.scores });
@@ -586,6 +626,7 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
         notes: activeNotes,
         juryName: profile.fullName,
         participantName: isAnonymousMode ? `Peserta #${selectedParticipant.registrationNumber}` : selectedParticipant.fullName,
+        registrationNumber: selectedParticipant.registrationNumber,
       });
 
       if (res.success && res.data) {
@@ -621,6 +662,7 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
         notes: activeNotes,
         juryName: profile.fullName,
         participantName: isAnonymousMode ? `Peserta #${selectedParticipant.registrationNumber}` : selectedParticipant.fullName,
+        registrationNumber: selectedParticipant.registrationNumber,
       });
 
       if (res.success && res.data) {

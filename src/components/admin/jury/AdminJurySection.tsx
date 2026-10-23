@@ -548,10 +548,16 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
       const activeComp = competitions.find((c) => c.id === selectedCompId);
       if (activeComp) {
         getScoringCriteria(selectedCompId).then((crit) => {
+          const normSel = normalizeCompId(selectedCompId);
           const assignedJuryIds = assignments
-            .filter((a) => a.competitionId === selectedCompId && a.isActive)
+            .filter((a) => (a.competitionId === selectedCompId || normalizeCompId(a.competitionId) === normSel) && a.isActive)
             .map((a) => a.juryId);
-          const compJuries = juries.filter((j) => assignedJuryIds.includes(j.id));
+          const compJuries = juries.filter(
+            (j) =>
+              assignedJuryIds.includes(j.id) ||
+              (j.username && assignedJuryIds.includes(j.username)) ||
+              (j.email && assignedJuryIds.includes(j.email))
+          );
 
           getCompetitionScoreRecap(selectedCompId, participants, compJuries, crit, competitions).then((res) => {
             setRecapData(res);
@@ -567,7 +573,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
         });
       }
     }
-  }, [selectedCompId, subTab, competitions, participants, assignments, juries]);
+  }, [selectedCompId, subTab, competitions, participants, assignments, juries, allScores]);
 
   // Selected Competition Object
   const currentCompetition = useMemo(() => {
@@ -3856,8 +3862,11 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                               {compAssigns.map((a) => {
                                 const juryScoresList = allScores.filter(
                                   (s) =>
-                                    (s.competitionId === comp.id || resolveCompetition(competitions, s.competitionId)?.id === comp.id) &&
-                                    s.juryId === a.juryId
+                                    (s.competitionId === comp.id ||
+                                      normalizeCompId(s.competitionId) === normalizeCompId(comp.id) ||
+                                      resolveCompetition(competitions, s.competitionId)?.id === comp.id) &&
+                                    (s.juryId.toLowerCase() === a.juryId.toLowerCase() ||
+                                      (a.juryEmail && s.juryId.toLowerCase() === a.juryEmail.toLowerCase()))
                                 );
                                 const draftCount = juryScoresList.filter((s) => s.status === 'draft').length;
                                 const submittedCount = juryScoresList.filter((s) => s.status === 'submitted').length;
@@ -3990,8 +3999,11 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
 
                         const juryScoresList = allScores.filter(
                           (s) =>
-                            (s.competitionId === effectiveCompId || resolveCompetition(competitions, s.competitionId)?.id === effectiveCompId) &&
-                            s.juryId === a.juryId
+                            (s.competitionId === effectiveCompId ||
+                              normalizeCompId(s.competitionId) === normalizeCompId(effectiveCompId) ||
+                              resolveCompetition(competitions, s.competitionId)?.id === effectiveCompId) &&
+                            (s.juryId.toLowerCase() === a.juryId.toLowerCase() ||
+                              (a.juryEmail && s.juryId.toLowerCase() === a.juryEmail.toLowerCase()))
                         );
                         const draftCount = juryScoresList.filter((s) => s.status === 'draft').length;
                         const submittedCount = juryScoresList.filter((s) => s.status === 'submitted').length;
@@ -4200,7 +4212,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                   <th className="p-3.5">Peserta</th>
                   <th className="p-3.5">Lembaga</th>
                   {assignments
-                    .filter((a) => a.competitionId === selectedCompId && a.isActive)
+                    .filter((a) => (a.competitionId === selectedCompId || normalizeCompId(a.competitionId) === normalizeCompId(selectedCompId)) && a.isActive)
                     .map((a, idx) => (
                       <th key={a.id} className="p-3.5 text-center">
                         Juri {idx + 1}
@@ -4227,7 +4239,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                   })
                   .map((r) => {
                     const assignedJuries = assignments.filter(
-                      (a) => a.competitionId === selectedCompId && a.isActive
+                      (a) => (a.competitionId === selectedCompId || normalizeCompId(a.competitionId) === normalizeCompId(selectedCompId)) && a.isActive
                     );
 
                     return (
@@ -4357,15 +4369,38 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
 
                 <div className="space-y-4 text-xs">
                   {assignments
-                    .filter((a) => a.competitionId === selectedCompId && a.isActive)
+                    .filter(
+                      (a) =>
+                        (a.competitionId === selectedCompId ||
+                          normalizeCompId(a.competitionId) === normalizeCompId(selectedCompId)) &&
+                        a.isActive
+                    )
                     .map((a) => {
-                      const sc = allScores.find(
-                        (s) =>
-                          s.competitionId === selectedCompId &&
-                          s.juryId === a.juryId &&
-                          (s.participantId === viewScoreDetail.participant.id ||
-                            s.participantId === viewScoreDetail.participant.registrationNumber)
-                      );
+                      const normSel = normalizeCompId(selectedCompId);
+                      const cleanJId = a.juryId.toLowerCase().trim();
+                      const cleanEmail = (a.juryEmail || '').toLowerCase().trim();
+                      const partId = (viewScoreDetail.participant.id || '').toLowerCase().trim();
+                      const partReg = (viewScoreDetail.participant.registrationNumber || '').toLowerCase().trim();
+
+                      const sc = allScores.find((s) => {
+                        const sComp = normalizeCompId(s.competitionId);
+                        if (sComp !== normSel && s.competitionId !== selectedCompId) return false;
+
+                        const sJ = s.juryId.toLowerCase().trim();
+                        const juryMatch =
+                          sJ === cleanJId ||
+                          (cleanEmail && sJ === cleanEmail) ||
+                          sJ === a.juryName?.toLowerCase().trim();
+                        if (!juryMatch) return false;
+
+                        const sP = s.participantId.toLowerCase().trim();
+                        return (
+                          sP === partId ||
+                          sP === partReg ||
+                          (partReg && sP.includes(partReg)) ||
+                          (partId && sP.includes(partId))
+                        );
+                      });
 
                       return (
                         <div key={a.id} className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-2">

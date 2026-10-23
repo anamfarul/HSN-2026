@@ -206,36 +206,80 @@ if (typeof window !== 'undefined') {
 export const COMPETITION_ID_ALIASES: Record<string, string> = {
   'lomba-dolanan-santri': 'comp-1',
   'permainan-tradisional': 'comp-1',
+  'lmb-paud-01': 'comp-1',
   'lomba-video-santri': 'comp-2',
   'comp-video-kreatif': 'comp-2',
   'video-kreatif': 'comp-2',
+  'lmb-sd-01': 'comp-2',
   'lomba-poster-santri': 'comp-3',
   'comp-poster-digital': 'comp-3',
   'poster-digital': 'comp-3',
+  'lmb-smp-01': 'comp-3',
   'santri-cup': 'comp-4',
   'sepak-bola': 'comp-4',
+  'lmb-smp-02': 'comp-4',
   'lomba-orasi-santri': 'comp-5',
   'orasi-santri': 'comp-5',
   'public-speaking': 'comp-5',
+  'lmb-sma-01': 'comp-5',
   'podcast-santri': 'comp-6',
   'content-podcast': 'comp-6',
+  'lmb-ipnu-01': 'comp-6',
   'women-creativepreneur': 'comp-7',
   'fatayat-umkm': 'comp-7',
+  'lmb-fat-01': 'comp-7',
   'outbound-muslimat': 'comp-8',
   'inovasi-muslimat': 'comp-8',
+  'lmb-mus-01': 'comp-8',
   'silat-santri': 'comp-9',
   'pagar-nusa': 'comp-9',
+  'lomba-video-seni-bela-diri': 'comp-9',
+  'video-seni-bela-diri': 'comp-9',
+  'seni-bela-diri': 'comp-9',
+  'seni-beladiri': 'comp-9',
+  'bela-diri': 'comp-9',
+  'pencak-silat': 'comp-9',
+  'kejuaraan-seni-pencak-silat-santri-pagar-nusa': 'comp-9',
+  'lmb-pn-01': 'comp-9',
   'media-pembelajaran': 'comp-10',
   'lomba-guru': 'comp-10',
+  'lmb-pergunu-01': 'comp-10',
   'baris-berbaris': 'comp-11',
   'pbb-banser': 'comp-11',
   'banser-ansor': 'comp-11',
+  'lmb-banser-01': 'comp-11',
 };
 
 export function normalizeCompId(id?: string): string {
   if (!id) return '';
   const clean = id.trim().toLowerCase();
-  return COMPETITION_ID_ALIASES[clean] || id;
+  if (COMPETITION_ID_ALIASES[clean]) return COMPETITION_ID_ALIASES[clean];
+
+  // Robust fuzzy matching for competition 9 (seni bela diri / pagar nusa)
+  if (
+    clean.includes('bela-diri') ||
+    clean.includes('beladiri') ||
+    clean.includes('bela diri') ||
+    clean.includes('pagar-nusa') ||
+    clean.includes('pagar nusa') ||
+    clean.includes('silat') ||
+    clean.includes('pn-01')
+  ) {
+    return 'comp-9';
+  }
+
+  if (clean.includes('paud') || clean.includes('dolanan')) return 'comp-1';
+  if (clean.includes('lmb-sd-01') || (clean.includes('video') && clean.includes('sd'))) return 'comp-2';
+  if (clean.includes('poster')) return 'comp-3';
+  if (clean.includes('santri-cup') || clean.includes('sepak-bola')) return 'comp-4';
+  if (clean.includes('orasi') || clean.includes('public-speaking')) return 'comp-5';
+  if (clean.includes('podcast')) return 'comp-6';
+  if (clean.includes('creativepreneur') || clean.includes('fatayat')) return 'comp-7';
+  if (clean.includes('outbound') || clean.includes('muslimat')) return 'comp-8';
+  if (clean.includes('media-pembelajaran') || clean.includes('guru') || clean.includes('pergunu')) return 'comp-10';
+  if (clean.includes('baris') || clean.includes('banser') || clean.includes('pbb')) return 'comp-11';
+
+  return id;
 }
 
 // Helper generator ID juri (UUID v4 agar kompatibel dengan tipe UUID maupun TEXT di PostgreSQL/Supabase)
@@ -3591,62 +3635,141 @@ export async function getJuryScores(
   participantId?: string
 ): Promise<JuryScore[]> {
   let remoteScores: JuryScore[] = [];
-  const normComp = competitionId ? normalizeCompId(competitionId).toLowerCase() : undefined;
   const supabase = getSupabaseClient();
+
   if (isSupabaseConnected() && supabase) {
     try {
-      let query = supabase.from('jury_scores').select('*');
-      if (competitionId && normComp) {
-        query = query.or(`competition_id.eq.${competitionId},competition_id.eq.${normComp}`);
-      } else if (competitionId) {
-        query = query.eq('competition_id', competitionId);
-      }
-      if (juryId) query = query.eq('jury_id', juryId);
-      if (participantId) query = query.eq('participant_id', participantId);
-
-      const { data, error } = await query;
+      // Ambil seluruh data nilai dari tabel jury_scores Supabase tanpa query filter kaku
+      // untuk mencegah baris terlewat akibat variasi alias lomba, UUID, atau perbedaan huruf besar/kecil
+      const { data, error } = await supabase.from('jury_scores').select('*');
       if (!error && data && data.length > 0) {
-        remoteScores = data.map((s) => ({
-          id: s.id,
-          juryId: s.jury_id,
-          participantId: s.participant_id,
-          competitionId: normalizeCompId(s.competition_id),
+        remoteScores = data.map((s: any) => ({
+          id: String(s.id),
+          juryId: String(s.jury_id || ''),
+          participantId: String(s.participant_id || ''),
+          competitionId: normalizeCompId(String(s.competition_id || '')),
           scores: s.scores || {},
           totalScore: Number(s.total_score) || 0,
-          notes: s.notes,
-          status: s.status as JuryScoreStatus,
+          notes: s.notes || s.feedback || '',
+          status: (s.status || 'draft') as JuryScoreStatus,
           submittedAt: s.submitted_at,
           lockedAt: s.locked_at,
           createdAt: s.created_at,
           updatedAt: s.updated_at,
         }));
       }
-    } catch {}
+    } catch (err) {
+      console.warn('Gagal membaca remote jury_scores dari Supabase:', err);
+    }
   }
 
-  let localScores = getLocal<JuryScore[]>(STORAGE_SCORES, []);
-  if (competitionId) {
-    localScores = localScores.filter(
-      (s) => s.competitionId === competitionId || normalizeCompId(s.competitionId).toLowerCase() === normComp
-    );
-  }
-  if (juryId) localScores = localScores.filter((s) => s.juryId === juryId);
-  if (participantId) localScores = localScores.filter((s) => s.participantId === participantId);
+  const localScores = getLocal<JuryScore[]>(STORAGE_SCORES, []);
 
-  // Gabungkan nilai remote dan local (nilai lokal memiliki prioritas untuk draft/final terbaru)
+  // Gabungkan nilai: Jika Supabase terhubung, data remote Supabase adalah SUMBER KEBENARAN UTAMA!
+  // Nilai lokal hanya digunakan jika belum ada di remote atau saat offline
   const scoreMap = new Map<string, JuryScore>();
-  for (const r of remoteScores) {
-    if (isScoreDeleted(r)) continue;
-    const key = `${r.juryId}:${r.participantId}:${normalizeCompId(r.competitionId).toLowerCase()}`;
-    scoreMap.set(key, r);
-  }
+
+  // 1. Masukkan nilai lokal terlebih dahulu sebagai cadangan
   for (const l of localScores) {
-    if (isScoreDeleted(l)) continue;
-    const key = `${l.juryId}:${l.participantId}:${normalizeCompId(l.competitionId).toLowerCase()}`;
-    scoreMap.set(key, l);
+    if (isMockScore(l)) continue;
+    const cleanJ = l.juryId.toLowerCase().trim();
+    const cleanP = l.participantId.toLowerCase().trim();
+    const cleanC = normalizeCompId(l.competitionId).toLowerCase().trim();
+    scoreMap.set(`${cleanJ}:${cleanP}:${cleanC}`, l);
   }
 
-  const allScoresList = Array.from(scoreMap.values()).filter((s) => !isMockScore(s) && !isScoreDeleted(s));
+  // 2. Nilai remote dari Supabase MENIMPA nilai lokal (karena Supabase adalah database resmi)
+  for (const r of remoteScores) {
+    if (isMockScore(r)) continue;
+    const cleanJ = r.juryId.toLowerCase().trim();
+    const cleanP = r.participantId.toLowerCase().trim();
+    const cleanC = normalizeCompId(r.competitionId).toLowerCase().trim();
+    scoreMap.set(`${cleanJ}:${cleanP}:${cleanC}`, r);
+    // Simpan juga versi stable UUID juri jika ada
+    const stableJ = getStableUuid(cleanJ);
+    if (stableJ && stableJ !== cleanJ) {
+      scoreMap.set(`${stableJ}:${cleanP}:${cleanC}`, r);
+    }
+  }
+
+  let allScoresList = Array.from(scoreMap.values()).filter((s) => !isMockScore(s));
+
+  // Jika remote scores dari Supabase berhasil didapat, perbarui persistent storage lokal agar selalu sinkron
+  if (isSupabaseConnected() && remoteScores.length > 0) {
+    setLocal(STORAGE_SCORES, allScoresList);
+  }
+
+  // Filter memori jika argumen competitionId, juryId, atau participantId diberikan
+  if (competitionId) {
+    const targetCompNorm = normalizeCompId(competitionId).toLowerCase().trim();
+    const targetCompRaw = competitionId.toLowerCase().trim();
+    const targetCompUuid = getStableUuid(targetCompNorm);
+
+    allScoresList = allScoresList.filter((s) => {
+      const sComp = s.competitionId.toLowerCase().trim();
+      const sNorm = normalizeCompId(s.competitionId).toLowerCase().trim();
+      return (
+        sComp === targetCompRaw ||
+        sComp === targetCompNorm ||
+        sNorm === targetCompNorm ||
+        sNorm === targetCompRaw ||
+        (targetCompUuid && (sComp === targetCompUuid || sNorm === targetCompUuid)) ||
+        (isUuid(sComp) && getStableUuid(targetCompNorm) === sComp)
+      );
+    });
+  }
+
+  if (juryId) {
+    const cleanJ = juryId.toLowerCase().trim();
+    const stableJ = getStableUuid(cleanJ);
+    const candidateJuryKeys = new Set([cleanJ, stableJ].filter(Boolean));
+
+    try {
+      const allLocalJuries = getLocal<UserProfile[]>(STORAGE_PROFILES, []);
+      const matched = allLocalJuries.find(
+        (j) =>
+          j.id.toLowerCase() === cleanJ ||
+          (stableJ && j.id.toLowerCase() === stableJ) ||
+          (j.username && j.username.toLowerCase() === cleanJ) ||
+          (j.email && j.email.toLowerCase() === cleanJ)
+      );
+      if (matched) {
+        if (matched.id) {
+          candidateJuryKeys.add(matched.id.toLowerCase());
+          const mStable = getStableUuid(matched.id);
+          if (mStable) candidateJuryKeys.add(mStable.toLowerCase());
+        }
+        if (matched.username) candidateJuryKeys.add(matched.username.toLowerCase());
+        if (matched.email) candidateJuryKeys.add(matched.email.toLowerCase());
+      }
+    } catch {}
+
+    allScoresList = allScoresList.filter((s) => {
+      const sJ = s.juryId.toLowerCase().trim();
+      const sStable = getStableUuid(sJ);
+      return (
+        candidateJuryKeys.has(sJ) ||
+        (sStable && candidateJuryKeys.has(sStable.toLowerCase())) ||
+        (isUuid(sJ) && candidateJuryKeys.has(getStableUuid(cleanJ)?.toLowerCase() || ''))
+      );
+    });
+  }
+
+  if (participantId) {
+    const cleanP = participantId.toLowerCase().trim();
+    const stableP = getStableUuid(cleanP);
+    allScoresList = allScoresList.filter((s) => {
+      const sP = s.participantId.toLowerCase().trim();
+      return (
+        sP === cleanP ||
+        (stableP && sP === stableP) ||
+        (isUuid(sP) && getStableUuid(cleanP) === sP) ||
+        (cleanP && sP.includes(cleanP)) ||
+        (cleanP && cleanP.includes(sP))
+      );
+    });
+  }
+
   return allScoresList;
 }
 
@@ -3688,17 +3811,33 @@ export async function persistScoreToSupabase(
     ].filter(Boolean))
   );
 
-  const juryIdCandidates = Array.from(
-    new Set([
-      scoreRecord.juryId,
-      getStableUuid(scoreRecord.juryId),
-    ].filter(Boolean))
-  );
+  const juryIdCandidates = new Set<string>([
+    scoreRecord.juryId,
+    scoreRecord.juryId.toLowerCase(),
+    getStableUuid(scoreRecord.juryId),
+  ].filter(Boolean));
+
+  try {
+    const allLocalJuries = getLocal<UserProfile[]>(STORAGE_PROFILES, []);
+    const matched = allLocalJuries.find(
+      (j) =>
+        j.id.toLowerCase() === scoreRecord.juryId.toLowerCase() ||
+        (j.username && j.username.toLowerCase() === scoreRecord.juryId.toLowerCase()) ||
+        (j.email && j.email.toLowerCase() === scoreRecord.juryId.toLowerCase())
+    );
+    if (matched) {
+      if (matched.id) juryIdCandidates.add(matched.id);
+      if (matched.username) juryIdCandidates.add(matched.username);
+      if (matched.email) juryIdCandidates.add(matched.email);
+    }
+  } catch {}
 
   const partIdCandidates = Array.from(
     new Set([
       scoreRecord.participantId,
+      scoreRecord.registrationNumber,
       getStableUuid(scoreRecord.participantId),
+      scoreRecord.registrationNumber ? getStableUuid(scoreRecord.registrationNumber) : '',
     ].filter(Boolean))
   );
 
@@ -3707,30 +3846,27 @@ export async function persistScoreToSupabase(
 
   // STRATEGY 1: Cari apakah baris penilaian (jury, participant, competition) sudah ada di Supabase
   try {
-    for (const jId of juryIdCandidates) {
-      if (remoteRowId) break;
-      for (const pId of partIdCandidates) {
-        if (remoteRowId) break;
-        const { data, error } = await supabase
-          .from('jury_scores')
-          .select('id, competition_id')
-          .eq('jury_id', jId)
-          .eq('participant_id', pId)
-          .limit(10);
+    const { data, error } = await supabase
+      .from('jury_scores')
+      .select('id, competition_id, jury_id, participant_id')
+      .in('participant_id', partIdCandidates)
+      .limit(20);
 
-        if (!error && data && data.length > 0) {
-          for (const row of data) {
-            const rComp = String(row.competition_id || '').toLowerCase();
-            const isMatch = compIdCandidates.some((c) => String(c).toLowerCase() === rComp);
-            if (isMatch && row?.id) {
-              remoteRowId = String(row.id);
-              break;
-            }
-          }
-          if (!remoteRowId && data.length === 1 && data[0]?.id) {
-            remoteRowId = String(data[0].id);
-          }
+    if (!error && data && data.length > 0) {
+      for (const row of data) {
+        const rComp = normalizeCompId(String(row.competition_id || '')).toLowerCase();
+        const rJury = String(row.jury_id || '').toLowerCase();
+        const isCompMatch = compIdCandidates.some((c) => normalizeCompId(String(c)).toLowerCase() === rComp || String(c).toLowerCase() === rComp);
+        const isJuryMatch = Array.from(juryIdCandidates).some(
+          (j) => String(j).toLowerCase() === rJury || getStableUuid(String(j)) === rJury || getStableUuid(rJury) === getStableUuid(String(j))
+        );
+        if (isCompMatch && isJuryMatch && row?.id) {
+          remoteRowId = String(row.id);
+          break;
         }
+      }
+      if (!remoteRowId && data.length === 1 && data[0]?.id) {
+        remoteRowId = String(data[0].id);
       }
     }
   } catch (err: any) {
@@ -3951,6 +4087,7 @@ export async function saveScoreDraft(params: {
   notes?: string;
   juryName?: string;
   participantName?: string;
+  registrationNumber?: string;
 }): Promise<{
   success: boolean;
   data?: JuryScore;
@@ -3963,13 +4100,30 @@ export async function saveScoreDraft(params: {
   const totalScore = calculateJuryTotal(params.scores, criteria);
   const now = new Date().toISOString();
 
+  const cleanJ = params.juryId.toLowerCase().trim();
+  const stableJ = getStableUuid(cleanJ);
+  const cleanP = params.participantId.toLowerCase().trim();
+  const cleanReg = (params.registrationNumber || '').toLowerCase().trim();
+  const stableP = getStableUuid(cleanP);
+
   const allScores = getLocal<JuryScore[]>(STORAGE_SCORES, []);
-  const existing = allScores.find(
-    (s) =>
-      s.juryId === params.juryId &&
-      s.participantId === params.participantId &&
-      (s.competitionId === params.competitionId || normalizeCompId(s.competitionId) === normComp)
-  );
+  const existing = allScores.find((s) => {
+    const sComp = normalizeCompId(s.competitionId).toLowerCase();
+    if (sComp !== normComp.toLowerCase() && s.competitionId !== params.competitionId) return false;
+
+    const sJ = s.juryId.toLowerCase().trim();
+    const juryMatch = sJ === cleanJ || (stableJ && sJ === stableJ) || (getStableUuid(sJ) === stableJ);
+    if (!juryMatch) return false;
+
+    const sP = s.participantId.toLowerCase().trim();
+    return (
+      sP === cleanP ||
+      (stableP && sP === stableP) ||
+      (cleanReg && sP === cleanReg) ||
+      (cleanReg && sP.includes(cleanReg)) ||
+      (cleanP && sP.includes(cleanP))
+    );
+  });
 
   if (existing && existing.status === 'locked') {
     return { success: false, message: 'Nilai telah dikunci oleh panitia dan tidak dapat diedit kembali.' };
@@ -3996,6 +4150,7 @@ export async function saveScoreDraft(params: {
     updatedAt: now,
     juryName: params.juryName,
     participantName: params.participantName,
+    registrationNumber: params.registrationNumber || existing?.registrationNumber,
   };
 
   const updatedList = existing
@@ -4036,6 +4191,7 @@ export async function submitFinalScore(params: {
   notes?: string;
   juryName?: string;
   participantName?: string;
+  registrationNumber?: string;
 }): Promise<{
   success: boolean;
   data?: JuryScore;
@@ -4067,13 +4223,30 @@ export async function submitFinalScore(params: {
   const totalScore = calculateJuryTotal(params.scores, criteria);
   const now = new Date().toISOString();
 
+  const cleanJ = params.juryId.toLowerCase().trim();
+  const stableJ = getStableUuid(cleanJ);
+  const cleanP = params.participantId.toLowerCase().trim();
+  const cleanReg = (params.registrationNumber || '').toLowerCase().trim();
+  const stableP = getStableUuid(cleanP);
+
   const allScores = getLocal<JuryScore[]>(STORAGE_SCORES, []);
-  const existing = allScores.find(
-    (s) =>
-      s.juryId === params.juryId &&
-      s.participantId === params.participantId &&
-      (s.competitionId === params.competitionId || normalizeCompId(s.competitionId) === normComp)
-  );
+  const existing = allScores.find((s) => {
+    const sComp = normalizeCompId(s.competitionId).toLowerCase();
+    if (sComp !== normComp.toLowerCase() && s.competitionId !== params.competitionId) return false;
+
+    const sJ = s.juryId.toLowerCase().trim();
+    const juryMatch = sJ === cleanJ || (stableJ && sJ === stableJ) || (getStableUuid(sJ) === stableJ);
+    if (!juryMatch) return false;
+
+    const sP = s.participantId.toLowerCase().trim();
+    return (
+      sP === cleanP ||
+      (stableP && sP === stableP) ||
+      (cleanReg && sP === cleanReg) ||
+      (cleanReg && sP.includes(cleanReg)) ||
+      (cleanP && sP.includes(cleanP))
+    );
+  });
 
   if (existing && existing.status === 'locked') {
     return { success: false, message: 'Nilai telah dikunci dan tidak dapat diubah.' };
@@ -4101,6 +4274,7 @@ export async function submitFinalScore(params: {
     updatedAt: now,
     juryName: params.juryName,
     participantName: params.participantName,
+    registrationNumber: params.registrationNumber || existing?.registrationNumber,
   };
 
   const updatedList = existing
@@ -4759,7 +4933,7 @@ export async function getCompetitionScoreRecap(
   const compsList = allCompetitions.length > 0 ? allCompetitions : COMPETITIONS;
   const compParticipants = getCompetitionParticipants(participants, competitionId, compsList);
 
-  const assignments = await getJuryAssignments();
+  const assignments = await getJuryAssignments(compsList, juries);
   const assignedJuries = assignments.filter((a) => {
     const aNorm = normalizeCompId(a.competitionId).toLowerCase();
     return a.isActive && (a.competitionId === competitionId || aNorm === normTarget);
@@ -4769,11 +4943,25 @@ export async function getCompetitionScoreRecap(
   const allScores = await getJuryScores(competitionId);
   const existingResults = await getCompetitionResults(competitionId);
 
-  // Group scores by participant
+  // Group scores by participant dengan pencocokan fleksibel
   const rows: ParticipantScoreRow[] = compParticipants.map((p) => {
-    const pScores = allScores.filter(
-      (s) => s.participantId === p.id || s.participantId === p.registrationNumber
-    );
+    const cleanPId = (p.id || '').toLowerCase().trim();
+    const cleanPReg = (p.registrationNumber || '').toLowerCase().trim();
+    const stablePId = cleanPId ? getStableUuid(cleanPId) : '';
+    const stablePReg = cleanPReg ? getStableUuid(cleanPReg) : '';
+
+    const pScores = allScores.filter((s) => {
+      const sPart = (s.participantId || '').toLowerCase().trim();
+      if (!sPart) return false;
+      return (
+        sPart === cleanPId ||
+        sPart === cleanPReg ||
+        (stablePId && sPart === stablePId) ||
+        (stablePReg && sPart === stablePReg) ||
+        (cleanPReg && sPart.includes(cleanPReg)) ||
+        (cleanPId && sPart.includes(cleanPId))
+      );
+    });
 
     const juryScoresMap: Record<string, number | undefined> = {};
     const juryStatusesMap: Record<string, JuryScoreStatus | undefined> = {};
@@ -4782,8 +4970,66 @@ export async function getCompetitionScoreRecap(
     const individualScores: number[] = [];
 
     for (const score of pScores) {
+      const sJuryId = (score.juryId || '').toLowerCase().trim();
+      const sStableJuryId = sJuryId ? getStableUuid(sJuryId) : '';
+
+      // Direct assignment
       juryScoresMap[score.juryId] = score.totalScore;
       juryStatusesMap[score.juryId] = score.status;
+
+      // Cari penugasan juri yang cocok
+      for (const a of assignedJuries) {
+        const aJuryId = (a.juryId || '').toLowerCase().trim();
+        const aStable = aJuryId ? getStableUuid(aJuryId) : '';
+        const aName = (a.juryName || '').toLowerCase().trim();
+        const sName = (score.juryName || '').toLowerCase().trim();
+
+        // Cari juga profil juri terkait
+        const matchedJudge = juries.find(
+          (j) =>
+            j.id.toLowerCase() === aJuryId ||
+            (j.username && j.username.toLowerCase() === aJuryId) ||
+            (j.email && j.email.toLowerCase() === aJuryId)
+        );
+
+        const isMatch =
+          aJuryId === sJuryId ||
+          (aStable && sJuryId === aStable) ||
+          (sStableJuryId && aJuryId === sStableJuryId) ||
+          (aName && sName && aName === sName) ||
+          (matchedJudge && (
+            matchedJudge.id.toLowerCase() === sJuryId ||
+            (matchedJudge.username && matchedJudge.username.toLowerCase() === sJuryId) ||
+            (matchedJudge.email && matchedJudge.email.toLowerCase() === sJuryId)
+          ));
+
+        if (isMatch) {
+          juryScoresMap[a.juryId] = score.totalScore;
+          juryStatusesMap[a.juryId] = score.status;
+          if (aStable) {
+            juryScoresMap[aStable] = score.totalScore;
+            juryStatusesMap[aStable] = score.status;
+          }
+          if (matchedJudge) {
+            juryScoresMap[matchedJudge.id] = score.totalScore;
+            juryStatusesMap[matchedJudge.id] = score.status;
+            if (matchedJudge.username) {
+              juryScoresMap[matchedJudge.username] = score.totalScore;
+              juryStatusesMap[matchedJudge.username] = score.status;
+            }
+            if (matchedJudge.email) {
+              juryScoresMap[matchedJudge.email] = score.totalScore;
+              juryStatusesMap[matchedJudge.email] = score.status;
+            }
+          }
+        }
+      }
+
+      // Jika hanya ada 1 juri yang ditugaskan pada lomba ini, pastikan nilainya langsung terpetakan
+      if (assignedJuries.length === 1 && juryScoresMap[assignedJuries[0].juryId] === undefined) {
+        juryScoresMap[assignedJuries[0].juryId] = score.totalScore;
+        juryStatusesMap[assignedJuries[0].juryId] = score.status;
+      }
 
       if (score.status === 'submitted' || score.status === 'locked') {
         submittedCount++;
@@ -4792,7 +5038,15 @@ export async function getCompetitionScoreRecap(
       }
     }
 
-    const averageScore = submittedCount > 0 ? Number((sumScore / submittedCount).toFixed(2)) : 0;
+    let averageScore = 0;
+    if (submittedCount > 0) {
+      averageScore = Number((sumScore / submittedCount).toFixed(2));
+    } else if (pScores.length > 0) {
+      // Jika ada nilai tersimpan di Supabase walau masih draft
+      const draftSum = pScores.reduce((acc, s) => acc + (s.totalScore || 0), 0);
+      averageScore = Number((draftSum / pScores.length).toFixed(2));
+    }
+
     const isComplete = totalExpectedJuries > 0 && submittedCount >= totalExpectedJuries;
 
     // Deteksi perbedaan nilai juri terlalu jauh (misal > 20 poin)
@@ -4805,9 +5059,15 @@ export async function getCompetitionScoreRecap(
       }
     }
 
-    const matchedResult = existingResults.find(
-      (r) => r.participantId === p.id || r.participantId === p.registrationNumber
-    );
+    const matchedResult = existingResults.find((r) => {
+      const rPart = (r.participantId || '').toLowerCase().trim();
+      return (
+        rPart === cleanPId ||
+        rPart === cleanPReg ||
+        (stablePId && rPart === stablePId) ||
+        (stablePReg && rPart === stablePReg)
+      );
+    });
 
     return {
       participant: p,
@@ -4860,31 +5120,47 @@ export async function getCompetitionResults(competitionId?: string): Promise<Com
   const supabase = getSupabaseClient();
   if (isSupabaseConnected() && supabase) {
     try {
-      let query = supabase.from('competition_results').select('*');
-      if (competitionId) query = query.eq('competition_id', competitionId);
-      const { data, error } = await query;
+      const { data, error } = await supabase.from('competition_results').select('*');
       if (!error && data && data.length > 0) {
-        return data.map((d) => ({
-          id: d.id,
-          competitionId: d.competition_id,
-          participantId: d.participant_id,
+        let results = data.map((d: any) => ({
+          id: String(d.id),
+          competitionId: normalizeCompId(String(d.competition_id || '')),
+          participantId: String(d.participant_id || ''),
           averageScore: Number(d.average_score) || 0,
           finalScore: Number(d.final_score) || 0,
-          rank: d.rank,
+          rank: Number(d.rank) || 1,
           winnerTitle: d.winner_title as WinnerTitle,
-          isPublished: d.is_published,
+          isPublished: Boolean(d.is_published),
           determinedBy: d.determined_by,
           determinedAt: d.determined_at,
           decisionNotes: d.decision_notes,
           createdAt: d.created_at,
           updatedAt: d.updated_at,
         }));
+        if (competitionId) {
+          const normTarget = normalizeCompId(competitionId).toLowerCase().trim();
+          results = results.filter((r) => {
+            const rNorm = normalizeCompId(r.competitionId).toLowerCase().trim();
+            return (
+              rNorm === normTarget ||
+              r.competitionId.toLowerCase().trim() === competitionId.toLowerCase().trim()
+            );
+          });
+        }
+        return results;
       }
     } catch {}
   }
 
   let list = getLocal<CompetitionResult[]>(STORAGE_RESULTS, []);
-  if (competitionId) list = list.filter((r) => r.competitionId === competitionId);
+  if (competitionId) {
+    const norm = normalizeCompId(competitionId).toLowerCase();
+    list = list.filter(
+      (r) =>
+        r.competitionId.toLowerCase() === competitionId.toLowerCase() ||
+        normalizeCompId(r.competitionId).toLowerCase() === norm
+    );
+  }
   return list;
 }
 
