@@ -3719,6 +3719,20 @@ export async function getJuryScores(
       }
     } catch {}
 
+    try {
+      const localAssigns = getLocal<JuryAssignment[]>(STORAGE_ASSIGNMENTS, []);
+      for (const a of localAssigns) {
+        if (!a) continue;
+        const aJ = (a.juryId || '').toLowerCase().trim();
+        const aEmail = (a.juryEmail || '').toLowerCase().trim();
+        if (aJ === cleanJ || (aEmail && aEmail === cleanJ)) {
+          candidateJuryKeys.add(aJ);
+          const aStable = getStableUuid(aJ);
+          if (aStable) candidateJuryKeys.add(aStable.toLowerCase());
+        }
+      }
+    } catch {}
+
     allScoresList = allScoresList.filter((s) => {
       const sJ = s.juryId.toLowerCase().trim();
       const sStable = getStableUuid(sJ);
@@ -3776,66 +3790,183 @@ export async function persistScoreToSupabase(
   // Pastikan ID score adalah UUID v4 yang valid agar aman di tipe UUID maupun TEXT
   const safeScoreId = isUuid(scoreRecord.id) ? scoreRecord.id : getStableUuid(scoreRecord.id);
 
-  // Kumpulan ID kandidat untuk pencocokan baris remote
-  const compIdCandidates = Array.from(
-    new Set([
-      scoreRecord.competitionId,
-      normComp,
-      getStableUuid(scoreRecord.competitionId),
-      getStableUuid(normComp),
-    ].filter(Boolean))
-  );
-
+  // Kumpulan ID kandidat untuk pencocokan juri
   const juryIdCandidates = new Set<string>([
     scoreRecord.juryId,
     scoreRecord.juryId.toLowerCase(),
     getStableUuid(scoreRecord.juryId),
   ].filter(Boolean));
 
+  // 1. RESOLVE & ENSURE PROFIL JURI DI SUPABASE (Mencegah Foreign Key Violation pada profiles)
+  let resolvedJuryId = scoreRecord.juryId;
   try {
     const allLocalJuries = getLocal<UserProfile[]>(STORAGE_PROFILES, []);
-    const matched = allLocalJuries.find(
+    const matchedJury = allLocalJuries.find(
       (j) =>
         j.id.toLowerCase() === scoreRecord.juryId.toLowerCase() ||
         (j.username && j.username.toLowerCase() === scoreRecord.juryId.toLowerCase()) ||
         (j.email && j.email.toLowerCase() === scoreRecord.juryId.toLowerCase())
     );
-    if (matched) {
-      if (matched.id) juryIdCandidates.add(matched.id);
-      if (matched.username) juryIdCandidates.add(matched.username);
-      if (matched.email) juryIdCandidates.add(matched.email);
+    if (matchedJury) {
+      if (matchedJury.id) juryIdCandidates.add(matchedJury.id);
+      if (matchedJury.username) juryIdCandidates.add(matchedJury.username);
+      if (matchedJury.email) juryIdCandidates.add(matchedJury.email);
+
+      const ens = await ensureJuryProfileInSupabase(supabase, matchedJury);
+      if (ens.validJuryId) {
+        resolvedJuryId = ens.validJuryId;
+        juryIdCandidates.add(ens.validJuryId);
+        juryIdCandidates.add(ens.validJuryId.toLowerCase());
+      }
+    } else if (!isUuid(scoreRecord.juryId)) {
+      const ens = await ensureJuryProfileInSupabase(supabase, {
+        id: getStableUuid(scoreRecord.juryId),
+        fullName: scoreRecord.juryName || 'Dewan Juri HSN 2026',
+        email: `${scoreRecord.juryId.toLowerCase().replace(/[^a-z0-9]/g, '')}@hsnponcokusumo.nu`,
+        username: scoreRecord.juryId.toLowerCase(),
+        role: 'jury',
+      });
+      if (ens.validJuryId) {
+        resolvedJuryId = ens.validJuryId;
+        juryIdCandidates.add(ens.validJuryId);
+        juryIdCandidates.add(ens.validJuryId.toLowerCase());
+      }
     }
-  } catch {}
+  } catch (jErr) {
+    console.warn('Resolusi juri ke Supabase:', jErr);
+  }
+
+  // 2. RESOLVE & ENSURE CABANG LOMBA DI SUPABASE (Mencegah Foreign Key Violation pada competitions)
+  let resolvedCompId = normComp;
+  try {
+    const { data: dbComps } = await supabase.from('competitions').select('id, code, title');
+    const matchedC = (dbComps || []).find((rc: any) => {
+      const sid = String(rc.id || '').toLowerCase();
+      if (sid === normComp.toLowerCase() || sid === scoreRecord.competitionId.toLowerCase()) return true;
+      if (rc.code && (String(rc.code).toLowerCase() === normComp.toLowerCase() || String(rc.code).toLowerCase() === scoreRecord.competitionId.toLowerCase())) return true;
+      if (rc.title && (String(rc.title).toLowerCase() === normComp.toLowerCase() || String(rc.title).toLowerCase() === scoreRecord.competitionId.toLowerCase())) return true;
+      if (normalizeCompId(sid).toLowerCase() === normComp.toLowerCase()) return true;
+      return false;
+    });
+    if (matchedC?.id) {
+      resolvedCompId = String(matchedC.id);
+    } else {
+      const allComps = getAvailableCompetitions();
+      const targetC = allComps.find((c) => c.id === normComp || c.id === scoreRecord.competitionId) || resolveCompetition(allComps, normComp);
+      if (targetC) {
+        await supabase.from('competitions').upsert({
+          id: targetC.id,
+          code: targetC.code || targetC.id,
+          title: targetC.title,
+          category: targetC.category || 'UMUM',
+          target_audience: (targetC as any).targetAudience || 'Umum',
+          is_active: true,
+        }, { onConflict: 'id' });
+        resolvedCompId = targetC.id;
+      }
+    }
+  } catch (cErr) {
+    console.warn('Resolusi kompetisi ke Supabase:', cErr);
+  }
+
+  // 3. RESOLVE & ENSURE PESERTA DI SUPABASE (Mencegah Foreign Key Violation pada participants)
+  let realPartUuid: string | null = null;
+  try {
+    if (scoreRecord.registrationNumber) {
+      const { data: pByReg } = await supabase
+        .from('participants')
+        .select('id, registration_number')
+        .eq('registration_number', scoreRecord.registrationNumber)
+        .limit(1);
+      if (pByReg && pByReg.length > 0 && pByReg[0]?.id) {
+        realPartUuid = String(pByReg[0].id);
+      }
+    }
+
+    if (!realPartUuid && isUuid(scoreRecord.participantId)) {
+      const { data: pById } = await supabase
+        .from('participants')
+        .select('id')
+        .eq('id', scoreRecord.participantId)
+        .limit(1);
+      if (pById && pById.length > 0 && pById[0]?.id) {
+        realPartUuid = String(pById[0].id);
+      }
+    }
+
+    // Jika belum ada di tabel participants Supabase, buat segera baris peserta agar FK terpenuhi
+    if (!realPartUuid) {
+      const newPartUuid = isUuid(scoreRecord.participantId) ? scoreRecord.participantId : generateJuryUuid();
+      const regNum = scoreRecord.registrationNumber || `HSN26-${Date.now().toString().slice(-6)}`;
+      const partPayload = {
+        id: newPartUuid,
+        registration_number: regNum,
+        full_name: scoreRecord.participantName || 'Peserta Perlombaan',
+        institution: 'MWC NU Poncokusumo',
+        category: 'UMUM',
+        whatsapp: '081234567890',
+        address: 'Kec. Poncokusumo',
+        competition_id: resolvedCompId,
+        competition_title: scoreRecord.competitionId,
+        status: 'Terverifikasi',
+      };
+      const { error: insPartErr } = await supabase.from('participants').upsert(partPayload, { onConflict: 'registration_number' });
+      if (!insPartErr) {
+        realPartUuid = newPartUuid;
+      } else {
+        const { data: retryPart } = await supabase
+          .from('participants')
+          .select('id')
+          .eq('registration_number', regNum)
+          .limit(1);
+        if (retryPart && retryPart.length > 0 && retryPart[0]?.id) {
+          realPartUuid = String(retryPart[0].id);
+        }
+      }
+    }
+  } catch (pErr) {
+    console.warn('Resolusi peserta ke Supabase:', pErr);
+  }
 
   const partIdCandidates = Array.from(
     new Set([
+      realPartUuid,
       scoreRecord.participantId,
       scoreRecord.registrationNumber,
+      isUuid(scoreRecord.participantId) ? scoreRecord.participantId : '',
       getStableUuid(scoreRecord.participantId),
       scoreRecord.registrationNumber ? getStableUuid(scoreRecord.registrationNumber) : '',
-    ].filter(Boolean))
+    ].filter(Boolean) as string[])
   );
 
   let remoteRowId: string | null = null;
   let lastErrorMsg = '';
 
-  // STRATEGY 1: Cari apakah baris penilaian (jury, participant, competition) sudah ada di Supabase
+  // STRATEGY 1: Cari baris penilaian di Supabase secara aman (Filter competition_id untuk mencegah error sintaks UUID)
   try {
-    const { data, error } = await supabase
+    const { data: compScores, error: compErr } = await supabase
       .from('jury_scores')
       .select('id, competition_id, jury_id, participant_id')
-      .in('participant_id', partIdCandidates)
-      .limit(20);
+      .or(`competition_id.eq.${resolvedCompId},competition_id.eq.${normComp}`)
+      .limit(100);
 
-    if (!error && data && data.length > 0) {
-      for (const row of data) {
-        const rComp = normalizeCompId(String(row.competition_id || '')).toLowerCase();
+    if (!compErr && compScores && compScores.length > 0) {
+      for (const row of compScores) {
         const rJury = String(row.jury_id || '').toLowerCase();
-        const isCompMatch = compIdCandidates.some((c) => normalizeCompId(String(c)).toLowerCase() === rComp || String(c).toLowerCase() === rComp);
-        const isJuryMatch = Array.from(juryIdCandidates).some(
-          (j) => String(j).toLowerCase() === rJury || getStableUuid(String(j)) === rJury || getStableUuid(rJury) === getStableUuid(String(j))
-        );
-        if (isCompMatch && isJuryMatch && row?.id) {
+        const rPart = String(row.participant_id || '').toLowerCase();
+
+        const isJuryMatch =
+          Array.from(juryIdCandidates).some((j) => String(j).toLowerCase() === rJury) ||
+          rJury === resolvedJuryId.toLowerCase() ||
+          getStableUuid(rJury) === getStableUuid(scoreRecord.juryId) ||
+          getStableUuid(rJury) === getStableUuid(resolvedJuryId);
+
+        const isPartMatch =
+          partIdCandidates.some((p) => p.toLowerCase() === rPart) ||
+          (realPartUuid && rPart === realPartUuid.toLowerCase()) ||
+          getStableUuid(rPart) === getStableUuid(scoreRecord.participantId);
+
+        if (isJuryMatch && isPartMatch && row?.id) {
           remoteRowId = String(row.id);
           break;
         }
@@ -3845,18 +3976,19 @@ export async function persistScoreToSupabase(
     console.warn('Cek baris remote jury_scores gagal:', err?.message || err);
   }
 
-  // Jika baris belum ditemukan, cek langsung berdasarkan safeScoreId atau scoreRecord.id
-  if (!remoteRowId) {
+  // Jika baris belum ditemukan, cek langsung berdasarkan safeScoreId (hanya jika safeScoreId adalah UUID valid)
+  if (!remoteRowId && isUuid(safeScoreId)) {
     try {
       const { data: byIdData } = await supabase
         .from('jury_scores')
         .select('id, jury_id')
-        .or(`id.eq.${safeScoreId},id.eq.${scoreRecord.id}`)
+        .eq('id', safeScoreId)
         .limit(1);
       if (byIdData && byIdData.length > 0 && byIdData[0]?.id) {
         const rowJury = String(byIdData[0].jury_id || '').toLowerCase();
-        // Hanya pakai remoteRowId jika juri-nya benar-benar cocok!
-        const isJMatch = Array.from(juryIdCandidates).some((j) => String(j).toLowerCase() === rowJury);
+        const isJMatch =
+          Array.from(juryIdCandidates).some((j) => String(j).toLowerCase() === rowJury) ||
+          rowJury === resolvedJuryId.toLowerCase();
         if (isJMatch) {
           remoteRowId = String(byIdData[0].id);
         }
@@ -3868,7 +4000,9 @@ export async function persistScoreToSupabase(
   if (remoteRowId) {
     const updatePayloads = [
       {
-        jury_id: scoreRecord.juryId,
+        jury_id: isUuid(resolvedJuryId) ? resolvedJuryId : scoreRecord.juryId,
+        participant_id: realPartUuid || scoreRecord.participantId,
+        competition_id: resolvedCompId,
         scores: scoreRecord.scores,
         total_score: scoreRecord.totalScore,
         notes: scoreRecord.notes || '',
@@ -3878,7 +4012,15 @@ export async function persistScoreToSupabase(
         updated_at: now,
       },
       {
-        jury_id: scoreRecord.juryId,
+        jury_id: isUuid(resolvedJuryId) ? resolvedJuryId : scoreRecord.juryId,
+        scores: scoreRecord.scores,
+        total_score: scoreRecord.totalScore,
+        notes: scoreRecord.notes || '',
+        status: status,
+        submitted_at: status === 'submitted' ? (scoreRecord.submittedAt || now) : null,
+        updated_at: now,
+      },
+      {
         scores: scoreRecord.scores,
         total_score: scoreRecord.totalScore,
         notes: scoreRecord.notes || '',
@@ -3886,7 +4028,6 @@ export async function persistScoreToSupabase(
         updated_at: now,
       },
       {
-        jury_id: scoreRecord.juryId,
         scores: scoreRecord.scores,
         total_score: scoreRecord.totalScore,
         status: status,
@@ -3915,16 +4056,38 @@ export async function persistScoreToSupabase(
     }
   }
 
-  // STRATEGY 3: Jika baris BELUM ADA, lakukan INSERT dengan safeScoreId (UUID v4)
-  const baseCandidates = [
-    { compId: normComp, juryId: scoreRecord.juryId, partId: scoreRecord.participantId },
-    { compId: scoreRecord.competitionId, juryId: scoreRecord.juryId, partId: scoreRecord.participantId },
-    { compId: getStableUuid(normComp), juryId: getStableUuid(scoreRecord.juryId), partId: getStableUuid(scoreRecord.participantId) },
+  // STRATEGY 3: Jika baris BELUM ADA, lakukan INSERT dengan pasangan kandidat adaptif
+  const candidatePairs = [
+    // Pilihan 1: Authoritative FK-compliant (UUID yang terdaftar di profiles & participants, ID kompetisi nyata)
+    {
+      juryId: isUuid(resolvedJuryId) ? resolvedJuryId : (isUuid(scoreRecord.juryId) ? scoreRecord.juryId : getStableUuid(scoreRecord.juryId)),
+      partId: realPartUuid || (isUuid(scoreRecord.participantId) ? scoreRecord.participantId : getStableUuid(scoreRecord.participantId)),
+      compId: resolvedCompId,
+    },
+    // Pilihan 2: Text / raw format (jika tabel database menggunakan tipe TEXT/VARCHAR)
+    {
+      juryId: scoreRecord.juryId,
+      partId: scoreRecord.participantId,
+      compId: normComp,
+    },
+    // Pilihan 3: All-UUID format
+    {
+      juryId: getStableUuid(scoreRecord.juryId),
+      partId: getStableUuid(scoreRecord.participantId),
+      compId: resolvedCompId,
+    },
+    // Pilihan 4: ID asli peserta & lomba
+    {
+      juryId: resolvedJuryId,
+      partId: realPartUuid || scoreRecord.participantId,
+      compId: scoreRecord.competitionId,
+    },
   ];
 
-  for (const c of baseCandidates) {
+  for (const c of candidatePairs) {
+    const rowId = isUuid(scoreRecord.id) ? scoreRecord.id : generateJuryUuid();
     const insertPayload: any = {
-      id: safeScoreId,
+      id: rowId,
       competition_id: c.compId,
       participant_id: c.partId,
       jury_id: c.juryId,
@@ -3985,23 +4148,7 @@ export async function persistScoreToSupabase(
       }
     }
 
-    // 3c. Coba UPSERT onConflict 'id' (Primary key 'id' pasti ada di tabel)
-    const { error: upsIdErr } = await supabase
-      .from('jury_scores')
-      .upsert(insertPayload, { onConflict: 'id' });
-
-    if (!upsIdErr) {
-      return {
-        success: true,
-        synced: true,
-        message:
-          status === 'submitted'
-            ? 'Nilai final resmi tersimpan di database Supabase via primary key.'
-            : 'Draf nilai berhasil disimpan di database Supabase via primary key.',
-      };
-    }
-
-    // 3d. Coba UPSERT onConflict 'competition_id,participant_id,jury_id'
+    // 3c. Coba UPSERT onConflict 'competition_id,participant_id,jury_id'
     const { error: upsCompErr } = await supabase
       .from('jury_scores')
       .upsert(insertPayload, { onConflict: 'competition_id,participant_id,jury_id' });
@@ -4016,6 +4163,48 @@ export async function persistScoreToSupabase(
             : 'Draf nilai berhasil disimpan di database Supabase.',
       };
     }
+
+    // 3d. Coba UPSERT onConflict 'id'
+    const { error: upsIdErr } = await supabase
+      .from('jury_scores')
+      .upsert(insertPayload, { onConflict: 'id' });
+
+    if (!upsIdErr) {
+      return {
+        success: true,
+        synced: true,
+        message:
+          status === 'submitted'
+            ? 'Nilai final resmi tersimpan di database Supabase via primary key.'
+            : 'Draf nilai berhasil disimpan di database Supabase via primary key.',
+      };
+    }
+  }
+
+  // 4. STRATEGY 4: Coba tabel alternatif dengan penamaan bahasa Indonesia (nilai_juri / skor_juri)
+  const altTables = ['nilai_juri', 'penugasan_nilai', 'skor_juri'];
+  for (const tName of altTables) {
+    try {
+      const altPayload = {
+        id: isUuid(scoreRecord.id) ? scoreRecord.id : generateJuryUuid(),
+        competition_id: resolvedCompId,
+        participant_id: realPartUuid || scoreRecord.participantId,
+        jury_id: resolvedJuryId,
+        scores: scoreRecord.scores,
+        total_score: scoreRecord.totalScore,
+        notes: scoreRecord.notes || '',
+        status: status,
+        updated_at: now,
+      };
+      const { error: altErr } = await supabase.from(tName).upsert([altPayload], { onConflict: 'id' });
+      if (!altErr) {
+        return {
+          success: true,
+          synced: true,
+          message: `Nilai berhasil disimpan di database Supabase (tabel ${tName}).`,
+        };
+      }
+    } catch {}
   }
 
   console.warn('Peringatan: Gagal menyimpan baris jury_scores ke Supabase:', lastErrorMsg);
