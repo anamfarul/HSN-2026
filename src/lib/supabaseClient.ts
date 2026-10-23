@@ -51,6 +51,23 @@ export function sanitizeSupabaseKey(rawKey: string): string {
 
 // Helper to get active credentials from environment or localStorage with automatic sanitization
 export function getSupabaseCredentials(): { url: string; anonKey: string } {
+  // 1. Periksa parameter URL (misal dari tautan juri yang disalin: ?su=...&sk=...)
+  if (typeof window !== 'undefined' && window.location && window.location.search) {
+    try {
+      const search = new URLSearchParams(window.location.search);
+      const urlParam = search.get('su') || search.get('supabase_url');
+      const keyParam = search.get('sk') || search.get('supabase_key') || search.get('anon_key');
+      if (urlParam && keyParam) {
+        const cleanU = sanitizeSupabaseUrl(urlParam);
+        const cleanK = sanitizeSupabaseKey(keyParam);
+        if (cleanU && cleanK) {
+          localStorage.setItem('hsn2026_supabase_url', cleanU);
+          localStorage.setItem('hsn2026_supabase_anon_key', cleanK);
+        }
+      }
+    } catch {}
+  }
+
   const envUrl = (import.meta as any).env?.VITE_SUPABASE_URL || (import.meta as any).env?.VITE_SUPABASE_PROJECT_URL || (import.meta as any).env?.VITE_PUBLIC_SUPABASE_URL || '';
   const envKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || (import.meta as any).env?.VITE_SUPABASE_KEY || (import.meta as any).env?.VITE_SUPABASE_PUBLIC_KEY || '';
 

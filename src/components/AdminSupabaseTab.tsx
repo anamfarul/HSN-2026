@@ -548,6 +548,18 @@ ALTER TABLE IF EXISTS public.jury_assignments
 DO $$ BEGIN
   -- Lepas constraint foreign key jika ada agar ALTER COLUMN TYPE tidak terhalang
   BEGIN
+    ALTER TABLE public.jury_scores DROP CONSTRAINT IF EXISTS jury_scores_competition_id_fkey;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN
+    ALTER TABLE public.jury_scores DROP CONSTRAINT IF EXISTS jury_scores_jury_id_fkey;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN
+    ALTER TABLE public.jury_scores DROP CONSTRAINT IF EXISTS jury_scores_participant_id_fkey;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN
+    ALTER TABLE public.jury_scores DROP CONSTRAINT IF EXISTS jury_scores_assigned_by_fkey;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN
     ALTER TABLE public.jury_assignments DROP CONSTRAINT IF EXISTS jury_assignments_competition_id_fkey;
   EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN
@@ -561,6 +573,19 @@ DO $$ BEGIN
   EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN
     ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_id_fkey;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  BEGIN
+    ALTER TABLE public.jury_scores ALTER COLUMN id TYPE TEXT USING id::text;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN
+    ALTER TABLE public.jury_scores ALTER COLUMN jury_id TYPE TEXT USING jury_id::text;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN
+    ALTER TABLE public.jury_scores ALTER COLUMN competition_id TYPE TEXT USING competition_id::text;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN
+    ALTER TABLE public.jury_scores ALTER COLUMN participant_id TYPE TEXT USING participant_id::text;
   EXCEPTION WHEN OTHERS THEN NULL; END;
 
   BEGIN
@@ -579,6 +604,20 @@ DO $$ BEGIN
     ALTER TABLE public.scoring_criteria ALTER COLUMN competition_id TYPE TEXT USING competition_id::text;
   EXCEPTION WHEN OTHERS THEN NULL; END;
 END $$;
+
+-- Pastikan indeks dan constraint unik pada jury_scores tersedia
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'jury_scores_competition_id_participant_id_jury_id_key'
+  ) THEN
+    BEGIN
+      ALTER TABLE public.jury_scores ADD CONSTRAINT jury_scores_competition_id_participant_id_jury_id_key UNIQUE(competition_id, participant_id, jury_id);
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_jury_scores_lookup ON public.jury_scores(competition_id, participant_id, jury_id);
 
 DO $$ BEGIN
   IF NOT EXISTS (

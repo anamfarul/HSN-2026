@@ -68,9 +68,10 @@ import {
   isAssignmentForJury,
   getCompetitionParticipants,
   getLocalAssignments,
-  getLocalScores
+  getLocalScores,
+  syncLocalScoresToSupabase,
 } from '../../lib/juryService';
-import { isSupabaseConnected } from '../../lib/supabaseClient';
+import { isSupabaseConnected, getSupabaseCredentials } from '../../lib/supabaseClient';
 
 interface JuryPortalViewProps {
   onBackToMain: () => void;
@@ -227,6 +228,11 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
 
       // Simpan seluruh penugasan aktif dari CMS (Supabase/local)
       setAssignments(allAssigns.filter((a) => a.isActive));
+
+      // Auto sinkronisasi draf/nilai lokal yang belum terdorong ke Supabase
+      try {
+        await syncLocalScoresToSupabase();
+      } catch {}
 
       const allScores = await getJuryScores(undefined, targetId);
       setJuryScores(allScores);
@@ -583,9 +589,10 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
       });
 
       if (res.success && res.data) {
-        setScoreFeedback({ type: 'success', message: 'Draf nilai berhasil disimpan!' });
+        const feedbackMsg = res.message || 'Draf nilai berhasil disimpan!';
+        setScoreFeedback({ type: 'success', message: feedbackMsg });
         await refreshJuryData(profile.id);
-        setTimeout(() => setScoreFeedback(null), 3000);
+        setTimeout(() => setScoreFeedback(null), 4000);
       } else {
         setScoreFeedback({ type: 'error', message: res.message || 'Gagal menyimpan draf.' });
       }
@@ -618,9 +625,10 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
 
       if (res.success && res.data) {
         setShowConfirmSubmit(false);
-        setScoreFeedback({ type: 'success', message: 'Nilai final resmi terkirim ke panitia!' });
+        const feedbackMsg = res.message || 'Nilai final resmi terkirim ke panitia!';
+        setScoreFeedback({ type: 'success', message: feedbackMsg });
         await refreshJuryData(profile.id);
-        setTimeout(() => setScoreFeedback(null), 3500);
+        setTimeout(() => setScoreFeedback(null), 4500);
       } else {
         setShowConfirmSubmit(false);
         setScoreFeedback({ type: 'error', message: res.message || 'Gagal mengirim nilai final.' });
@@ -950,13 +958,19 @@ export const JuryPortalView: React.FC<JuryPortalViewProps> = ({
             <button
               type="button"
               onClick={() => {
-                const url = typeof window !== 'undefined' ? `${window.location.origin}/juri` : '/juri';
+                const { url: sbUrl, anonKey: sbKey } = getSupabaseCredentials();
+                let url = typeof window !== 'undefined' ? `${window.location.origin}/juri` : '/juri';
+                if (sbUrl && sbKey) {
+                  const encUrl = encodeURIComponent(sbUrl);
+                  const encKey = encodeURIComponent(sbKey);
+                  url += `?su=${encUrl}&sk=${encKey}`;
+                }
                 navigator.clipboard?.writeText(url).then(() => {
                   setCopyToast(`Tautan Portal Juri disalin: ${url}`);
                   setTimeout(() => setCopyToast(null), 3000);
                 });
               }}
-              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
+              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
               title="Salin Tautan Portal Juri"
             >
               <Copy className="w-3.5 h-3.5 text-[#F2C96D]" />

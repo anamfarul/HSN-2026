@@ -1466,7 +1466,13 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
             <button
               type="button"
               onClick={() => {
-                const url = typeof window !== 'undefined' ? `${window.location.origin}/juri` : '/juri';
+                const { url: sbUrl, anonKey: sbKey } = getSupabaseCredentials();
+                let url = typeof window !== 'undefined' ? `${window.location.origin}/juri` : '/juri';
+                if (sbUrl && sbKey) {
+                  const encUrl = encodeURIComponent(sbUrl);
+                  const encKey = encodeURIComponent(sbKey);
+                  url += `?su=${encUrl}&sk=${encKey}`;
+                }
                 navigator.clipboard?.writeText(url).then(() => {
                   setFeedbackToast({
                     message: `Tautan Portal Juri disalin: ${url}`,
@@ -1474,7 +1480,7 @@ Silakan buka ${portalUrl} dan masuk menggunakan Username/Email dan Password di a
                   });
                 }).catch(() => {
                   setFeedbackToast({
-                    message: 'Akses Portal Juri: /juri',
+                    message: `Akses Portal Juri: ${url}`,
                     type: 'info',
                   });
                 });
